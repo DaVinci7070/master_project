@@ -65,16 +65,16 @@ export function PromptCard({ prompt, onViewHistory }: PromptCardProps) {
           <DialogTrigger className="text-sm text-indigo-600 hover:text-indigo-700">
             View content
           </DialogTrigger>
-          <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogContent className="w-[80vw] h-[80vh] max-w-none flex flex-col">
             <DialogHeader>
               <DialogTitle>{prompt.name}</DialogTitle>
             </DialogHeader>
-            {loading ? (
-              <div className="flex items-center justify-center py-12 text-gray-500">
+            {loading || fullContent === null ? (
+              <div className="flex items-center justify-center flex-1 text-gray-500">
                 Loading...
               </div>
             ) : (
-              <pre className="text-sm bg-gray-100 p-4 rounded-lg whitespace-pre-wrap overflow-y-auto flex-1 max-h-[70vh]">
+              <pre className="text-sm whitespace-pre-wrap overflow-y-auto flex-1 p-4">
                 {fullContent}
               </pre>
             )}
