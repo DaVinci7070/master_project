@@ -1,5 +1,4 @@
 """Gap detector for identifying capability deficiencies."""
-import json
 import logging
 import os
 from typing import Callable, Awaitable, Optional
@@ -7,7 +6,9 @@ from typing import Callable, Awaitable, Optional
 from app.models.schemas.analysis_schemas import (
     ConfidenceLevel, GapType, GapSeverity, CapabilityGap, CapabilityAssessment
 )
-from app.orchestration.analysis.models import AssessmentContext, CapabilityType
+from app.orchestration.analysis.models import (
+    AssessmentContext, CapabilityType, GapDetectionResponse,
+)
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -66,6 +67,7 @@ class GapDetector:
         self,
         llm_fn: Optional[Callable[[list[dict], dict], Awaitable[str]]] = None,
         feasibility_judge: Optional["FeasibilityJudge"] = None,
+        structured_llm_fn: Optional[Callable] = None,
     ):
         """
         Initialize gap detector.
@@ -73,8 +75,10 @@ class GapDetector:
         Args:
             llm_fn: Async function(messages, kwargs) -> response_content
             feasibility_judge: Optional judge that verifies execution capabilities
+            structured_llm_fn: Async function(messages, response_model, **kwargs) -> BaseModel
         """
         self._llm_fn = llm_fn
+        self._structured_llm_fn = structured_llm_fn
         self._feasibility_judge = feasibility_judge
 
     async def detect_gaps(
@@ -225,7 +229,7 @@ class GapDetector:
         - Whether "close but not quite" matches might work
         - Subtle topology or schema issues
         """
-        if not self._llm_fn:
+        if not self._llm_fn and not self._structured_llm_fn:
             logger.warning("No LLM function, using rule-based gap identification")
             return self._rule_based_gap_identification(context)
 
@@ -261,10 +265,20 @@ class GapDetector:
             similar_successes=similar_successes
         )
 
+        messages = [
+            {"role": "system", "content": "You identify capability gaps precisely."},
+            {"role": "user", "content": prompt}
+        ]
+
         try:
-            # Note: Don't use response_format with complex schema constraints
-            # (enums, maxLength, nested arrays) - Gemini doesn't support them well
-            gap_format = '''Respond with JSON only, no markdown:
+            if self._structured_llm_fn:
+                result = await self._structured_llm_fn(
+                    messages, GapDetectionResponse, temperature=0.2,
+                )
+                gaps = result.gaps
+            else:
+                import json
+                gap_format = '''Respond with JSON only, no markdown:
 {
   "gaps": [
     {
@@ -275,32 +289,24 @@ class GapDetector:
     }
   ]
 }'''
-            response = await self._llm_fn(
-                [
-                    {"role": "system", "content": "You identify capability gaps precisely. Output JSON only, no markdown."},
-                    {"role": "user", "content": prompt + "\n\n" + gap_format}
-                ],
-                {
-                    "temperature": 0.2,  # Deterministic gap identification
-                }
-            )
-
-            # Handle potential markdown code blocks
-            content = response.strip() if isinstance(response, str) else response
-            if isinstance(content, str) and content.startswith("```"):
-                lines = content.split("\n")
-                content = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-
-            parsed = json.loads(content)
-            gaps = [
-                CapabilityGap(
-                    gap_type=GapType(g["gap_type"]),
-                    severity=GapSeverity(g["severity"]),
-                    description=g["description"],
-                    affected_capability=g["affected_capability"]
+                response = await self._llm_fn(
+                    [messages[0], {"role": "user", "content": prompt + "\n\n" + gap_format}],
+                    {"temperature": 0.2},
                 )
-                for g in parsed.get("gaps", [])
-            ]
+                content = response.strip() if isinstance(response, str) else response
+                if isinstance(content, str) and content.startswith("```"):
+                    lines = content.split("\n")
+                    content = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+                parsed = json.loads(content)
+                gaps = [
+                    CapabilityGap(
+                        gap_type=GapType(g["gap_type"]),
+                        severity=GapSeverity(g["severity"]),
+                        description=g["description"],
+                        affected_capability=g["affected_capability"]
+                    )
+                    for g in parsed.get("gaps", [])
+                ]
 
             # Sort by severity: critical first, then important, then minor
             severity_order = {GapSeverity.CRITICAL: 0, GapSeverity.IMPORTANT: 1, GapSeverity.MINOR: 2}

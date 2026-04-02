@@ -43,9 +43,9 @@ class GenericAgentExecutor:
         self,
         llm_client: Any,  # LLM client with completion method
         artifact_pool: ArtifactPool,
+        topology_loader: "TopologyLoader",
         shared_memory: Optional[SharedMemoryService] = None,
         context_manager: Optional[ContextBudgetManager] = None,
-        topology_loader: Optional["TopologyLoader"] = None,
         max_context_tokens: int = 100000,
         db: Optional[AsyncSession] = None,  # For auto-creating skills
         sandbox_executor: Optional[Any] = None  # SandboxExecutorService for skill execution
@@ -58,7 +58,7 @@ class GenericAgentExecutor:
             artifact_pool: Session artifact pool
             shared_memory: Shared memory service (optional)
             context_manager: Context budget manager
-            topology_loader: TopologyLoader for skill injection (optional)
+            topology_loader: TopologyLoader for skill injection (required)
             max_context_tokens: Max tokens for context window
             db: Database session for auto-creating skills
             sandbox_executor: SandboxExecutorService for secure skill execution

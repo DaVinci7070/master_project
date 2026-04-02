@@ -5,9 +5,11 @@ These models pass context between analysis stages without being exposed in API.
 They support capability matching, topology inspection, and assessment context tracking.
 """
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
+
+from app.models.schemas.analysis_schemas import CapabilityGap
 
 
 class CapabilityType(str, Enum):
@@ -19,6 +21,29 @@ class CapabilityType(str, Enum):
     """
     KNOWLEDGE = "knowledge"
     EXECUTION = "execution"
+
+
+class FeasibilityLLMResponse(BaseModel):
+    """Instructor response model for feasibility verification."""
+    feasible: bool
+    tool_name: Optional[str] = None
+    reason: str = ""
+
+
+class ExtractedCapability(BaseModel):
+    """Single capability extracted from challenge text by LLM."""
+    action: str
+    type: Literal["knowledge", "execution"]
+
+
+class CapabilityExtractionResponse(BaseModel):
+    """Instructor response model for capability extraction."""
+    capabilities: list[ExtractedCapability]
+
+
+class GapDetectionResponse(BaseModel):
+    """Instructor response model for gap identification."""
+    gaps: list[CapabilityGap] = []
 
 
 class FeasibilityResult(BaseModel):

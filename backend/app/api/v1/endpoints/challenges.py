@@ -25,7 +25,7 @@ from app.models.schemas.analysis_schemas import (
     ChallengeAnalysisRequest,
 )
 from app.orchestration.analysis.orchestrator import create_pre_execution_orchestrator
-from app.core.llm_client import create_llm_fn, create_embedding_fn
+from app.core.llm_client import create_llm_fn, create_embedding_fn, create_structured_llm_fn
 from app.models.schemas.intervention_schemas import (
     BuildPlan,
     BuildPlanItem,
@@ -310,10 +310,12 @@ async def analyze_challenge_direct(
     try:
         llm_fn = create_llm_fn()
         embedding_fn = create_embedding_fn()
+        structured_llm_fn = create_structured_llm_fn()
         orchestrator = await create_pre_execution_orchestrator(
             db=session,
             llm_fn=llm_fn,
-            embedding_fn=embedding_fn
+            embedding_fn=embedding_fn,
+            structured_llm_fn=structured_llm_fn,
         )
 
         # Build analysis request
@@ -813,6 +815,49 @@ Size: {len(content)} bytes
     )
 
 
+@router.get("/blocked")
+async def get_blocked_challenges(
+    include_resolved: bool = Query(False, description="Include resolved/failed/cancelled challenges"),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """
+    Get blocked challenges from the intervention queue.
+
+    By default returns only active (non-terminal) challenges.
+    """
+    log.info(f"Getting blocked challenges: include_resolved={include_resolved}")
+
+    stmt = select(BlockedChallenge).order_by(BlockedChallenge.created_at.desc())
+
+    if not include_resolved:
+        active_statuses = ["queued", "building", "built", "injected"]
+        stmt = stmt.where(BlockedChallenge.status.in_(active_statuses))
+
+    result = await session.execute(stmt)
+    challenges = list(result.scalars().all())
+
+    return [
+        {
+            "id": c.id,
+            "execution_id": c.execution_id,
+            "project_id": c.project_id,
+            "challenge_text": c.challenge_text,
+            "assessment_result": c.assessment_result,
+            "gaps_snapshot": c.gaps_snapshot,
+            "status": c.status,
+            "attempt_number": c.attempt_number,
+            "max_attempts": c.max_attempts,
+            "built_capability_ids": c.built_capability_ids or [],
+            "execution_results": c.execution_results,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
+            "failure_reasons": c.failure_reasons or [],
+        }
+        for c in challenges
+    ]
+
+
 @router.post("", response_model=ChallengeCreateResponse)
 async def submit_challenge(
     challenge_text: str = Form(None, description="Challenge text"),
@@ -899,10 +944,12 @@ async def analyze_challenge(
     try:
         llm_fn = create_llm_fn()
         embedding_fn = create_embedding_fn()
+        structured_llm_fn = create_structured_llm_fn()
         orchestrator = await create_pre_execution_orchestrator(
             db=session,
             llm_fn=llm_fn,
-            embedding_fn=embedding_fn
+            embedding_fn=embedding_fn,
+            structured_llm_fn=structured_llm_fn,
         )
 
         # Build analysis request from stored challenge
@@ -1341,7 +1388,7 @@ async def _run_capability_building(challenge_id: str) -> None:
     """
     from app.dependencies.dependencies import AsyncSessionLocal
     from app.orchestration.intervention.orchestrator import create_intervention_orchestrator
-    from app.core.llm_client import create_llm_fn, create_embedding_fn
+    from app.core.llm_client import create_llm_fn, create_embedding_fn, create_structured_llm_fn
 
     log.info(f"Starting capability building: challenge_id={challenge_id}")
 
