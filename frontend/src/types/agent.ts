@@ -40,8 +40,9 @@ export interface Prompt {
   id: string
   parent_id: string | null
   name: string
-  content: string
-  prompt_metadata: Record<string, unknown>
+  content?: string
+  content_preview?: string
+  prompt_metadata?: Record<string, unknown>
   is_active: boolean
   created_at: string
 }

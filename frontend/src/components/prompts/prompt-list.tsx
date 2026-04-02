@@ -32,7 +32,7 @@ export function PromptList() {
     return prompts.filter(
       (p) =>
         p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.content.toLowerCase().includes(search.toLowerCase())
+        (p.content_preview ?? '').toLowerCase().includes(search.toLowerCase())
     )
   }, [prompts, search])
 
