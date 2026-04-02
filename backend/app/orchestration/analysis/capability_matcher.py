@@ -1,7 +1,6 @@
 """Capability matching using semantic similarity."""
 import logging
 import os
-import re
 from typing import Callable, Awaitable, Optional
 import numpy as np
 
@@ -16,10 +15,6 @@ logger = logging.getLogger(__name__)
 # Lowered from 0.95 to 0.90 - 0.95 was too strict and caused false negatives
 CAN_DO_THRESHOLD = float(os.getenv("CAPABILITY_CAN_DO_THRESHOLD", "0.90"))
 MAYBE_THRESHOLD = float(os.getenv("CAPABILITY_MAYBE_THRESHOLD", "0.50"))
-
-# Direct match score (bypasses embedding comparison)
-DIRECT_MATCH_SCORE = 1.0
-
 
 class CapabilityMatcher:
     """
@@ -39,22 +34,21 @@ class CapabilityMatcher:
 
         Args:
             topology_loader: Loader for current system topology
-            embedding_fn: Function to generate embeddings (text -> vector)
+            embedding_fn: Function to generate embeddings (text -> vector).
+                          Defaults to fastembed (BAAI/bge-base-en-v1.5) if not provided.
         """
         self.topology = topology_loader
-        self._get_embedding = embedding_fn
+        if embedding_fn is None:
+            from app.core.llm_client import get_embedding
+            self._get_embedding = get_embedding
+        else:
+            self._get_embedding = embedding_fn
         self._embedding_cache: dict[str, list[float]] = {}
 
     async def _get_cached_embedding(self, text: str) -> list[float]:
         """Get embedding with caching for repeated capability strings."""
         if text not in self._embedding_cache:
-            if self._get_embedding:
-                self._embedding_cache[text] = await self._get_embedding(text)
-            else:
-                # Fallback: zero vector (development mode)
-                # Using 768 dimensions to match Gemini embeddings
-                logger.warning(f"No embedding function configured, using zero vector for: {text[:50]}")
-                self._embedding_cache[text] = [0.0] * 768
+            self._embedding_cache[text] = await self._get_embedding(text)
         return self._embedding_cache[text]
 
     def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
@@ -64,56 +58,6 @@ class CapabilityMatcher:
         if norm_a == 0 or norm_b == 0:
             return 0.0
         return float(np.dot(a_arr, b_arr) / (norm_a * norm_b))
-
-    def _normalize_capability(self, name: str) -> str:
-        """
-        Normalize capability name for direct string matching.
-
-        Handles variations like:
-        - "Financial Calculation" -> "financial calculation"
-        - "risk assessment (downtime costs)" -> "risk assessment"
-        - "Cost_Analysis" -> "cost analysis"
-        - "data-analysis" -> "data analysis"
-        """
-        # Lowercase and strip
-        normalized = name.lower().strip()
-        # Remove content in parentheses
-        normalized = re.sub(r'\s*\([^)]*\)', '', normalized)
-        # Replace underscores/hyphens with spaces
-        normalized = normalized.replace('_', ' ').replace('-', ' ')
-        # Normalize whitespace
-        normalized = ' '.join(normalized.split())
-        return normalized
-
-    def _check_direct_match(
-        self,
-        required: str,
-        available_caps: list[str]
-    ) -> Optional[str]:
-        """
-        Check for direct string match (normalized) between required and available.
-
-        Returns the matched capability string if found, None otherwise.
-        """
-        req_normalized = self._normalize_capability(required)
-
-        for avail in available_caps:
-            avail_normalized = self._normalize_capability(avail)
-
-            # Exact match after normalization
-            if req_normalized == avail_normalized:
-                return avail
-
-            # Check if one contains the other (for partial matches)
-            # e.g., "financial calculation" matches "financial calculation skills"
-            if req_normalized in avail_normalized or avail_normalized in req_normalized:
-                # Only if significant overlap (at least 70% of shorter string)
-                shorter = min(len(req_normalized), len(avail_normalized))
-                longer = max(len(req_normalized), len(avail_normalized))
-                if shorter / longer >= 0.7:
-                    return avail
-
-        return None
 
     async def extract_topology_capabilities(self) -> TopologyCapabilities:
         """
@@ -278,9 +222,7 @@ class CapabilityMatcher:
         """
         Match each required capability against available capabilities.
 
-        Uses a two-phase matching approach:
-        1. Direct string match (normalized) - instant match with score 1.0
-        2. Embedding-based semantic similarity - for fuzzy matching
+        Uses embedding-based semantic similarity to find best matches.
 
         Args:
             required_capabilities: Capabilities needed for the challenge
@@ -293,53 +235,24 @@ class CapabilityMatcher:
         matches = []
         capability_types = capability_types or {}
 
-        # Flatten all available capabilities for direct matching
-        all_available_caps = list(topology_capabilities.all_capabilities)
-
         for req_cap in required_capabilities:
             best_score = 0.0
             best_match: Optional[str] = None
             best_agent: Optional[str] = None
-            match_type = "none"
 
-            # PHASE 1: Direct string match (normalized)
-            # This catches exact matches like "financial calculation" == "financial calculation"
-            direct_match = self._check_direct_match(req_cap, all_available_caps)
+            req_embedding = await self._get_cached_embedding(req_cap)
 
-            if direct_match:
-                # Find which agent/skill provides this capability
-                for agent_id, caps in topology_capabilities.agent_capabilities.items():
-                    if direct_match in caps or self._check_direct_match(direct_match, caps):
-                        best_score = DIRECT_MATCH_SCORE
-                        best_match = direct_match
+            for agent_id, caps in topology_capabilities.agent_capabilities.items():
+                for topo_cap in caps:
+                    topo_embedding = await self._get_cached_embedding(topo_cap)
+                    similarity = self._cosine_similarity(req_embedding, topo_embedding)
+
+                    if similarity > best_score:
+                        best_score = similarity
+                        best_match = topo_cap
                         best_agent = agent_id
-                        match_type = "direct"
-                        logger.info(
-                            f"DIRECT MATCH: '{req_cap}' -> '{direct_match}' "
-                            f"(provider: {agent_id})"
-                        )
-                        break
 
-            # PHASE 2: Embedding-based matching (if no direct match found)
-            if best_score < DIRECT_MATCH_SCORE:
-                req_embedding = await self._get_cached_embedding(req_cap)
-
-                # Find best matching capability across all agents
-                for agent_id, caps in topology_capabilities.agent_capabilities.items():
-                    for topo_cap in caps:
-                        topo_embedding = await self._get_cached_embedding(topo_cap)
-                        similarity = self._cosine_similarity(req_embedding, topo_embedding)
-
-                        if similarity > best_score:
-                            best_score = similarity
-                            best_match = topo_cap
-                            best_agent = agent_id
-                            match_type = "embedding"
-
-            # Determine if match is sufficient
             is_sufficient = best_score >= CAN_DO_THRESHOLD
-
-            # Get capability type (defaults to KNOWLEDGE for backward compatibility)
             cap_type = capability_types.get(req_cap, CapabilityType.KNOWLEDGE)
 
             match = CapabilityMatch(
@@ -354,7 +267,7 @@ class CapabilityMatcher:
 
             logger.debug(
                 f"Capability match: '{req_cap}' [{cap_type.value}] -> '{best_match}' "
-                f"(score={best_score:.3f}, type={match_type}, sufficient={is_sufficient})"
+                f"(score={best_score:.3f}, sufficient={is_sufficient})"
             )
 
         return matches
