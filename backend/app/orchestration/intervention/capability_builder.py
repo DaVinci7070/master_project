@@ -671,6 +671,7 @@ class CapabilityBuilder:
                     capability=affected_capability,
                     binding_type="auto"
                 )
+                await self.db.commit()
                 return best_agent.id
 
         # Add capability to agent
