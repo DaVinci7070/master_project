@@ -230,6 +230,97 @@ async def get_recent(
     )
 
 
+class TrendPoint(BaseModel):
+    """Single point in a success rate trend."""
+    execution: int
+    value: float
+
+
+class SystemHealthMetrics(BaseModel):
+    """System health section of dashboard metrics."""
+    active_executions: int
+    error_rate_last_n: float
+    avg_latency_last_n: float
+    uptime_percentage: float
+
+
+class ImprovementTrends(BaseModel):
+    """Improvement trends section of dashboard metrics."""
+    ab_wins_last_n: int
+    prompts_evolved: int
+    skills_added: int
+    success_rate_trend: list[TrendPoint]
+
+
+class DashboardMetricsResponse(BaseModel):
+    """Combined dashboard metrics matching frontend DashboardMetrics type."""
+    system_health: SystemHealthMetrics
+    improvement_trends: ImprovementTrends
+
+
+@router.get("/metrics", response_model=DashboardMetricsResponse)
+async def get_dashboard_metrics(
+    last: int = Query(50, ge=1, le=1000, description="Number of recent executions to analyze"),
+    session: AsyncSession = Depends(get_db_session),
+) -> DashboardMetricsResponse:
+    """
+    Get combined dashboard metrics.
+
+    Returns system health and improvement trends in the format expected by the frontend.
+    """
+    log.info(f"Getting dashboard metrics: last={last}")
+
+    # Get recent executions for health metrics
+    stmt = (
+        select(ExecutionTelemetry)
+        .order_by(ExecutionTelemetry.started_at.desc())
+        .limit(last)
+    )
+    result = await session.execute(stmt)
+    executions = list(result.scalars().all())
+
+    total = len(executions)
+    successful = sum(1 for e in executions if e.outcome == "success")
+    failed = sum(1 for e in executions if e.outcome == "error")
+    active = sum(1 for e in executions if e.completed_at is None)
+
+    error_rate = (failed / total * 100) if total > 0 else 0.0
+    latencies = [e.latency_ms for e in executions if e.latency_ms is not None]
+    avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+
+    # Uptime: percentage of non-error executions
+    uptime = ((total - failed) / total * 100) if total > 0 else 100.0
+
+    # Success rate trend: rolling window over executions (oldest to newest)
+    trend_points = []
+    reversed_execs = list(reversed(executions))
+    window = max(5, total // 10) if total > 0 else 5
+    for i in range(len(reversed_execs)):
+        window_start = max(0, i - window + 1)
+        window_execs = reversed_execs[window_start:i + 1]
+        window_success = sum(1 for e in window_execs if e.outcome == "success")
+        rate = (window_success / len(window_execs) * 100)
+        trend_points.append(TrendPoint(execution=i + 1, value=round(rate, 1)))
+
+    # Improvement trends from existing data
+    trends = await get_trends(last_n=last, session=session)
+
+    return DashboardMetricsResponse(
+        system_health=SystemHealthMetrics(
+            active_executions=active,
+            error_rate_last_n=error_rate,
+            avg_latency_last_n=avg_latency,
+            uptime_percentage=uptime,
+        ),
+        improvement_trends=ImprovementTrends(
+            ab_wins_last_n=trends.ab_tests_successful,
+            prompts_evolved=trends.prompts_evolved,
+            skills_added=trends.skills_created,
+            success_rate_trend=trend_points,
+        ),
+    )
+
+
 @router.get("", response_model=DashboardResponse)
 async def get_dashboard(
     session: AsyncSession = Depends(get_db_session),
