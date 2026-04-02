@@ -25,7 +25,7 @@ from app.models.schemas.analysis_schemas import (
     ChallengeAnalysisRequest,
 )
 from app.orchestration.analysis.orchestrator import create_pre_execution_orchestrator
-from app.core.llm_client import create_llm_fn, create_embedding_fn
+from app.core.llm_client import create_llm_fn, create_embedding_fn, create_structured_llm_fn
 from app.models.schemas.intervention_schemas import (
     BuildPlan,
     BuildPlanItem,
@@ -310,10 +310,12 @@ async def analyze_challenge_direct(
     try:
         llm_fn = create_llm_fn()
         embedding_fn = create_embedding_fn()
+        structured_llm_fn = create_structured_llm_fn()
         orchestrator = await create_pre_execution_orchestrator(
             db=session,
             llm_fn=llm_fn,
-            embedding_fn=embedding_fn
+            embedding_fn=embedding_fn,
+            structured_llm_fn=structured_llm_fn,
         )
 
         # Build analysis request
@@ -899,10 +901,12 @@ async def analyze_challenge(
     try:
         llm_fn = create_llm_fn()
         embedding_fn = create_embedding_fn()
+        structured_llm_fn = create_structured_llm_fn()
         orchestrator = await create_pre_execution_orchestrator(
             db=session,
             llm_fn=llm_fn,
-            embedding_fn=embedding_fn
+            embedding_fn=embedding_fn,
+            structured_llm_fn=structured_llm_fn,
         )
 
         # Build analysis request from stored challenge
@@ -1341,7 +1345,7 @@ async def _run_capability_building(challenge_id: str) -> None:
     """
     from app.dependencies.dependencies import AsyncSessionLocal
     from app.orchestration.intervention.orchestrator import create_intervention_orchestrator
-    from app.core.llm_client import create_llm_fn, create_embedding_fn
+    from app.core.llm_client import create_llm_fn, create_embedding_fn, create_structured_llm_fn
 
     log.info(f"Starting capability building: challenge_id={challenge_id}")
 

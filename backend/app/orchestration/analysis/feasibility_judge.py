@@ -9,12 +9,12 @@ capability, the FeasibilityJudge asks the LLM: "Can this agent actually
 perform this action using its available tools?" If no tool exists, the
 capability is marked infeasible and routes to Developer Team for skill building.
 """
-import json
 import logging
 from typing import Callable, Awaitable, Optional
 
 from app.orchestration.analysis.models import (
-    AssessmentContext, CapabilityMatch, CapabilityType, FeasibilityResult
+    AssessmentContext, CapabilityMatch, CapabilityType, FeasibilityResult,
+    FeasibilityLLMResponse,
 )
 from app.orchestration.topology.loader import TopologyLoader
 
@@ -61,8 +61,10 @@ class FeasibilityJudge:
         self,
         llm_fn: Optional[Callable[[list[dict], dict], Awaitable[str]]] = None,
         topology_loader: Optional[TopologyLoader] = None,
+        structured_llm_fn: Optional[Callable] = None,
     ):
         self._llm_fn = llm_fn
+        self._structured_llm_fn = structured_llm_fn
         self.topology = topology_loader
 
     async def verify_execution_capabilities(
@@ -80,7 +82,7 @@ class FeasibilityJudge:
         Returns:
             List of FeasibilityResult for each checked capability
         """
-        if not self._llm_fn:
+        if not self._llm_fn and not self._structured_llm_fn:
             logger.warning("No LLM function for feasibility judge, skipping verification")
             return []
 
@@ -126,37 +128,43 @@ class FeasibilityJudge:
             skill_list=skill_list if skill_list else "No executable skills/tools bound to this agent.",
         )
 
+        messages = [
+            {
+                "role": "system",
+                "content": "You verify agent capabilities precisely.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+
         try:
-            response = await self._llm_fn(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You verify agent capabilities precisely. "
-                            "Output JSON only, no markdown."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                {"temperature": 0.1},
-            )
-
-            content = response.strip() if isinstance(response, str) else response
-            if isinstance(content, str) and content.startswith("```"):
-                lines = content.split("\n")
-                content = "\n".join(
-                    lines[1:-1] if lines[-1] == "```" else lines[1:]
+            if self._structured_llm_fn:
+                parsed = await self._structured_llm_fn(
+                    messages, FeasibilityLLMResponse, temperature=0.1,
                 )
-
-            parsed = json.loads(content)
-
-            return FeasibilityResult(
-                required_capability=match.required_capability,
-                matched_agent_id=agent_id,
-                feasible=parsed.get("feasible", False),
-                tool_name=parsed.get("tool_name"),
-                reason=parsed.get("reason", ""),
-            )
+                return FeasibilityResult(
+                    required_capability=match.required_capability,
+                    matched_agent_id=agent_id,
+                    feasible=parsed.feasible,
+                    tool_name=parsed.tool_name,
+                    reason=parsed.reason,
+                )
+            else:
+                response = await self._llm_fn(messages, {"temperature": 0.1})
+                import json
+                content = response.strip() if isinstance(response, str) else response
+                if isinstance(content, str) and content.startswith("```"):
+                    lines = content.split("\n")
+                    content = "\n".join(
+                        lines[1:-1] if lines[-1] == "```" else lines[1:]
+                    )
+                parsed = json.loads(content)
+                return FeasibilityResult(
+                    required_capability=match.required_capability,
+                    matched_agent_id=agent_id,
+                    feasible=parsed.get("feasible", False),
+                    tool_name=parsed.get("tool_name"),
+                    reason=parsed.get("reason", ""),
+                )
 
         except Exception as e:
             logger.error(f"Feasibility judge failed for '{match.required_capability}': {e}")

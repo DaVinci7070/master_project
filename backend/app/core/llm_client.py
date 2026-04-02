@@ -524,3 +524,22 @@ def create_llm_fn() -> Any:
 
     return llm_fn
 
+
+def create_structured_llm_fn() -> Any:
+    """
+    Create a structured LLM function that returns validated Pydantic models.
+
+    Uses Instructor via LLMClient.chat_structured() for schema-enforced responses.
+
+    Returns:
+        Async function(messages, response_model, **kwargs) -> BaseModel instance
+    """
+    async def structured_llm_fn(
+        messages: list[dict],
+        response_model: type,
+        **kwargs,
+    ):
+        return await default_client.chat_structured(messages, response_model, **kwargs)
+
+    return structured_llm_fn
+
