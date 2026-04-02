@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { fetchPrompt } from '@/lib/api'
 import type { Prompt } from '@/types'
 
 interface PromptCardProps {
@@ -11,7 +12,22 @@ interface PromptCardProps {
 }
 
 export function PromptCard({ prompt, onViewHistory }: PromptCardProps) {
-  const [contentOpen, setContentOpen] = useState(false)
+  const [fullContent, setFullContent] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function handleOpen(open: boolean) {
+    if (open && fullContent === null) {
+      setLoading(true)
+      try {
+        const full = await fetchPrompt(prompt.id)
+        setFullContent(full.content ?? '')
+      } catch {
+        setFullContent('Failed to load prompt content.')
+      } finally {
+        setLoading(false)
+      }
+    }
+  }
 
   return (
     <Card className={prompt.is_active ? '' : 'opacity-60'}>
@@ -45,16 +61,26 @@ export function PromptCard({ prompt, onViewHistory }: PromptCardProps) {
         )}
 
         {/* Content Preview */}
-        <Collapsible open={contentOpen} onOpenChange={setContentOpen}>
-          <CollapsibleTrigger className="text-sm text-indigo-600 hover:text-indigo-700">
-            {contentOpen ? 'Hide content' : 'View content'}
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2">
-            <pre className="text-xs bg-gray-100 p-3 rounded-lg whitespace-pre-wrap max-h-60 overflow-y-auto">
-              {prompt.content}
-            </pre>
-          </CollapsibleContent>
-        </Collapsible>
+        <Dialog onOpenChange={handleOpen}>
+          <DialogTrigger className="text-sm text-indigo-600 hover:text-indigo-700">
+            View content
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>{prompt.name}</DialogTitle>
+            </DialogHeader>
+            {loading ? (
+              <div className="flex items-center justify-center py-12 text-gray-500">
+                Loading...
+              </div>
+            ) : (
+              <pre className="text-sm bg-gray-100 p-4 rounded-lg whitespace-pre-wrap overflow-y-auto flex-1 max-h-[70vh]">
+                {fullContent}
+              </pre>
+            )}
+            <DialogFooter showCloseButton />
+          </DialogContent>
+        </Dialog>
 
         {/* Version History Link */}
         {prompt.parent_id && (
