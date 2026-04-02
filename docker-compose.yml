@@ -1,0 +1,153 @@
+# Lumari Backend - Docker Compose Configuration
+# Fulfills: INFRA-01 (local-only), INFRA-02 (LLM inference), INFRA-03 (Docker Compose)
+#
+# Usage:
+#   docker-compose up -d              # Start all services
+#   docker-compose logs -f api        # Follow API logs
+#   docker-compose down               # Stop all services
+#
+# Default LLM: Gemini API via LiteLLM
+# To switch providers, change LLM_MODEL and set appropriate API key in .env
+
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: lumari-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lumari}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lumari_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-lumari}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - lumari-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lumari} -d ${POSTGRES_DB:-lumari}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: lumari-qdrant
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    networks:
+      - lumari-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # FastAPI Backend Service
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: lumari-api
+    environment:
+      # Database
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-lumari}:${POSTGRES_PASSWORD:-lumari_dev}@postgres:5432/${POSTGRES_DB:-lumari}
+
+      # Qdrant
+      QDRANT_URL: http://qdrant:6333
+
+      # LLM Configuration (LiteLLM)
+      # Default: Gemini API
+      # See .env.example for all provider options
+      LLM_MODEL: ${LLM_MODEL:-gemini/gemini-2.0-flash}
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-120.0}
+
+      # API Keys (set in .env)
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+      # API Settings
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # Hot reload for development
+      - ./backend:/app
+    networks:
+      - lumari-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ============================================================================
+  # vLLM Local Inference (Uncomment to enable local LLM)
+  # ============================================================================
+  # Requires: NVIDIA GPU with sufficient VRAM (24GB+ recommended for 70B models)
+  # Usage:
+  #   1. Uncomment this service
+  #   2. Set LLM_MODEL and LLM_API_BASE in .env:
+  #      LLM_MODEL=hosted_vllm/google/gemma-2-9b-it
+  #      LLM_API_BASE=http://vllm:8000/v1
+  #   3. docker-compose up -d
+  #
+  # vllm:
+  #   image: vllm/vllm-openai:latest
+  #   container_name: lumari-vllm
+  #   environment:
+  #     HF_TOKEN: ${HF_TOKEN:-}
+  #   ports:
+  #     - "${VLLM_PORT:-8010}:8000"
+  #   volumes:
+  #     - ~/.cache/huggingface:/root/.cache/huggingface
+  #   networks:
+  #     - lumari-network
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   # Default model - change as needed (Gemma 2 9B for testing, larger models for production)
+  #   command: >
+  #     --model google/gemma-2-9b-it
+  #     --host 0.0.0.0
+  #     --port 8000
+  #     --dtype auto
+  #     --max-model-len 8192
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 120s
+
+volumes:
+  postgres_data:
+    driver: local
+  qdrant_storage:
+    driver: local
+
+networks:
+  lumari-network:
+    driver: bridge

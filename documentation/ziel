@@ -1,0 +1,23 @@
+Enabling Secure Structural Self-Evolution in Multi-Agent Systems via Retrieval-Augmented Blueprint Generation
+1. Projektbeschreibung & Aufbau
+Diese Arbeit entwickelt und evaluiert ein neuartiges Framework für "Structural Self-Evolution" in Multi-Agenten-Systemen (MAS). Anders als bestehende Ansätze (z. B. AgentOrchestra, 2026), die lediglich neue Werkzeuge generieren, befähigt dieses System einen zentralen Architect Agent, zur Laufzeit dynamisch neue Agenten-Rollen und Team-Strukturen zu erschaffen, um komplexe, unvorhergesehene Aufgaben zu lösen.
+Der Aufbau besteht aus drei Kernkomponenten:
+1. The Architect: Ein LLM-basierter Planer, der Aufgaben analysiert und entscheidet, ob existierende Agenten ausreichen oder ob neue spezialisierte Sub-Agenten (Instanzen) generiert werden müssen.
+2. Evolutionäres Gedächtnis (Qdrant): Eine Vektordatenbank, die erfolgreiche Agenten-Blueprints (System Prompts + Tool-Konfigurationen) speichert. Dies ermöglicht Retrieval-Augmented Evolution: Das System lernt aus vergangenen Erfolgen, anstatt jede Rolle neu zu erfinden.
+3. The Gatekeeper (Security Layer): Ein Validierungs-Agent, der generierte Agenten und Tools vor der Instanziierung prüft. Er nutzt semantische Analyse (Code-AST vs. Beschreibung), um "halluzinierte" oder unsichere Fähigkeiten zu blockieren.
+2. Ziele der Arbeit
+• Überwindung statischer Topologien: Nachweis, dass ein System, das seine Team-Struktur dynamisch anpasst (Anzahl und Art der Agenten), komplexere Probleme lösen kann als starre MAS.
+• Sichere Autonomie: Implementierung eines Gatekeeper-Mechanismus, der das Risiko von "Lying Tools" (Code-Beschreibung-Inkonsistenz) bei autogenerierten Agenten minimiert.
+• Effizienzsteigerung durch Wiederverwendung: Zeigen, dass das Speichern und Abrufen von Agenten-Blueprints (aus Qdrant) die Kosten und Latenzzeit im Vergleich zur ständigen Neugenerierung über die Zeit reduziert.
+3. Forschungsfragen (RQs)
+1. RQ1 (Effektivität): Führt Structural Self-Evolution (dynamische Erstellung neuer Agenten-Rollen) zu einer höheren Lösungsrate (Task Completion Rate) bei komplexen Benchmarks (z. B. GAIA) im Vergleich zu statischen MAS-Architekturen?
+2. RQ2 (Effizienz): Wie entwickelt sich die Blueprint Reuse Rate über die Zeit, und korreliert eine höhere Wiederverwendung mit reduzierten Token-Kosten und geringerer Latenz?
+3. RQ3 (Sicherheit): Kann ein semantischer Gatekeeper-Mechanismus (Vergleich von Beschreibung und Code-AST) gefährliche Diskrepanzen in autogenerierten Agenten-Tools zuverlässig erkennen und verhindern?
+4. Was wird untersucht? (Methodik & Evaluierung)
+Das System wird implementiert (basierend auf Frameworks wie LangGraph/A2A und Qdrant) und mittels einer Ablation Study evaluiert:
+• Untersuchungsgegenstand: Die Leistung des Systems auf dem GAIA Benchmark (General AI Assistants), der Aufgaben erfordert, die Planung, Tool-Nutzung und Multimodalität verbinden.
+• Vergleichsgruppen:
+    ◦ Baseline: Ein statisches Team (fest: Researcher, Coder, Reviewer).
+    ◦ Ablation A: Dynamische Evolution ohne Gedächtnis (erfindet das Rad immer neu).
+    ◦ Full System: Dynamische Evolution mit Qdrant-Gedächtnis und Gatekeeper.
+• Messgrößen: Erfolgsrate (Pass@1), Token-Verbrauch, Anzahl der Sicherheits-Interventionen (blockierte unsichere Blueprints) und Wiederverwendungsrate von Agenten-Profilen.

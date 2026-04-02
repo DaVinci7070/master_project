@@ -1,0 +1,948 @@
+"""Capability builder using Developer Team and Skill Team for gap closure."""
+import logging
+import os
+import re
+import uuid
+from typing import Optional, Callable, Awaitable
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update
+
+from app.models.schemas.analysis_schemas import CapabilityGap, GapType, GapSeverity
+from app.models.schemas.intervention_schemas import BuildResult
+from app.models.schemas.developer_team_schemas import DevelopmentTask
+from app.models.schemas.skill_build_schemas import SkillTeamConfig
+from app.models.sql.versioned_models import Skill, Prompt, Agent
+from app.models.sql.skill_build_models import SkillBinding
+from app.orchestration.intervention.retry_strategy import ApproachSelector
+from app.services.developer_team_orchestrator import DeveloperTeamOrchestrator
+
+# Lazy import to avoid circular dependencies
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.services.skill_team_orchestrator import SkillTeamOrchestrator
+    from app.services.autonomous_skill_builder import AutonomousSkillBuilder
+
+logger = logging.getLogger(__name__)
+
+# Minimum affinity score to bind skill to agent
+MIN_AGENT_AFFINITY_SCORE = 0.3
+
+
+class CapabilityBuilder:
+    """
+    Builds missing capabilities using Developer Team or Skill Team.
+
+    Per CONTEXT decisions:
+    - Developer Team can build all types: skills, prompts, and new agents
+    - Skill Team provides higher quality through team-based development
+    - Mark injected capabilities as "provisional" for post-execution review
+    - Include previous failed attempts so teams try different approaches
+
+    Routes to appropriate builder based on gap type and configuration.
+    """
+
+    def __init__(
+        self,
+        developer_team: DeveloperTeamOrchestrator,
+        db: AsyncSession,
+        embedding_fn: Optional[Callable[[str], Awaitable[list[float]]]] = None,
+        skill_team_config: Optional[SkillTeamConfig] = None,
+        use_skill_team: Optional[bool] = None,
+    ):
+        """
+        Initialize capability builder.
+
+        Args:
+            developer_team: DeveloperTeamOrchestrator for code generation
+            db: Database session for persisting built capabilities
+            embedding_fn: Function to generate embeddings for agent affinity scoring
+            skill_team_config: Configuration for skill team orchestrator
+            use_skill_team: Whether to use skill team for MISSING_SKILL gaps
+        """
+        self.developer_team = developer_team
+        self.db = db
+        self._get_embedding = embedding_fn
+
+        # Skill Team configuration
+        self._skill_team_config = skill_team_config or SkillTeamConfig()
+        self._use_skill_team = use_skill_team if use_skill_team is not None else (
+            os.getenv("SKILL_TEAM_ENABLED", "true").lower() == "true"
+        )
+        self._skill_team: Optional["SkillTeamOrchestrator"] = None
+        self._autonomous_builder: Optional["AutonomousSkillBuilder"] = None
+
+    async def build_for_gap(
+        self,
+        gap: CapabilityGap,
+        challenge_text: str,
+        attempt_number: int,
+        previous_failures: list[str]
+    ) -> BuildResult:
+        """
+        Build capability to fill a gap.
+
+        Per CONTEXT:
+        - Build highest-severity gaps first (Critical -> Important -> Minor)
+        - Vary approach across retry attempts
+
+        Args:
+            gap: The capability gap to fill
+            challenge_text: Original challenge text for context
+            attempt_number: Current attempt number (1-5)
+            previous_failures: List of failure reasons from prior attempts
+
+        Returns:
+            BuildResult with success status, artifact_id, or failure reason
+        """
+        approach = ApproachSelector.select(attempt_number)
+
+        logger.info(
+            f"Building capability: gap_type={gap.gap_type.value}, "
+            f"severity={gap.severity.value}, "
+            f"attempt={attempt_number}, approach={approach.name}"
+        )
+
+        # Route to appropriate builder based on gap type
+        if gap.gap_type == GapType.MISSING_SKILL:
+            return await self._build_skill(
+                gap, challenge_text, approach.name, approach.constraints, previous_failures
+            )
+        elif gap.gap_type == GapType.WEAK_PROMPT:
+            return await self._build_prompt(
+                gap, challenge_text, approach.name, approach.constraints, previous_failures
+            )
+        elif gap.gap_type == GapType.MISSING_AGENT:
+            return await self._build_agent(
+                gap, challenge_text, approach.name, approach.constraints, previous_failures
+            )
+        elif gap.gap_type in (GapType.TOPOLOGY_ISSUE, GapType.SCHEMA_MISMATCH):
+            # These may require agent modifications
+            return await self._build_agent(
+                gap, challenge_text, approach.name, approach.constraints, previous_failures
+            )
+        else:
+            return BuildResult(
+                success=False,
+                artifact_id=None,
+                artifact_type="skill",
+                failure_reason=f"Unknown gap type: {gap.gap_type.value}",
+                approach_used=approach.name,
+                duration_seconds=0.0
+            )
+
+    def _get_skill_team(self) -> "SkillTeamOrchestrator":
+        """Get or create the Skill Team Orchestrator."""
+        if self._skill_team is None:
+            from app.services.skill_team_orchestrator import SkillTeamOrchestrator
+            self._skill_team = SkillTeamOrchestrator(
+                db=self.db,
+                config=self._skill_team_config,
+            )
+        return self._skill_team
+
+    def _get_autonomous_builder(self) -> "AutonomousSkillBuilder":
+        """Get or create the Autonomous Skill Builder."""
+        if self._autonomous_builder is None:
+            from app.services.autonomous_skill_builder import AutonomousSkillBuilder
+            self._autonomous_builder = AutonomousSkillBuilder(db=self.db)
+        return self._autonomous_builder
+
+    async def _build_skill(
+        self,
+        gap: CapabilityGap,
+        challenge_text: str,
+        approach: str,
+        constraints: list[str],
+        previous_failures: list[str]
+    ) -> BuildResult:
+        """
+        Build a new skill using Skill Team or Autonomous Skill Builder.
+
+        Both paths test generated code in a sandbox before persisting.
+        Skills are only saved to DB after passing sandbox tests.
+
+        If SKILL_TEAM_ENABLED=true, uses the team-based orchestrator.
+        Otherwise, uses the Autonomous Skill Builder with iterative
+        sandbox testing (up to 10 attempts).
+        """
+        import time
+        start_time = time.time()
+
+        # Try Skill Team first if enabled
+        if self._use_skill_team:
+            logger.info(f"Using Skill Team for capability: {gap.affected_capability}")
+            return await self._build_skill_with_team(gap, start_time)
+
+        # Use Autonomous Skill Builder (with sandbox testing + retry loop)
+        logger.info(f"Using Autonomous Skill Builder for capability: {gap.affected_capability}")
+
+        try:
+            builder = self._get_autonomous_builder()
+            result = await builder.build_skill(
+                capability=gap.affected_capability,
+                hints={
+                    "description": gap.description,
+                    "challenge_context": challenge_text,
+                },
+            )
+
+            duration = time.time() - start_time
+
+            if result.success and result.skill_id:
+                logger.info(
+                    f"Built skill: id={result.skill_id[:8]}..., "
+                    f"iterations={result.iterations}, duration={duration:.1f}s"
+                )
+
+                # Bind skill to an appropriate agent
+                expanded_agent_id = await self._expand_agent_capabilities(
+                    skill_id=result.skill_id,
+                    affected_capability=gap.affected_capability
+                )
+
+                return BuildResult(
+                    success=True,
+                    artifact_id=result.skill_id,
+                    artifact_type="skill",
+                    failure_reason=None,
+                    approach_used=approach,
+                    duration_seconds=duration,
+                    bound_to_agent_id=expanded_agent_id,
+                )
+            else:
+                failure = result.final_error or "Skill build failed after all iterations"
+                logger.warning(
+                    f"Skill build failed after {result.iterations} iterations: {failure}"
+                )
+                return BuildResult(
+                    success=False,
+                    artifact_id=None,
+                    artifact_type="skill",
+                    failure_reason=failure,
+                    approach_used=approach,
+                    duration_seconds=duration,
+                )
+
+        except Exception as e:
+            logger.error(f"Skill build exception: {e}", exc_info=True)
+            return BuildResult(
+                success=False,
+                artifact_id=None,
+                artifact_type="skill",
+                failure_reason=str(e),
+                approach_used=approach,
+                duration_seconds=time.time() - start_time,
+            )
+
+    async def _build_skill_with_team(
+        self,
+        gap: CapabilityGap,
+        start_time: float,
+    ) -> BuildResult:
+        """
+        Build a skill using the Skill Team Orchestrator.
+
+        This provides higher quality through team-based development:
+        - Research phase finds packages and examples
+        - Architect designs the API and tests
+        - Implementer writes the code
+        - Reviewer checks quality and security
+        """
+        import time
+
+        try:
+            skill_team = self._get_skill_team()
+
+            result = await skill_team.develop_skill(
+                capability=gap.affected_capability,
+            )
+
+            duration = time.time() - start_time
+
+            if result.success:
+                # Create skill binding
+                expanded_agent_id = await self._expand_agent_capabilities(
+                    skill_id=result.skill_id,
+                    affected_capability=gap.affected_capability
+                )
+
+                logger.info(
+                    f"Skill Team built skill: {result.skill_name}, "
+                    f"duration={duration:.1f}s, bound_to={expanded_agent_id}"
+                )
+
+                return BuildResult(
+                    success=True,
+                    artifact_id=result.skill_id,
+                    artifact_type="skill",
+                    failure_reason=None,
+                    approach_used="skill_team",
+                    duration_seconds=duration,
+                    bound_to_agent_id=expanded_agent_id,
+                )
+            else:
+                logger.warning(
+                    f"Skill Team failed: phase={result.failure_phase}, "
+                    f"reason={result.failure_reason}"
+                )
+                return BuildResult(
+                    success=False,
+                    artifact_id=None,
+                    artifact_type="skill",
+                    failure_reason=result.failure_reason,
+                    approach_used="skill_team",
+                    duration_seconds=duration,
+                )
+
+        except Exception as e:
+            logger.error(f"Skill Team exception: {e}", exc_info=True)
+            return BuildResult(
+                success=False,
+                artifact_id=None,
+                artifact_type="skill",
+                failure_reason=str(e),
+                approach_used="skill_team",
+                duration_seconds=time.time() - start_time,
+            )
+
+    async def _build_prompt(
+        self,
+        gap: CapabilityGap,
+        challenge_text: str,
+        approach: str,
+        constraints: list[str],
+        previous_failures: list[str]
+    ) -> BuildResult:
+        """
+        Build or improve a prompt.
+
+        For weak prompts, this creates a new version rather than
+        modifying the existing one (versioned approach).
+        """
+        import time
+        start_time = time.time()
+
+        prompt_name = f"prompt_{gap.affected_capability.replace(' ', '_').lower()}"
+
+        task_description = self._build_task_description(
+            gap=gap,
+            challenge_text=challenge_text,
+            approach=approach,
+            previous_failures=previous_failures,
+            artifact_type="prompt"
+        )
+
+        task = DevelopmentTask(
+            task_id=str(uuid.uuid4()),
+            description=task_description,
+            files_involved=[f"prompts/generated/{prompt_name}.txt"],
+            context_files=[],
+            constraints=[
+                f"Build using {approach} approach",
+                "Follow prompt engineering best practices",
+                "Include clear instructions and examples",
+                *constraints
+            ]
+        )
+
+        try:
+            result = await self.developer_team.execute_complex_task(task)
+
+            if result.success and result.results:
+                spawn_result = result.results[0]
+                prompt_content = spawn_result.generated_code or ""
+
+                # Create new prompt version
+                prompt = Prompt(
+                    id=str(uuid.uuid4()),
+                    name=prompt_name,
+                    content=prompt_content,
+                    prompt_metadata={
+                        "built_by": "intervention_orchestrator",
+                        "gap_type": gap.gap_type.value,
+                        "approach": approach,
+                        "provisional": True
+                    },
+                    is_active=True
+                )
+                self.db.add(prompt)
+                await self.db.commit()
+                await self.db.refresh(prompt)
+
+                duration = time.time() - start_time
+                logger.info(f"Built prompt: id={prompt.id[:8]}..., name={prompt_name}")
+
+                return BuildResult(
+                    success=True,
+                    artifact_id=prompt.id,
+                    artifact_type="prompt",
+                    failure_reason=None,
+                    approach_used=approach,
+                    duration_seconds=duration
+                )
+            else:
+                failure = result.error_summary or "Unknown prompt build failure"
+                return BuildResult(
+                    success=False,
+                    artifact_id=None,
+                    artifact_type="prompt",
+                    failure_reason=failure,
+                    approach_used=approach,
+                    duration_seconds=time.time() - start_time
+                )
+
+        except Exception as e:
+            logger.error(f"Prompt build exception: {e}", exc_info=True)
+            return BuildResult(
+                success=False,
+                artifact_id=None,
+                artifact_type="prompt",
+                failure_reason=str(e),
+                approach_used=approach,
+                duration_seconds=time.time() - start_time
+            )
+
+    async def _build_agent(
+        self,
+        gap: CapabilityGap,
+        challenge_text: str,
+        approach: str,
+        constraints: list[str],
+        previous_failures: list[str]
+    ) -> BuildResult:
+        """
+        Build a new agent for missing agent or topology gaps.
+
+        Creates agent definition with prompt and registers in database.
+        """
+        import time
+        start_time = time.time()
+
+        agent_name = f"agent_{gap.affected_capability.replace(' ', '_').lower()}"
+
+        task_description = self._build_task_description(
+            gap=gap,
+            challenge_text=challenge_text,
+            approach=approach,
+            previous_failures=previous_failures,
+            artifact_type="agent"
+        )
+
+        # For agents, we need both agent config and prompt
+        task = DevelopmentTask(
+            task_id=str(uuid.uuid4()),
+            description=task_description,
+            files_involved=[
+                f"agents/generated/{agent_name}_config.yaml",
+                f"agents/generated/{agent_name}_prompt.txt"
+            ],
+            context_files=[],
+            constraints=[
+                f"Build using {approach} approach",
+                "Define clear capabilities and dependencies",
+                "Include IO schema for artifact validation",
+                *constraints
+            ]
+        )
+
+        try:
+            result = await self.developer_team.execute_complex_task(task)
+
+            if result.success and result.results:
+                # First, create prompt
+                prompt_result = None
+                agent_config = None
+
+                for spawn_result in result.results:
+                    if spawn_result.file_path.endswith("_prompt.txt"):
+                        prompt_content = spawn_result.generated_code or ""
+                        prompt = Prompt(
+                            id=str(uuid.uuid4()),
+                            name=f"{agent_name}_prompt",
+                            content=prompt_content,
+                            prompt_metadata={
+                                "built_by": "intervention_orchestrator",
+                                "for_agent": agent_name,
+                                "provisional": True
+                            },
+                            is_active=True
+                        )
+                        self.db.add(prompt)
+                        await self.db.flush()
+                        prompt_result = prompt
+                    elif spawn_result.file_path.endswith("_config.yaml"):
+                        agent_config = spawn_result.generated_code
+
+                if prompt_result and agent_config:
+                    # Create agent
+                    agent = Agent(
+                        id=str(uuid.uuid4()),
+                        name=agent_name,
+                        prompt_id=prompt_result.id,
+                        capabilities=[gap.affected_capability],
+                        dependencies=[],
+                        io_schema={
+                            "input": {"type": "object"},
+                            "output": {"type": "object"}
+                        },
+                        source="system_generated",
+                        agent_metadata={
+                            "built_by": "intervention_orchestrator",
+                            "gap_type": gap.gap_type.value,
+                            "approach": approach,
+                            "provisional": True,
+                            "config": agent_config
+                        },
+                        is_active=True
+                    )
+                    self.db.add(agent)
+                    await self.db.commit()
+                    await self.db.refresh(agent)
+
+                    # Log topology change
+                    from app.services.topology_service import TopologyService
+                    topology_service = TopologyService(self.db)
+                    await topology_service.log_agent_created(
+                        agent=agent,
+                        source="system",
+                        triggered_by=f"gap:{gap.gap_type.value}",
+                        details={
+                            "gap_severity": gap.severity.value,
+                            "affected_capability": gap.affected_capability,
+                            "approach": approach,
+                        }
+                    )
+                    await self.db.commit()
+
+                    duration = time.time() - start_time
+                    logger.info(f"Built agent: id={agent.id[:8]}..., name={agent_name}")
+
+                    return BuildResult(
+                        success=True,
+                        artifact_id=agent.id,
+                        artifact_type="agent",
+                        failure_reason=None,
+                        approach_used=approach,
+                        duration_seconds=duration
+                    )
+
+            failure = result.error_summary or "Failed to generate agent components"
+            return BuildResult(
+                success=False,
+                artifact_id=None,
+                artifact_type="agent",
+                failure_reason=failure,
+                approach_used=approach,
+                duration_seconds=time.time() - start_time
+            )
+
+        except Exception as e:
+            logger.error(f"Agent build exception: {e}", exc_info=True)
+            return BuildResult(
+                success=False,
+                artifact_id=None,
+                artifact_type="agent",
+                failure_reason=str(e),
+                approach_used=approach,
+                duration_seconds=time.time() - start_time
+            )
+
+    async def _find_existing_skill(self, name: str) -> Optional[Skill]:
+        """Find existing skill by name for deduplication."""
+        result = await self.db.execute(
+            select(Skill).where(Skill.name == name)
+        )
+        return result.scalar_one_or_none()
+
+    def _normalize_capability(self, name: str) -> str:
+        """Normalize capability name for matching."""
+        normalized = name.lower().strip()
+        normalized = re.sub(r'\s*\([^)]*\)', '', normalized)
+        normalized = normalized.replace('_', ' ').replace('-', ' ')
+        return ' '.join(normalized.split())
+
+    async def _find_best_agent_for_capability(
+        self,
+        affected_capability: str
+    ) -> tuple[Optional[Agent], float]:
+        """
+        Find the agent whose capabilities best match the new capability.
+
+        Uses keyword overlap scoring (no embeddings needed for basic matching).
+        Returns (agent, score) tuple.
+        """
+        result = await self.db.execute(
+            select(Agent).where(Agent.is_active == True)
+        )
+        agents = result.scalars().all()
+
+        if not agents:
+            return None, 0.0
+
+        cap_normalized = self._normalize_capability(affected_capability)
+        cap_words = set(cap_normalized.split())
+
+        best_agent = None
+        best_score = 0.0
+
+        for agent in agents:
+            agent_caps = agent.capabilities or []
+            if not agent_caps:
+                continue
+
+            # Calculate word overlap with agent's existing capabilities
+            agent_score = 0.0
+            for agent_cap in agent_caps:
+                agent_cap_normalized = self._normalize_capability(agent_cap)
+                agent_words = set(agent_cap_normalized.split())
+
+                # Jaccard-like similarity
+                if cap_words and agent_words:
+                    overlap = len(cap_words & agent_words)
+                    union = len(cap_words | agent_words)
+                    similarity = overlap / union if union > 0 else 0
+
+                    # Boost for partial containment
+                    if cap_normalized in agent_cap_normalized or agent_cap_normalized in cap_normalized:
+                        similarity = max(similarity, 0.7)
+
+                    agent_score = max(agent_score, similarity)
+
+            # Also consider agent name relevance
+            agent_name_words = set(self._normalize_capability(agent.name).split())
+            name_overlap = len(cap_words & agent_name_words)
+            if name_overlap > 0:
+                agent_score = max(agent_score, 0.4 + (name_overlap * 0.1))
+
+            if agent_score > best_score:
+                best_score = agent_score
+                best_agent = agent
+
+        logger.debug(
+            f"Best agent for '{affected_capability}': "
+            f"{best_agent.name if best_agent else 'None'} (score={best_score:.2f})"
+        )
+
+        return best_agent, best_score
+
+    async def _expand_agent_capabilities(
+        self,
+        skill_id: str,
+        affected_capability: str
+    ) -> Optional[str]:
+        """
+        Expand a suitable agent's capabilities to include the new capability.
+
+        This ensures the skill gets bound to an agent during topology reload.
+        If no suitable agent exists (Option 1 fails), creates a new specialist agent (Option 4).
+
+        Args:
+            skill_id: ID of the built skill
+            affected_capability: The capability the skill provides
+
+        Returns:
+            Agent ID if expanded or created, None only on error
+        """
+        # Find best matching agent
+        best_agent, score = await self._find_best_agent_for_capability(affected_capability)
+
+        if not best_agent or score < MIN_AGENT_AFFINITY_SCORE:
+            logger.info(
+                f"No suitable agent for capability '{affected_capability}' "
+                f"(best score: {score:.2f}) - creating new specialist agent (Option 4)"
+            )
+            # Option 4: Create new agent for this capability
+            return await self._create_specialist_agent(skill_id, affected_capability)
+
+        # Check if capability already exists
+        current_caps = best_agent.capabilities or []
+        cap_normalized = self._normalize_capability(affected_capability)
+
+        for existing_cap in current_caps:
+            if self._normalize_capability(existing_cap) == cap_normalized:
+                logger.info(
+                    f"Agent '{best_agent.name}' already has capability '{affected_capability}'"
+                )
+                # Still create binding if not exists
+                await self._bind_skill_to_agent(
+                    skill_id=skill_id,
+                    agent_id=best_agent.id,
+                    capability=affected_capability,
+                    binding_type="auto"
+                )
+                return best_agent.id
+
+        # Add capability to agent
+        new_caps = current_caps + [affected_capability]
+        await self.db.execute(
+            update(Agent)
+            .where(Agent.id == best_agent.id)
+            .values(capabilities=new_caps)
+        )
+
+        # Create skill binding
+        await self._bind_skill_to_agent(
+            skill_id=skill_id,
+            agent_id=best_agent.id,
+            capability=affected_capability,
+            binding_type="auto"
+        )
+
+        await self.db.commit()
+
+        logger.info(
+            f"EXPANDED agent '{best_agent.name}' with capability '{affected_capability}' "
+            f"(affinity score: {score:.2f}, skill: {skill_id[:8]}...)"
+        )
+
+        return best_agent.id
+
+    async def _bind_skill_to_agent(
+        self,
+        skill_id: str,
+        agent_id: str,
+        capability: str,
+        binding_type: str = "auto"
+    ) -> Optional[str]:
+        """
+        Create an explicit SkillBinding record linking skill to agent.
+
+        This solves the "orphaned skills" problem by ensuring every skill
+        has a clear binding to an agent that can execute it.
+
+        Args:
+            skill_id: ID of the skill to bind
+            agent_id: ID of the agent to bind to
+            capability: The capability this binding provides
+            binding_type: Type of binding (auto, manual, provisional)
+
+        Returns:
+            SkillBinding ID if created, None if already exists or error
+        """
+        try:
+            # Check if binding already exists
+            existing = await self.db.execute(
+                select(SkillBinding).where(
+                    SkillBinding.skill_id == skill_id,
+                    SkillBinding.agent_id == agent_id,
+                    SkillBinding.is_active == True
+                )
+            )
+            if existing.scalar_one_or_none():
+                logger.debug(f"Skill binding already exists: skill={skill_id[:8]}, agent={agent_id[:8]}")
+                return None
+
+            # Create new binding
+            binding = SkillBinding(
+                skill_id=skill_id,
+                agent_id=agent_id,
+                capability=capability,
+                binding_type=binding_type,
+                priority=0,
+                is_active=True
+            )
+            self.db.add(binding)
+            await self.db.flush()
+
+            logger.info(
+                f"Created skill binding: skill={skill_id[:8]}..., "
+                f"agent={agent_id[:8]}..., capability='{capability}'"
+            )
+
+            return binding.id
+
+        except Exception as e:
+            logger.error(f"Failed to create skill binding: {e}")
+            return None
+
+    async def _create_specialist_agent(
+        self,
+        skill_id: str,
+        affected_capability: str
+    ) -> Optional[str]:
+        """
+        Create a new specialist agent for a capability when no suitable agent exists.
+
+        Option 4: Full autonomy - system creates new agents as needed.
+
+        Args:
+            skill_id: ID of the skill that triggered agent creation
+            affected_capability: The capability this agent will provide
+
+        Returns:
+            New agent ID, or None on failure
+        """
+        try:
+            # Generate agent name from capability
+            agent_name = affected_capability.replace(" ", "_").lower()
+            agent_name = f"specialist_{agent_name}"
+
+            # Check if agent with this name already exists
+            existing = await self.db.execute(
+                select(Agent).where(Agent.name == agent_name)
+            )
+            if existing.scalar_one_or_none():
+                logger.info(f"Specialist agent '{agent_name}' already exists")
+                # Return existing agent's ID after adding capability if needed
+                existing_agent = (await self.db.execute(
+                    select(Agent).where(Agent.name == agent_name)
+                )).scalar_one()
+                return existing_agent.id
+
+            # Create minimal prompt for the specialist
+            prompt_content = f"""You are a specialist agent for: {affected_capability}
+
+Your role:
+- Execute tasks related to {affected_capability}
+- Process inputs and produce structured outputs
+- Report any issues or limitations clearly
+
+When processing a task:
+1. Analyze the input requirements
+2. Apply your specialized knowledge for {affected_capability}
+3. Return results in the expected format
+4. Include confidence levels when appropriate
+
+Always be precise and thorough in your {affected_capability} work."""
+
+            # Create prompt
+            prompt = Prompt(
+                id=str(uuid.uuid4()),
+                name=f"{agent_name}_prompt",
+                content=prompt_content,
+                prompt_metadata={
+                    "built_by": "capability_builder",
+                    "for_capability": affected_capability,
+                    "provisional": True,
+                    "auto_generated": True
+                },
+                is_active=True
+            )
+            self.db.add(prompt)
+            await self.db.flush()
+
+            # Create specialist agent
+            agent = Agent(
+                id=str(uuid.uuid4()),
+                name=agent_name,
+                prompt_id=prompt.id,
+                capabilities=[affected_capability],
+                dependencies=[],  # Specialist has no dependencies
+                io_schema={
+                    "input": {"type": "object", "description": f"Input for {affected_capability}"},
+                    "output": {"type": "object", "description": f"Output from {affected_capability}"}
+                },
+                source="system_generated",
+                agent_metadata={
+                    "built_by": "capability_builder",
+                    "source_skill_id": skill_id,
+                    "provisional": True,
+                    "auto_generated": True,
+                    "created_for_capability": affected_capability
+                },
+                is_active=True
+            )
+            self.db.add(agent)
+            await self.db.commit()
+            await self.db.refresh(agent)
+
+            # Log topology change
+            try:
+                from app.services.topology_service import TopologyService
+                topology_service = TopologyService(self.db)
+                await topology_service.log_agent_created(
+                    agent=agent,
+                    source="system",
+                    triggered_by=f"skill:{skill_id[:8]}",
+                    details={
+                        "reason": "no_suitable_agent_for_capability",
+                        "affected_capability": affected_capability,
+                        "auto_generated": True
+                    }
+                )
+                await self.db.commit()
+            except Exception as log_err:
+                logger.warning(f"Failed to log agent creation: {log_err}")
+
+            # Create skill binding for the new agent
+            await self._bind_skill_to_agent(
+                skill_id=skill_id,
+                agent_id=agent.id,
+                capability=affected_capability,
+                binding_type="auto"
+            )
+            await self.db.commit()
+
+            logger.info(
+                f"CREATED specialist agent '{agent_name}' for capability '{affected_capability}' "
+                f"(id: {agent.id[:8]}..., skill: {skill_id[:8]}...)"
+            )
+
+            return agent.id
+
+        except Exception as e:
+            logger.error(f"Failed to create specialist agent: {e}", exc_info=True)
+            return None
+
+    def _build_task_description(
+        self,
+        gap: CapabilityGap,
+        challenge_text: str,
+        approach: str,
+        previous_failures: list[str],
+        artifact_type: str
+    ) -> str:
+        """Build comprehensive task description for Developer Team."""
+        desc = f"""Build a Python {artifact_type} to provide capability: {gap.affected_capability}
+
+**Gap Context:**
+Type: {gap.gap_type.value}
+Severity: {gap.severity.value}
+Description: {gap.description}
+
+**Challenge Requiring This:**
+{challenge_text[:500]}{"..." if len(challenge_text) > 500 else ""}
+
+**Build Approach:** {approach}
+
+"""
+        if previous_failures:
+            desc += "**Previous Failures (try different approach):**\n"
+            for i, failure in enumerate(previous_failures, 1):
+                desc += f"{i}. {failure}\n"
+
+        return desc
+
+    async def deactivate_provisional(self, artifact_type: str, artifact_id: str) -> bool:
+        """
+        Deactivate a provisional capability after max attempts.
+
+        Per RESEARCH pitfall 4: Provisional capabilities not rolled back.
+        """
+        try:
+            if artifact_type == "skill":
+                from sqlalchemy import update
+                await self.db.execute(
+                    update(Skill)
+                    .where(Skill.id == artifact_id)
+                    .values(is_active=False)
+                )
+            elif artifact_type == "prompt":
+                await self.db.execute(
+                    update(Prompt)
+                    .where(Prompt.id == artifact_id)
+                    .values(is_active=False)
+                )
+            elif artifact_type == "agent":
+                await self.db.execute(
+                    update(Agent)
+                    .where(Agent.id == artifact_id)
+                    .values(is_active=False)
+                )
+            await self.db.commit()
+            logger.info(f"Deactivated provisional {artifact_type}: {artifact_id[:8]}...")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to deactivate {artifact_type} {artifact_id}: {e}")
+            return False

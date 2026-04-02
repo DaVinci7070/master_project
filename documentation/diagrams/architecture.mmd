@@ -1,0 +1,70 @@
+graph TB
+    subgraph Client["Client Layer"]
+        User[User/Frontend]
+    end
+
+    subgraph Backend["Backend Layer (FastAPI)"]
+        API[API Endpoints<br/>/api/v1/*]
+        Service[Service Layer<br/>Business Logic]
+        Repo[Repository Layer<br/>Data Access]
+        Adapter[Adapter Layer<br/>External Services]
+        Middleware[Middleware<br/>Auth, Logging, CORS]
+    end
+
+    subgraph Agents["Agent System (A2A Protocol)"]
+        direction LR
+        Orch[Orchestrator Agent<br/>Workflow Coordinator]
+        Template[Template Agent<br/>Schema Selection]
+        Question[Question Agent<br/>Validation & HITL]
+        RAG[RAG Agent<br/>Context Retrieval]
+        Summarizer[Summarizer Agent<br/>Report Generation]
+        Guard[Guard Agent<br/>Hallucination Check]
+        vLLM[vLLM Adapter<br/>OpenAI Interface]
+    end
+
+    subgraph Data["Data Layer"]
+        PG[(PostgreSQL<br/>Structured Data)]
+        QD[(Qdrant<br/>Vector Search)]
+    end
+
+    subgraph External["External Services"]
+        Auth[Supabase Auth<br/>User Management]
+        LLM[Gemini 2.0 Flash<br/>Google AI]
+        MCP[MCP Server<br/>Qdrant Interface]
+    end
+
+    User -->|HTTP/REST| API
+    API --> Middleware
+    Middleware --> Service
+    Service --> Repo
+    Service --> Adapter
+    API -->|JWT Verify| Auth
+
+    Repo -->|SQL Queries| PG
+    Repo -->|Vector Ops| QD
+
+    Adapter -->|JSON-RPC/HTTP| Orch
+
+    Orch -.->|Orchestrates| Template
+    Orch -.->|Orchestrates| Question
+    Orch -.->|Orchestrates| RAG
+    Orch -.->|Orchestrates| Summarizer
+    Orch -.->|Orchestrates| Guard
+
+    Template -->|API Calls| vLLM
+    Question -->|API Calls| vLLM
+    Summarizer -->|API Calls| vLLM
+    Guard -->|API Calls| vLLM
+
+    vLLM -->|Forward| LLM
+
+    RAG -->|MCP Protocol| MCP
+    MCP -->|Search| QD
+
+    style Orch fill:#4a90e2
+    style Template fill:#7ed321
+    style Question fill:#f5a623
+    style RAG fill:#bd10e0
+    style Summarizer fill:#50e3c2
+    style Guard fill:#ff6b6b
+    style vLLM fill:#9013fe

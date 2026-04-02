@@ -1,0 +1,67 @@
+{
+    "name": "Standard Bautagesbericht",
+    "description": "Detaillierter Standardbericht für Baustellen und Handwerk.",
+    "structure": {
+        "sections": [
+            {
+                "heading": "Allgemeine Angaben",
+                "fields": [
+                    {
+                        "key": "location",
+                        "label": "Einsatzort",
+                        "type": "text",
+                        "description": "Adresse oder Bezeichnung der Baustelle"
+                    },
+                    {
+                        "key": "date_time",
+                        "label": "Datum / Zeit",
+                        "type": "text",
+                        "description": "Datum und Uhrzeit des Einsatzes"
+                    },
+                    {
+                        "key": "weather",
+                        "label": "Wetter",
+                        "type": "text",
+                        "description": "Wetterverhältnisse, Temperatur"
+                    }
+                ]
+            },
+            {
+                "heading": "Personal & Einsatz",
+                "fields": [
+                    {
+                        "key": "staff",
+                        "label": "Anwesendes Personal",
+                        "type": "list",
+                        "description": "Liste der Mitarbeiter und Firmen"
+                    },
+                    {
+                        "key": "work_hours",
+                        "label": "Arbeitszeiten",
+                        "type": "text"
+                    }
+                ]
+            },
+            {
+                "heading": "Ausgeführte Arbeiten",
+                "content_type": "text_block",
+                "description": "Detaillierte Beschreibung der Tätigkeiten, Baufortschritt."
+            },
+            {
+                "heading": "Besondere Vorkommnisse",
+                "fields": [
+                    {
+                        "key": "delays",
+                        "label": "Behinderungen",
+                        "type": "text"
+                    },
+                    {
+                        "key": "incidents",
+                        "label": "Vorfälle",
+                        "type": "text"
+                    }
+                ]
+            }
+        ]
+    }
+}
