@@ -26,6 +26,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class ArtifactWriteError(Exception):
+    """Raised when artifact validation/write fails."""
+    def __init__(self, agent_id: str, artifact_type: str, detail: str):
+        self.agent_id = agent_id
+        self.artifact_type = artifact_type
+        super().__init__(f"Artifact write failed for {agent_id}/{artifact_type}: {detail}")
+
+
 class GenericAgentExecutor:
     """
     Executes any agent from database definition.
@@ -127,7 +135,7 @@ class GenericAgentExecutor:
             )
         except Exception as e:
             logger.error(f"Agent {agent.name} execution failed: {e}")
-            output = {"error": str(e), "success": False}
+            output = {"error": str(e), "success": False, "failure_type": "llm_error"}
 
         # 4.5 Graceful degradation: if agent says it can't handle the input, skip gracefully
         output_str = json.dumps(output) if isinstance(output, dict) else str(output)
@@ -146,10 +154,15 @@ class GenericAgentExecutor:
                 "skipped": True,
                 "reason": f"Agent {agent.name} cannot process this input format",
                 "success": False,
+                "failure_type": "agent_refusal",
             }
 
         # 5. Write to artifacts (session-scoped)
-        await self._write_artifacts(agent, output, execution_id)
+        try:
+            await self._write_artifacts(agent, output, execution_id)
+        except ArtifactWriteError as e:
+            logger.error(f"Agent {agent.name} artifact write failed: {e}")
+            output = {"error": str(e), "success": False, "failure_type": "artifact_validation"}
 
         # 6. Write to shared memory (long-term)
         if self.shared_memory:
@@ -255,7 +268,8 @@ class GenericAgentExecutor:
         return {
             "result": "Max tool calls reached without final answer",
             "success": False,
-            "tool_calls": tool_results_log
+            "failure_type": "tool_error",
+            "tool_calls": tool_results_log,
         }
 
     async def _execute_tool(
@@ -603,7 +617,8 @@ class GenericAgentExecutor:
             try:
                 await self.artifact_pool.write(artifact)
             except ValueError as e:
-                logger.warning(f"Artifact validation failed: {e}")
+                logger.error(f"Artifact validation failed: {e}")
+                raise ArtifactWriteError(agent.agent_id, artifact_type, str(e))
 
     async def _write_to_shared_memory(
         self,

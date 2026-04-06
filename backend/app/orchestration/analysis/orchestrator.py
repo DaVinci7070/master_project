@@ -44,7 +44,6 @@ class PreExecutionOrchestrator:
         self,
         topology_loader: TopologyLoader,
         shared_memory: SharedMemoryService,
-        llm_fn: Optional[Callable[[list[dict], dict], Awaitable[str]]] = None,
         embedding_fn: Optional[Callable[[str], Awaitable[list[float]]]] = None,
         structured_llm_fn: Optional[Callable] = None,
     ):
@@ -54,30 +53,25 @@ class PreExecutionOrchestrator:
         Args:
             topology_loader: For accessing topology capabilities
             shared_memory: For persistence and past success retrieval
-            llm_fn: Async function(messages, kwargs) -> response_content
             embedding_fn: Async function(text) -> embedding vector
             structured_llm_fn: Async function(messages, response_model, **kwargs) -> BaseModel
         """
         self.topology = topology_loader
         self.shared_memory = shared_memory
-        self._llm_fn = llm_fn
         self._embedding_fn = embedding_fn
 
         # Initialize sub-services
         self.challenge_analyzer = ChallengeAnalyzer(
             topology_loader=topology_loader,
             shared_memory=shared_memory,
-            llm_fn=llm_fn,
             embedding_fn=embedding_fn,
             structured_llm_fn=structured_llm_fn,
         )
         self.feasibility_judge = FeasibilityJudge(
-            llm_fn=llm_fn,
             topology_loader=topology_loader,
             structured_llm_fn=structured_llm_fn,
         )
         self.gap_detector = GapDetector(
-            llm_fn=llm_fn,
             feasibility_judge=self.feasibility_judge,
             structured_llm_fn=structured_llm_fn,
         )
@@ -293,7 +287,6 @@ class PreExecutionOrchestrator:
 
 async def create_pre_execution_orchestrator(
     db: AsyncSession,
-    llm_fn: Optional[Callable[[list[dict], dict], Awaitable[str]]] = None,
     embedding_fn: Optional[Callable[[str], Awaitable[list[float]]]] = None,
     structured_llm_fn: Optional[Callable] = None,
 ) -> PreExecutionOrchestrator:
@@ -328,7 +321,6 @@ async def create_pre_execution_orchestrator(
     return PreExecutionOrchestrator(
         topology_loader=topology_loader,
         shared_memory=shared_memory,
-        llm_fn=llm_fn,
         embedding_fn=embedding_fn,
         structured_llm_fn=structured_llm_fn,
     )

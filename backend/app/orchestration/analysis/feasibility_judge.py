@@ -59,11 +59,9 @@ class FeasibilityJudge:
 
     def __init__(
         self,
-        llm_fn: Optional[Callable[[list[dict], dict], Awaitable[str]]] = None,
         topology_loader: Optional[TopologyLoader] = None,
         structured_llm_fn: Optional[Callable] = None,
     ):
-        self._llm_fn = llm_fn
         self._structured_llm_fn = structured_llm_fn
         self.topology = topology_loader
 
@@ -82,7 +80,7 @@ class FeasibilityJudge:
         Returns:
             List of FeasibilityResult for each checked capability
         """
-        if not self._llm_fn and not self._structured_llm_fn:
+        if not self._structured_llm_fn:
             logger.warning("No LLM function for feasibility judge, skipping verification")
             return []
 
@@ -137,34 +135,16 @@ class FeasibilityJudge:
         ]
 
         try:
-            if self._structured_llm_fn:
-                parsed = await self._structured_llm_fn(
-                    messages, FeasibilityLLMResponse, temperature=0.1,
-                )
-                return FeasibilityResult(
-                    required_capability=match.required_capability,
-                    matched_agent_id=agent_id,
-                    feasible=parsed.feasible,
-                    tool_name=parsed.tool_name,
-                    reason=parsed.reason,
-                )
-            else:
-                response = await self._llm_fn(messages, {"temperature": 0.1})
-                import json
-                content = response.strip() if isinstance(response, str) else response
-                if isinstance(content, str) and content.startswith("```"):
-                    lines = content.split("\n")
-                    content = "\n".join(
-                        lines[1:-1] if lines[-1] == "```" else lines[1:]
-                    )
-                parsed = json.loads(content)
-                return FeasibilityResult(
-                    required_capability=match.required_capability,
-                    matched_agent_id=agent_id,
-                    feasible=parsed.get("feasible", False),
-                    tool_name=parsed.get("tool_name"),
-                    reason=parsed.get("reason", ""),
-                )
+            parsed = await self._structured_llm_fn(
+                messages, FeasibilityLLMResponse, temperature=0.1,
+            )
+            return FeasibilityResult(
+                required_capability=match.required_capability,
+                matched_agent_id=agent_id,
+                feasible=parsed.feasible,
+                tool_name=parsed.tool_name,
+                reason=parsed.reason,
+            )
 
         except Exception as e:
             logger.error(f"Feasibility judge failed for '{match.required_capability}': {e}")

@@ -308,12 +308,10 @@ async def analyze_challenge_direct(
 
     # Perform capability assessment using PreExecutionOrchestrator
     try:
-        llm_fn = create_llm_fn()
         embedding_fn = create_embedding_fn()
         structured_llm_fn = create_structured_llm_fn()
         orchestrator = await create_pre_execution_orchestrator(
             db=session,
-            llm_fn=llm_fn,
             embedding_fn=embedding_fn,
             structured_llm_fn=structured_llm_fn,
         )
@@ -942,12 +940,10 @@ async def analyze_challenge(
 
     # Perform capability assessment using PreExecutionOrchestrator
     try:
-        llm_fn = create_llm_fn()
         embedding_fn = create_embedding_fn()
         structured_llm_fn = create_structured_llm_fn()
         orchestrator = await create_pre_execution_orchestrator(
             db=session,
-            llm_fn=llm_fn,
             embedding_fn=embedding_fn,
             structured_llm_fn=structured_llm_fn,
         )
@@ -1411,12 +1407,14 @@ async def _run_capability_building(challenge_id: str) -> None:
             # Create LLM and embedding functions for capability matching
             llm_fn = create_llm_fn()
             embedding_fn = create_embedding_fn()
+            structured_llm_fn = create_structured_llm_fn()
 
             # Create intervention orchestrator with LLM and embedding support
             orchestrator = await create_intervention_orchestrator(
                 db=session,
                 llm_fn=llm_fn,
                 embedding_fn=embedding_fn,
+                structured_llm_fn=structured_llm_fn,
             )
 
             # Process the challenge

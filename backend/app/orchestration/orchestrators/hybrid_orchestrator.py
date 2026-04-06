@@ -1,7 +1,10 @@
 """Hybrid Orchestrator combining Shared Memory + Artifact Passing."""
 import asyncio
+import json
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
@@ -18,6 +21,29 @@ from app.models.sql.agent_event_models import AgentExecutionEvent
 from app.models.sql.execution_models import Execution
 
 logger = logging.getLogger(__name__)
+
+
+class FailureType(str, Enum):
+    """Classification of agent execution failures for retry routing."""
+    LLM_TRANSIENT = "llm_transient"
+    LLM_REFUSAL = "llm_refusal"
+    ARTIFACT_VALIDATION = "artifact_validation"
+    TOOL_ERROR = "tool_error"
+    BAD_INPUT = "bad_input"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class AgentFailureRecord:
+    """Tracks a single agent failure for retry decisions."""
+    agent_id: str
+    agent_name: str
+    wave: int
+    failure_type: FailureType
+    error_message: str
+    retries_attempted: int = 0
+    resolved: bool = False
+    produces_artifacts: list[str] = field(default_factory=list)
 
 # Type alias for session factory
 SessionFactory = Callable[[], AsyncSession]
@@ -70,6 +96,12 @@ class HybridOrchestrator:
         self._current_wave: int = 0
         self._project_id: str = "default"
         self._challenge_id: Optional[str] = None
+
+        # Self-healing retry state
+        self._failure_tracker: dict[str, AgentFailureRecord] = {}
+        self._max_retries_per_agent = 2
+        self._prompt_improver: Optional[Any] = None
+        self._capability_builder: Optional[Any] = None
 
     async def initialize(self) -> None:
         """Initialize orchestrator components."""
@@ -129,6 +161,7 @@ class HybridOrchestrator:
         self._execution_id = execution_id or str(uuid4())
         self._project_id = project_id
         self._challenge_id = challenge_id
+        self._failure_tracker = {}
         start_time = datetime.now(timezone.utc)
 
         logger.info(f"Starting execution: {self._execution_id}")
@@ -187,29 +220,54 @@ class HybridOrchestrator:
 
             results[f"wave_{wave_idx + 1}"] = wave_results
 
+            # Self-healing: repair and retry failed agents before next wave
+            retry_results = await self._repair_and_retry(
+                topology, input_data, wave_number=wave_idx + 1,
+            )
+            if retry_results:
+                results[f"wave_{wave_idx + 1}_retries"] = retry_results
+                for name, r in retry_results.items():
+                    if isinstance(r, dict) and r.get("success"):
+                        wave_results[name] = r
+
         # 7. Clear session artifacts
         await self._artifact_pool.clear()
 
         end_time = datetime.now(timezone.utc)
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
+        # Derive success from actual agent results
+        unresolved = [f for f in self._failure_tracker.values() if not f.resolved]
+        overall_success = len(unresolved) == 0
+
         result = {
-            "success": True,
+            "success": overall_success,
             "execution_id": self._execution_id,
             "results": results,
             "duration_ms": duration_ms,
             "waves_executed": len(waves),
-            "agents_executed": sum(len(w) for w in waves)
+            "agents_executed": sum(len(w) for w in waves),
+            "failed_agents": [
+                {
+                    "agent_id": f.agent_id,
+                    "agent_name": f.agent_name,
+                    "failure_type": f.failure_type.value,
+                    "error": f.error_message,
+                    "retries_attempted": f.retries_attempted,
+                }
+                for f in unresolved
+            ],
         }
 
-        # Update execution record with completion
+        # Update execution record with honest status
         await self._update_execution_record(
-            status="completed",
+            status="completed" if overall_success else "failed",
             results=results,
+            error="; ".join(f.error_message for f in unresolved)[:500] if unresolved else None,
             waves_executed=len(waves),
             agents_executed=sum(len(w) for w in waves),
             duration_ms=duration_ms,
-            completed_at=end_time
+            completed_at=end_time,
         )
 
         return result
@@ -224,11 +282,32 @@ class HybridOrchestrator:
         """Execute all agents in a wave (parallel) with event emission."""
         self._current_wave = wave_number
         tasks = []
+        wave_results: dict[str, Any] = {}
 
         for agent_id in agent_ids:
             agent = topology.get_agent(agent_id)
             if not agent:
                 logger.warning(f"Agent {agent_id} not found in topology")
+                continue
+
+            # Check if dependencies are satisfied before dispatching
+            skip_reason = self._should_skip_agent(agent)
+            if skip_reason:
+                logger.warning(f"Skipping {agent.name}: {skip_reason}")
+                await self._emit_agent_event(
+                    event_type="agent_error", agent_id=agent_id,
+                    agent_name=agent.name, wave=wave_number,
+                    error=f"Skipped: {skip_reason}",
+                )
+                wave_results[agent.name] = {
+                    "success": False, "skipped": True,
+                    "error": skip_reason, "agent_id": agent_id,
+                }
+                self._failure_tracker[agent_id] = AgentFailureRecord(
+                    agent_id=agent_id, agent_name=agent.name, wave=wave_number,
+                    failure_type=FailureType.BAD_INPUT, error_message=skip_reason,
+                    produces_artifacts=list(agent.produces_artifacts),
+                )
                 continue
 
             # Emit agent_start event
@@ -240,28 +319,42 @@ class HybridOrchestrator:
             )
 
             task = self._execute_agent_with_events(agent, input_data, wave_number)
-            # Store agent name along with task for result mapping
             tasks.append((agent.name, agent_id, task))
 
         # Execute in parallel
-        wave_results: dict[str, Any] = {}
         if tasks:
             agent_tasks = [t for _, _, t in tasks]
             results = await asyncio.gather(*agent_tasks, return_exceptions=True)
 
             for (agent_name, agent_id, _), result in zip(tasks, results):
                 if isinstance(result, Exception):
-                    wave_results[agent_name] = {
+                    result_dict = {
                         "success": False,
                         "error": str(result),
-                        "agent_id": agent_id
+                        "failure_type": "llm_error",
+                        "agent_id": agent_id,
                     }
+                    wave_results[agent_name] = result_dict
                 else:
-                    # Add agent metadata to result
                     if isinstance(result, dict):
                         result["agent_id"] = agent_id
                         result["agent_name"] = agent_name
                     wave_results[agent_name] = result
+                    result_dict = result if isinstance(result, dict) else {}
+
+                # Track failures
+                is_failure = (
+                    isinstance(result, Exception)
+                    or (isinstance(result, dict) and not result.get("success", True))
+                )
+                if is_failure:
+                    agent_node = topology.get_agent(agent_id)
+                    self._failure_tracker[agent_id] = AgentFailureRecord(
+                        agent_id=agent_id, agent_name=agent_name, wave=wave_number,
+                        failure_type=self._classify_failure(result_dict),
+                        error_message=str(result_dict.get("error", result)),
+                        produces_artifacts=list(agent_node.produces_artifacts) if agent_node else [],
+                    )
 
         return wave_results
 
@@ -317,6 +410,174 @@ class HybridOrchestrator:
             input_data=input_data,
             project_id=self._project_id
         )
+
+    # --- Self-healing retry infrastructure ---
+
+    def _classify_failure(self, result: dict) -> FailureType:
+        """Classify agent failure for retry routing."""
+        ft = result.get("failure_type", "")
+        error = str(result.get("error", "")).lower()
+
+        if ft == "artifact_validation":
+            return FailureType.ARTIFACT_VALIDATION
+        if ft == "agent_refusal" or result.get("skipped"):
+            return FailureType.LLM_REFUSAL
+        if ft == "tool_error":
+            return FailureType.TOOL_ERROR
+        if ft == "llm_error":
+            if any(kw in error for kw in ("timeout", "rate_limit", "rate limit", "503", "429")):
+                return FailureType.LLM_TRANSIENT
+        return FailureType.UNKNOWN
+
+    def _should_skip_agent(self, agent: AgentNode) -> Optional[str]:
+        """Check if agent should be skipped due to failed dependencies."""
+        for consumed_type in agent.consumes_artifacts:
+            for record in self._failure_tracker.values():
+                if consumed_type in record.produces_artifacts and not record.resolved:
+                    return (
+                        f"Artifact '{consumed_type}' unavailable: "
+                        f"agent '{record.agent_name}' failed"
+                    )
+        return None
+
+    def _get_prompt_improver(self) -> Any:
+        """Lazy-init AgentPromptImprover for retry repairs."""
+        if not self._prompt_improver:
+            from app.services.agent_prompt_improver import AgentPromptImprover
+
+            async def llm_wrapper(messages: list[dict]) -> str:
+                response = await self.llm_client.chat(messages)
+                return response.content
+
+            self._prompt_improver = AgentPromptImprover(self.db, llm_fn=llm_wrapper)
+        return self._prompt_improver
+
+    def _get_capability_builder(self) -> Any:
+        """Lazy-init CapabilityBuilder for skill repair."""
+        if not self._capability_builder:
+            from app.orchestration.intervention.builder import CapabilityBuilder
+            from app.services.developer_team_orchestrator import DeveloperTeamOrchestrator
+            from app.services.agent_spawner_service import AgentSpawnerService
+            from app.services.runtime_agent_registry import RuntimeAgentRegistry
+
+            registry = RuntimeAgentRegistry(max_concurrent_agents=5)
+            spawner = AgentSpawnerService(registry, self.llm_client)
+            developer_team = DeveloperTeamOrchestrator(
+                spawner=spawner, llm_client=self.llm_client, registry=registry,
+            )
+            self._capability_builder = CapabilityBuilder(developer_team, self.db)
+        return self._capability_builder
+
+    async def _repair_and_retry(
+        self,
+        topology: Topology,
+        input_data: Optional[dict],
+        wave_number: int,
+    ) -> dict[str, Any]:
+        """Attempt to repair and retry failed agents from a wave."""
+        retryable = {
+            aid: rec for aid, rec in self._failure_tracker.items()
+            if rec.wave == wave_number
+            and not rec.resolved
+            and rec.failure_type != FailureType.BAD_INPUT
+            and rec.retries_attempted < self._max_retries_per_agent
+            # UNKNOWN gets only 1 retry
+            and not (rec.failure_type == FailureType.UNKNOWN and rec.retries_attempted >= 1)
+        }
+
+        if not retryable:
+            return {}
+
+        logger.info(
+            f"Wave {wave_number} self-healing: {len(retryable)} agents to retry: "
+            f"{[r.agent_name for r in retryable.values()]}"
+        )
+
+        retry_results: dict[str, Any] = {}
+
+        for agent_id, record in retryable.items():
+            agent_node = topology.get_agent(agent_id)
+            if not agent_node:
+                continue
+
+            record.retries_attempted += 1
+            repair_type = "none"
+
+            # Apply repair strategy based on failure type
+            try:
+                if record.failure_type in (FailureType.LLM_REFUSAL, FailureType.ARTIFACT_VALIDATION):
+                    repair_type = "prompt_improvement"
+                    improver = self._get_prompt_improver()
+                    capability = agent_node.capabilities[0] if agent_node.capabilities else agent_node.name
+                    build_result = await improver.improve(
+                        affected_capability=capability,
+                        gap_description=record.error_message,
+                        challenge_context=json.dumps(input_data or {})[:500],
+                    )
+                    if build_result.success:
+                        logger.info(f"Prompt improved for {record.agent_name}: {build_result.artifact_id}")
+                    else:
+                        logger.warning(f"Prompt improvement failed for {record.agent_name}: {build_result.failure_reason}")
+
+                elif record.failure_type == FailureType.TOOL_ERROR:
+                    repair_type = "skill_build"
+                    from app.models.schemas.analysis_schemas import CapabilityGap, GapType, GapSeverity
+                    gap = CapabilityGap(
+                        gap_type=GapType.MISSING_SKILL,
+                        severity=GapSeverity.CRITICAL,
+                        description=record.error_message[:100],
+                        affected_capability=agent_node.capabilities[0] if agent_node.capabilities else agent_node.name,
+                    )
+                    builder = self._get_capability_builder()
+                    build_result = await builder.build_for_gap(
+                        gap=gap,
+                        challenge_text=json.dumps(input_data or {})[:500],
+                        attempt_number=record.retries_attempted,
+                        previous_failures=[record.error_message],
+                    )
+                    if build_result.success:
+                        logger.info(f"Skill built for {record.agent_name}: {build_result.artifact_id}")
+                        await self.topology_loader.reload()
+                    else:
+                        logger.warning(f"Skill build failed for {record.agent_name}: {build_result.failure_reason}")
+
+                elif record.failure_type == FailureType.LLM_TRANSIENT:
+                    repair_type = "simple_retry"
+
+                else:
+                    repair_type = "simple_retry"
+
+            except Exception as e:
+                logger.error(f"Repair failed for {record.agent_name}: {e}")
+
+            # Retry the agent
+            await self._emit_agent_event(
+                event_type="agent_retry", agent_id=agent_id,
+                agent_name=record.agent_name, wave=wave_number,
+                data={"attempt": record.retries_attempted, "repair": repair_type},
+            )
+
+            try:
+                result = await self._execute_agent_with_events(agent_node, input_data, wave_number)
+
+                if isinstance(result, dict) and result.get("success"):
+                    record.resolved = True
+                    logger.info(f"Retry succeeded for {record.agent_name} (repair: {repair_type})")
+                else:
+                    # Update failure record for potential next retry
+                    result_dict = result if isinstance(result, dict) else {"error": str(result)}
+                    record.failure_type = self._classify_failure(result_dict)
+                    record.error_message = str(result_dict.get("error", result))
+                    logger.warning(f"Retry failed for {record.agent_name}: {record.error_message[:100]}")
+
+                retry_results[record.agent_name] = result
+
+            except Exception as e:
+                logger.error(f"Retry execution failed for {record.agent_name}: {e}")
+                record.error_message = str(e)
+                retry_results[record.agent_name] = {"success": False, "error": str(e)}
+
+        return retry_results
 
     async def _get_prompt(self, prompt_id: Optional[str]) -> Optional[str]:
         """Get prompt content from database. Uses lock to prevent concurrent session access."""
