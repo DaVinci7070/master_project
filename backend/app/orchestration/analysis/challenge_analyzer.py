@@ -1,6 +1,6 @@
 """Challenge analyzer for pre-execution capability assessment."""
 import logging
-from typing import Callable, Awaitable, Optional, Any
+from typing import Callable, Awaitable, Optional
 
 from app.orchestration.topology.loader import TopologyLoader
 from app.orchestration.shared_memory.service import SharedMemoryService
@@ -51,7 +51,6 @@ class ChallengeAnalyzer:
         self,
         topology_loader: TopologyLoader,
         shared_memory: SharedMemoryService,
-        llm_fn: Optional[Callable[[list[dict], dict], Awaitable[str]]] = None,
         embedding_fn: Optional[Callable[[str], Awaitable[list[float]]]] = None,
         structured_llm_fn: Optional[Callable] = None,
     ):
@@ -61,13 +60,11 @@ class ChallengeAnalyzer:
         Args:
             topology_loader: For accessing current topology capabilities
             shared_memory: For retrieving similar past challenges
-            llm_fn: Async function(messages, kwargs) -> response_content
             embedding_fn: Async function(text) -> embedding vector
             structured_llm_fn: Async function(messages, response_model, **kwargs) -> BaseModel
         """
         self.topology = topology_loader
         self.shared_memory = shared_memory
-        self._llm_fn = llm_fn
         self._structured_llm_fn = structured_llm_fn
         self._embedding_fn = embedding_fn
 
@@ -157,7 +154,7 @@ class ChallengeAnalyzer:
             (capability_names, capability_types) where capability_types maps
             action string to CapabilityType (KNOWLEDGE or EXECUTION).
         """
-        if not self._llm_fn and not self._structured_llm_fn:
+        if not self._structured_llm_fn:
             logger.warning("No LLM function configured, using fallback capability extraction")
             return self._fallback_capability_extraction(challenge_text)
 
@@ -174,38 +171,16 @@ class ChallengeAnalyzer:
             capability_names = []
             capability_types = {}
 
-            if self._structured_llm_fn:
-                result = await self._structured_llm_fn(
-                    messages, CapabilityExtractionResponse, temperature=0.2,
+            result = await self._structured_llm_fn(
+                messages, CapabilityExtractionResponse, temperature=0.2,
+            )
+            for cap in result.capabilities:
+                capability_names.append(cap.action)
+                cap_type = (
+                    CapabilityType.EXECUTION if cap.type == "execution"
+                    else CapabilityType.KNOWLEDGE
                 )
-                for cap in result.capabilities:
-                    capability_names.append(cap.action)
-                    cap_type = (
-                        CapabilityType.EXECUTION if cap.type == "execution"
-                        else CapabilityType.KNOWLEDGE
-                    )
-                    capability_types[cap.action] = cap_type
-            else:
-                import json
-                response = await self._llm_fn(messages, {"temperature": 0.2})
-                content = response.strip() if isinstance(response, str) else response
-                if isinstance(content, str) and content.startswith("```"):
-                    lines = content.split("\n")
-                    content = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-                parsed = json.loads(content)
-                for cap in parsed.get("capabilities", []):
-                    if isinstance(cap, dict):
-                        action = cap.get("action", "")
-                        cap_type_str = cap.get("type", "knowledge")
-                        cap_type = (
-                            CapabilityType.EXECUTION if cap_type_str == "execution"
-                            else CapabilityType.KNOWLEDGE
-                        )
-                        capability_names.append(action)
-                        capability_types[action] = cap_type
-                    elif isinstance(cap, str):
-                        capability_names.append(cap)
-                        capability_types[cap] = CapabilityType.KNOWLEDGE
+                capability_types[cap.action] = cap_type
 
             logger.info(
                 f"LLM extracted {len(capability_names)} capabilities: "

@@ -539,6 +539,7 @@ async def create_intervention_orchestrator(
     db: AsyncSession,
     llm_fn: Optional[Callable[[list[dict], dict], Awaitable[str]]] = None,
     embedding_fn: Optional[Callable[[str], Awaitable[list[float]]]] = None,
+    structured_llm_fn: Optional[Callable] = None,
     notify_fn: Optional[Callable[[dict], Awaitable[None]]] = None
 ) -> InterventionOrchestrator:
     """
@@ -604,8 +605,8 @@ async def create_intervention_orchestrator(
     pre_execution = PreExecutionOrchestrator(
         topology_loader=topology_loader,
         shared_memory=shared_memory,
-        llm_fn=llm_fn,
-        embedding_fn=embedding_fn
+        embedding_fn=embedding_fn,
+        structured_llm_fn=structured_llm_fn,
     )
 
     # Create Intervention components

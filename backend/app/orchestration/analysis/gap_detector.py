@@ -65,7 +65,6 @@ class GapDetector:
 
     def __init__(
         self,
-        llm_fn: Optional[Callable[[list[dict], dict], Awaitable[str]]] = None,
         feasibility_judge: Optional["FeasibilityJudge"] = None,
         structured_llm_fn: Optional[Callable] = None,
     ):
@@ -73,11 +72,9 @@ class GapDetector:
         Initialize gap detector.
 
         Args:
-            llm_fn: Async function(messages, kwargs) -> response_content
             feasibility_judge: Optional judge that verifies execution capabilities
             structured_llm_fn: Async function(messages, response_model, **kwargs) -> BaseModel
         """
-        self._llm_fn = llm_fn
         self._structured_llm_fn = structured_llm_fn
         self._feasibility_judge = feasibility_judge
 
@@ -182,8 +179,12 @@ class GapDetector:
             return False
 
         for match in context.capability_matches:
-            # Apply confidence boost from similar successes
-            boosted_score = min(match.similarity_score + context.confidence_boost, 1.0)
+            # Apply confidence boost from similar successes (capped at 30% relative increase
+            # to prevent weak matches from being promoted to CAN_DO)
+            boosted_score = min(
+                match.similarity_score + context.confidence_boost,
+                match.similarity_score * 1.3,
+            )
             if boosted_score < CAN_DO_THRESHOLD:
                 return False
 
@@ -229,7 +230,7 @@ class GapDetector:
         - Whether "close but not quite" matches might work
         - Subtle topology or schema issues
         """
-        if not self._llm_fn and not self._structured_llm_fn:
+        if not self._structured_llm_fn:
             logger.warning("No LLM function, using rule-based gap identification")
             return self._rule_based_gap_identification(context)
 
@@ -271,42 +272,10 @@ class GapDetector:
         ]
 
         try:
-            if self._structured_llm_fn:
-                result = await self._structured_llm_fn(
-                    messages, GapDetectionResponse, temperature=0.2,
-                )
-                gaps = result.gaps
-            else:
-                import json
-                gap_format = '''Respond with JSON only, no markdown:
-{
-  "gaps": [
-    {
-      "gap_type": "missing_skill|weak_prompt|topology_issue|missing_agent|schema_mismatch",
-      "severity": "critical|important|minor",
-      "description": "Brief description",
-      "affected_capability": "capability name"
-    }
-  ]
-}'''
-                response = await self._llm_fn(
-                    [messages[0], {"role": "user", "content": prompt + "\n\n" + gap_format}],
-                    {"temperature": 0.2},
-                )
-                content = response.strip() if isinstance(response, str) else response
-                if isinstance(content, str) and content.startswith("```"):
-                    lines = content.split("\n")
-                    content = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-                parsed = json.loads(content)
-                gaps = [
-                    CapabilityGap(
-                        gap_type=GapType(g["gap_type"]),
-                        severity=GapSeverity(g["severity"]),
-                        description=g["description"],
-                        affected_capability=g["affected_capability"]
-                    )
-                    for g in parsed.get("gaps", [])
-                ]
+            result = await self._structured_llm_fn(
+                messages, GapDetectionResponse, temperature=0.2,
+            )
+            gaps = result.gaps
 
             # Sort by severity: critical first, then important, then minor
             severity_order = {GapSeverity.CRITICAL: 0, GapSeverity.IMPORTANT: 1, GapSeverity.MINOR: 2}
