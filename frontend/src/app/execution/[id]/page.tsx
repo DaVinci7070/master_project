@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import {
   ExecutionTimeline,
@@ -38,6 +38,8 @@ export default function ExecutionDetailPage() {
 
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [showErrorModal, setShowErrorModal] = useState(false)
+  const [logsOpen, setLogsOpen] = useState(false)
+  const logsRef = useRef<HTMLDivElement>(null)
   const [executionError, setExecutionError] = useState<string | null>(null)
   const [isComplete, setIsComplete] = useState(false)
   const [startTime, setStartTime] = useState<string | null>(null)
@@ -95,15 +97,38 @@ export default function ExecutionDetailPage() {
                     const isError = ad.error !== undefined
 
                     // Extract human-readable result text
+                    // Agent data has `result` (from backend) or `response` field
                     let resultText = ''
-                    if (ad.final_report && typeof ad.final_report === 'string') {
-                      resultText = ad.final_report
-                    } else if (ad.result && typeof ad.result === 'string') {
-                      resultText = ad.result
-                    } else if (ad.summary && typeof ad.summary === 'string') {
-                      resultText = ad.summary
-                    } else if (ad.report && typeof ad.report === 'string') {
-                      resultText = ad.report
+                    const raw = (ad.result ?? ad.response) as Record<string, unknown> | string | undefined
+                    // If raw is a JSON string, try to parse it
+                    let resp = raw
+                    if (typeof raw === 'string') {
+                      try {
+                        const parsed2 = JSON.parse(raw)
+                        if (parsed2 && typeof parsed2 === 'object') {
+                          resp = parsed2 as Record<string, unknown>
+                        }
+                      } catch {
+                        // Not JSON, use as-is
+                      }
+                    }
+                    if (typeof resp === 'string') {
+                      resultText = resp
+                    } else if (resp && typeof resp === 'object') {
+                      const r = resp as Record<string, unknown>
+                      // Look inside response object for known report fields
+                      if (typeof r.final_report === 'string') {
+                        resultText = r.final_report
+                      } else if (typeof r.result === 'string') {
+                        resultText = r.result
+                      } else if (typeof r.summary === 'string') {
+                        resultText = r.summary
+                      } else if (typeof r.report === 'string') {
+                        resultText = r.report
+                      } else {
+                        // Fallback: show JSON of response object
+                        resultText = JSON.stringify(r, null, 2)
+                      }
                     }
 
                     parsed.push({
@@ -166,7 +191,7 @@ export default function ExecutionDetailPage() {
     if (isComplete) return
 
     // Poll every second for faster updates
-    const interval = setInterval(pollStatus, 1000)
+    const interval = setInterval(pollStatus, 3000)
 
     return () => clearInterval(interval)
   }, [isComplete, pollStatus])
@@ -273,7 +298,8 @@ export default function ExecutionDetailPage() {
 
   function handleViewLogs() {
     setShowErrorModal(false)
-    // Logs are already visible on page
+    setLogsOpen(true)
+    setTimeout(() => logsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
   return (
@@ -318,7 +344,9 @@ export default function ExecutionDetailPage() {
       <ExecutionTimeline executionId={executionId} />
 
       {/* Logs (collapsed by default per CONTEXT) */}
-      <ExecutionLogs logs={logs} />
+      <div ref={logsRef}>
+        <ExecutionLogs logs={logs} forceOpen={logsOpen} />
+      </div>
 
       {/* Summary (shows on completion per CONTEXT) */}
       {(isComplete || executionError) && startTime && endTime && (

@@ -37,6 +37,8 @@ epicbox==1.1.0
 urllib3<2.0  # Required for epicbox compatibility (method_whitelist renamed in 2.0)
 # Option 2: docker SDK (new - dynamic sandbox with network, pip install)
 docker>=7.0.0
+# Web search for skill research (renamed from duckduckgo-search)
+ddgs>=8.0
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

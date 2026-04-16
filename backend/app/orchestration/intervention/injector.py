@@ -7,6 +7,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sql.versioned_models import Skill, Prompt, Agent
+from app.models.sql.skill_build_models import SkillBinding
+from app.models.schemas.skill_build_schemas import SkillIntegrationPlan
 from app.orchestration.topology.loader import TopologyLoader
 
 logger = logging.getLogger(__name__)
@@ -126,6 +128,138 @@ class CapabilityInjector:
         except Exception as e:
             logger.error(f"Injection failed: {e}", exc_info=True)
             return False, f"Injection error: {str(e)}"
+
+    async def inject_with_plan(
+        self,
+        plan: SkillIntegrationPlan,
+        skill_id: str,
+        capability: str,
+    ) -> tuple[bool, str]:
+        """
+        Inject skill using architect's integration plan.
+
+        Uses the plan's target_agent_id for explicit binding instead of
+        relying on heuristic matching. Falls back to inject() if no
+        target agent specified.
+
+        Args:
+            plan: Architect's integration plan with target agent info
+            skill_id: ID of the skill to inject
+            capability: The capability this skill provides
+
+        Returns:
+            (success, message)
+        """
+        # Fallback to generic inject if no target agent
+        if not plan.target_agent_id:
+            logger.info("No target_agent_id in integration plan, falling back to generic inject")
+            return await self.inject(artifact_type="skill", artifact_id=skill_id)
+
+        logger.info(
+            f"Injecting skill {skill_id[:8]}... with plan: "
+            f"target_agent={plan.target_agent_id[:8]}..., rationale={plan.rationale}"
+        )
+
+        # 1. Verify skill exists
+        skill = await self._verify_artifact_exists("skill", skill_id)
+        if not skill:
+            return False, f"Skill {skill_id} not found in database"
+
+        # 2. Verify target agent exists and is active
+        agent_result = await self.db.execute(
+            select(Agent).where(Agent.id == plan.target_agent_id, Agent.is_active == True)
+        )
+        agent = agent_result.scalar_one_or_none()
+        if not agent:
+            logger.warning(
+                f"Target agent {plan.target_agent_id[:8]}... not found/inactive, "
+                "falling back to generic inject"
+            )
+            return await self.inject(artifact_type="skill", artifact_id=skill_id)
+
+        # 3. Activate skill if inactive
+        if hasattr(skill, 'is_active') and not skill.is_active:
+            await self._activate_artifact("skill", skill_id)
+
+        # 4. Create skill binding
+        existing_binding = await self.db.execute(
+            select(SkillBinding).where(
+                SkillBinding.skill_id == skill_id,
+                SkillBinding.agent_id == plan.target_agent_id,
+                SkillBinding.is_active == True,
+            )
+        )
+        if not existing_binding.scalar_one_or_none():
+            binding = SkillBinding(
+                skill_id=skill_id,
+                agent_id=plan.target_agent_id,
+                capability=capability,
+                binding_type="architect_plan",
+                is_active=True,
+            )
+            self.db.add(binding)
+            await self.db.commit()
+            logger.info(f"Created skill binding: skill={skill_id[:8]}... -> agent={plan.target_agent_id[:8]}...")
+
+        # 5. Apply dependency changes if specified
+        if plan.dependency_changes:
+            await self._apply_dependency_changes(plan.target_agent_id, plan.dependency_changes)
+
+        # 6. Post-commit delay + topology reload
+        await asyncio.sleep(self.POST_COMMIT_DELAY_MS / 1000)
+
+        try:
+            topology, validation = await self.topology.reload()
+
+            if not validation.is_valid:
+                logger.error(f"Topology invalid after plan-based injection: {validation.errors}")
+                return False, f"Topology validation failed: {validation.errors[0] if validation.errors else 'Unknown'}"
+
+            # 7. Verify skill is on the target agent
+            is_present = await self._verify_capability_present(topology, "skill", skill_id)
+            if not is_present:
+                logger.warning(
+                    f"Skill {skill_id[:8]}... not found in topology after plan-based injection "
+                    f"(target agent: {agent.name})"
+                )
+                return True, f"Skill injected and bound to {agent.name} (not yet visible in topology)"
+
+            logger.info(f"Plan-based injection complete: skill={skill_id[:8]}... -> agent={agent.name}")
+            return True, f"Skill injected and bound to agent '{agent.name}' via architect plan"
+
+        except Exception as e:
+            logger.error(f"Plan-based injection failed during reload: {e}", exc_info=True)
+            return False, f"Injection error: {str(e)}"
+
+    async def _apply_dependency_changes(
+        self,
+        agent_id: str,
+        changes: list[dict],
+    ) -> None:
+        """Apply DAG dependency changes from integration plan."""
+        agent_result = await self.db.execute(
+            select(Agent).where(Agent.id == agent_id)
+        )
+        agent = agent_result.scalar_one_or_none()
+        if not agent:
+            return
+
+        current_deps = list(agent.dependencies or [])
+        for change in changes:
+            action = change.get("action")
+            dep_id = change.get("agent_id")
+            if not dep_id:
+                continue
+            if action == "add" and dep_id not in current_deps:
+                current_deps.append(dep_id)
+            elif action == "remove" and dep_id in current_deps:
+                current_deps.remove(dep_id)
+
+        await self.db.execute(
+            update(Agent).where(Agent.id == agent_id).values(dependencies=current_deps)
+        )
+        await self.db.commit()
+        logger.info(f"Updated dependencies for agent {agent_id[:8]}...: {current_deps}")
 
     async def _verify_artifact_exists(
         self,

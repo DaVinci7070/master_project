@@ -2,7 +2,7 @@
 Failure Analyzer Service - Learn from skill build failures.
 
 This service implements failure pattern recognition and learning:
-1. Classify errors by type (import, syntax, runtime, semantic)
+1. Classify errors by type (import, syntax, structure, runtime, semantic)
 2. Extract failure patterns
 3. Suggest alternative approaches
 4. Persist failure data for future learning
@@ -36,6 +36,18 @@ class FailureAnalysis:
     code_suggestions: list[str] = field(default_factory=list)
     confidence: float = 0.5  # 0-1, how confident we are in this analysis
     similar_past_failures: list[dict] = field(default_factory=list)
+    error_type_classified: str = ""   # IMPORT_ERROR, STRUCTURE_ERROR, LOGIC_ERROR
+    lesson_learned: str = ""          # LLM-generated insight from this failure
+
+
+@dataclass
+class StrategyProposal:
+    """Proposed next strategy based on build history."""
+    strategy_id: str                    # e.g. "alt_package", "simplify", "restructure"
+    rationale: str                      # Why this strategy was chosen
+    related_attempt_ids: list[str] = field(default_factory=list)  # History entries referenced
+    confidence: float = 0.5            # 0-1
+    hints: list[str] = field(default_factory=list)  # Concrete tips for the builder
 
 
 class FailureAnalyzer:
@@ -48,6 +60,26 @@ class FailureAnalyzer:
     - Suggest fixes based on past successes
     - Record failures for future learning
     """
+
+    # Strategy candidates per classified error type
+    STRATEGY_MAP = {
+        "IMPORT_ERROR": ["alt_package", "minimal_imports", "stdlib_only"],
+        "STRUCTURE_ERROR": ["ast_fix", "template_rewrite"],
+        "LOGIC_ERROR": ["simplify", "decompose", "reference_impl"],
+    }
+    DEFAULT_STRATEGIES = ["direct", "simplify", "alternative", "from_scratch"]
+
+    # Map fine-grained ErrorType to coarse classification
+    ERROR_TYPE_CLASSIFICATION = {
+        ErrorType.IMPORT_ERROR: "IMPORT_ERROR",
+        ErrorType.DEPENDENCY_ERROR: "IMPORT_ERROR",
+        ErrorType.SYNTAX_ERROR: "STRUCTURE_ERROR",
+        ErrorType.STRUCTURE_ERROR: "STRUCTURE_ERROR",
+        ErrorType.RUNTIME_ERROR: "LOGIC_ERROR",
+        ErrorType.TIMEOUT_ERROR: "LOGIC_ERROR",
+        ErrorType.RESOURCE_ERROR: "LOGIC_ERROR",
+        ErrorType.SEMANTIC_ERROR: "LOGIC_ERROR",
+    }
 
     # Error patterns for classification
     ERROR_PATTERNS = {
@@ -92,6 +124,13 @@ class FailureAnalyzer:
             r"pip.*error",
             r"apt-get.*error",
         ],
+        ErrorType.STRUCTURE_ERROR: [
+            r"Missing required.*def execute",
+            r"execute\(\) must accept",
+            r"Structure error",
+            r"no.*execute.*function",
+            r"def execute.*not found",
+        ],
     }
 
     def __init__(
@@ -129,6 +168,10 @@ class FailureAnalyzer:
 
         # Default to runtime if can't classify
         return ErrorType.RUNTIME_ERROR
+
+    def classify_error_coarse(self, error_type: ErrorType) -> str:
+        """Map fine-grained ErrorType to coarse classification (IMPORT/STRUCTURE/LOGIC)."""
+        return self.ERROR_TYPE_CLASSIFICATION.get(error_type, "LOGIC_ERROR")
 
     def extract_missing_module(self, error_message: str) -> Optional[str]:
         """Extract the missing module name from import error."""
@@ -184,6 +227,8 @@ class FailureAnalyzer:
             )
         elif error_type == ErrorType.SYNTAX_ERROR:
             analysis = self._analyze_syntax_error(error_message, code)
+        elif error_type == ErrorType.STRUCTURE_ERROR:
+            analysis = self._analyze_structure_error(error_message, code)
         elif error_type == ErrorType.RUNTIME_ERROR:
             analysis = await self._analyze_runtime_error(
                 error_message, stderr, code
@@ -195,6 +240,14 @@ class FailureAnalyzer:
         else:
             analysis.error_category = error_type.value
             analysis.root_cause = error_message[:200]
+
+        # Set coarse classification and lesson learned
+        analysis.error_type_classified = self.classify_error_coarse(error_type)
+        analysis.lesson_learned = (
+            f"{analysis.error_type_classified}: {analysis.root_cause[:150]}. "
+            f"Fix: {analysis.suggested_fixes[0]}" if analysis.suggested_fixes
+            else f"{analysis.error_type_classified}: {analysis.root_cause[:200]}"
+        )
 
         # Find similar past failures
         similar = await self._find_similar_failures(capability, error_type)
@@ -281,6 +334,52 @@ class FailureAnalyzer:
 
         analysis.suggested_fixes.append("Regenerate code with proper Python syntax")
         analysis.confidence = 0.7
+
+        return analysis
+
+    def _analyze_structure_error(
+        self,
+        error_message: str,
+        code: str,
+    ) -> FailureAnalysis:
+        """Analyze structure error (missing execute function, wrong signature)."""
+        analysis = FailureAnalysis(
+            error_type=ErrorType.STRUCTURE_ERROR,
+            error_category="missing_execute",
+            root_cause=error_message[:200],
+            confidence=0.9,
+        )
+
+        # Check what's actually defined at top level
+        import ast
+        try:
+            tree = ast.parse(code)
+            top_level_funcs = [
+                node.name for node in ast.iter_child_nodes(tree)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ]
+        except SyntaxError:
+            top_level_funcs = []
+
+        if top_level_funcs:
+            analysis.error_category = "wrong_function_name"
+            analysis.root_cause = (
+                f"Code defines {top_level_funcs} but not `execute`. "
+                f"Rename the main function to `execute`."
+            )
+            analysis.suggested_fixes.append(
+                f"Rename `{top_level_funcs[0]}` to `execute`"
+            )
+        else:
+            analysis.error_category = "missing_execute"
+            analysis.root_cause = "No top-level function defined at all."
+            analysis.suggested_fixes.append(
+                "Wrap implementation in `def execute(input_data: dict) -> dict:`"
+            )
+
+        analysis.suggested_fixes.append(
+            "MANDATORY signature: def execute(input_data: dict) -> dict"
+        )
 
         return analysis
 
@@ -402,6 +501,73 @@ class FailureAnalyzer:
 
         return similar
 
+    async def propose_strategy(
+        self,
+        capability: str,
+        error_type_classified: Optional[str] = None,
+        current_attempt_number: int = 1,
+    ) -> StrategyProposal:
+        """
+        Propose the next build strategy based on history.
+
+        Looks at past attempts for this capability, checks which strategies
+        have already been tried, and picks the next untried strategy
+        appropriate for the error type.
+
+        Args:
+            capability: What capability is being built
+            error_type_classified: Coarse error class (IMPORT_ERROR, STRUCTURE_ERROR, LOGIC_ERROR)
+            current_attempt_number: Current attempt number
+
+        Returns:
+            StrategyProposal with recommended next strategy
+        """
+        # First attempt — always start with "direct"
+        if current_attempt_number <= 1:
+            return StrategyProposal(
+                strategy_id="direct",
+                rationale="First attempt — try direct implementation",
+                confidence=0.5,
+            )
+
+        # Load history
+        history = await self.get_failure_history(capability)
+        tried_strategies = {
+            a.strategy_id for a in history if a.strategy_id
+        }
+        related_ids = [a.id for a in history[:5]]
+
+        # Collect lessons from history
+        hints = []
+        for attempt in history:
+            if attempt.lesson_learned:
+                hints.append(attempt.lesson_learned)
+
+        # Pick strategy candidates based on error type
+        candidates = self.STRATEGY_MAP.get(
+            error_type_classified or "", self.DEFAULT_STRATEGIES
+        )
+
+        # Find first untried strategy
+        for strategy in candidates:
+            if strategy not in tried_strategies:
+                return StrategyProposal(
+                    strategy_id=strategy,
+                    rationale=f"Strategy '{strategy}' not yet tried for {error_type_classified or 'this error type'}",
+                    related_attempt_ids=related_ids,
+                    confidence=0.6,
+                    hints=hints[:3],
+                )
+
+        # All strategies tried — fall back to "from_scratch" with lessons
+        return StrategyProposal(
+            strategy_id="from_scratch",
+            rationale=f"All {len(candidates)} strategies exhausted — starting fresh with accumulated lessons",
+            related_attempt_ids=related_ids,
+            confidence=0.3,
+            hints=hints[:5],
+        )
+
     async def record_attempt(
         self,
         capability: str,
@@ -420,6 +586,10 @@ class FailureAnalyzer:
         research_context: Optional[dict] = None,
         failure_analysis: Optional[dict] = None,
         skill_id: Optional[str] = None,
+        strategy_id: Optional[str] = None,
+        error_type_classified: Optional[str] = None,
+        lesson_learned: Optional[str] = None,
+        related_attempt_ids: Optional[list[str]] = None,
     ) -> str:
         """
         Record a skill build attempt for learning.
@@ -441,6 +611,10 @@ class FailureAnalyzer:
             research_context: Research data used
             failure_analysis: Analysis of failure
             skill_id: ID of skill if successful
+            strategy_id: Strategy used for this attempt
+            error_type_classified: Coarse error class (IMPORT_ERROR, STRUCTURE_ERROR, LOGIC_ERROR)
+            lesson_learned: LLM-generated insight from this attempt
+            related_attempt_ids: IDs of earlier attempts that were referenced
 
         Returns:
             ID of the recorded attempt
@@ -463,6 +637,10 @@ class FailureAnalyzer:
             research_context=research_context,
             failure_analysis=failure_analysis,
             skill_id=skill_id,
+            strategy_id=strategy_id,
+            error_type_classified=error_type_classified,
+            lesson_learned=lesson_learned,
+            related_attempt_ids=related_attempt_ids or [],
         )
 
         self.db.add(attempt)
@@ -586,13 +764,18 @@ class FailureAnalyzer:
         context = "**Previous Failed Attempts (try different approach):**\n\n"
 
         for i, failure in enumerate(failures[:5], 1):
-            context += f"{i}. **Attempt {failure.attempt_number}** ({failure.approach or 'unknown approach'}):\n"
+            strategy = failure.strategy_id or failure.approach or 'unknown approach'
+            context += f"{i}. **Attempt {failure.attempt_number}** (strategy: {strategy}):\n"
             context += f"   - Error: {failure.error_type or 'unknown'}\n"
+            if failure.error_type_classified:
+                context += f"   - Classification: {failure.error_type_classified}\n"
             if failure.error_message:
                 context += f"   - Message: {failure.error_message[:150]}...\n"
             if failure.pip_requirements:
                 context += f"   - Packages: {', '.join(failure.pip_requirements[:5])}\n"
-            if failure.failure_analysis:
+            if failure.lesson_learned:
+                context += f"   - Lesson: {failure.lesson_learned}\n"
+            elif failure.failure_analysis:
                 analysis = failure.failure_analysis
                 if analysis.get("suggested_fixes"):
                     context += f"   - Suggested fix: {analysis['suggested_fixes'][0]}\n"

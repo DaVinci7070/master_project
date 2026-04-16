@@ -533,7 +533,7 @@ args = json.loads('{args_json}')
 
 # Call the function
 try:
-    result = {function_name}(**args)
+    result = {function_name}(args)
     # Output result as JSON for parsing
     print("__RESULT_START__")
     print(json.dumps({{"success": True, "output": result}}, default=str))
@@ -728,7 +728,7 @@ args = json.loads('{args_json}')
 
 # Call the function
 try:
-    result = {function_name}(**args)
+    result = {function_name}(args)
     # Output result as JSON for parsing
     print("__RESULT_START__")
     print(json.dumps({{"success": True, "output": result}}, default=str))
@@ -741,15 +741,33 @@ except Exception as e:
 '''
 
         try:
-            # Import and use DynamicSandboxService
+            # Import and use DynamicSandboxService with container image cache
             from app.services.dynamic_sandbox_service import DynamicSandboxService
+            from app.services.container_image_manager import ContainerImageManager
+            from app.dependencies.dependencies import AsyncSessionLocal
 
-            dynamic_sandbox = DynamicSandboxService()
-            result = await dynamic_sandbox.execute(
-                code=wrapper_code,
-                pip_requirements=pip_requirements,
-                system_packages=system_packages,
+            # Create image manager for container cache lookup
+            image_mgr = None
+            cache_session = None
+            try:
+                cache_session = AsyncSessionLocal()
+                image_mgr = ContainerImageManager(db=cache_session)
+            except Exception as e:
+                self.log.warning(f"Failed to create image manager for caching: {e}")
+
+            dynamic_sandbox = DynamicSandboxService(
+                image_manager=image_mgr,
+                enable_image_caching=image_mgr is not None,
             )
+            try:
+                result = await dynamic_sandbox.execute(
+                    code=wrapper_code,
+                    pip_requirements=pip_requirements,
+                    system_packages=system_packages,
+                )
+            finally:
+                if cache_session:
+                    await cache_session.close()
 
             execution_time_ms = int((time.time() - start_time) * 1000)
 

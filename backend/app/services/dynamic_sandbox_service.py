@@ -77,8 +77,11 @@ class ExecutionConfig:
 
     # Timeouts
     execution_timeout: int = 300  # 5 minutes for pip install + execution
-    pip_timeout: int = 120        # 2 minutes for pip install
+    pip_timeout: int = 600        # 10 minutes for pip install (large packages need time)
     apt_timeout: int = 180        # 3 minutes for apt-get (can be slow)
+
+    # Pip cache
+    pip_cache_volume: str = "lumari-pip-cache"  # Named Docker volume for pip cache
 
     # Network
     network_enabled: bool = True  # Enable for pip/apt/research
@@ -90,6 +93,151 @@ class ExecutionConfig:
     read_only: bool = False  # Must be writable for pip/apt install
     cap_drop: list[str] = field(default_factory=list)  # Don't drop caps (apt needs them)
     security_opt: list[str] = field(default_factory=list)  # Allow for apt-get
+
+
+class SandboxSession:
+    """
+    Reusable sandbox session — one container, many code executions.
+
+    Keeps a single Docker container alive across multiple iterations,
+    installing packages only once. Use as an async context manager:
+
+        async with sandbox.session(pip_requirements=["faster-whisper"]) as session:
+            result1 = await session.execute_code("print('hello')")
+            result2 = await session.execute_code("print('world')")
+    """
+
+    def __init__(
+        self,
+        sandbox: "DynamicSandboxService",
+        pip_requirements: Optional[list[str]] = None,
+        system_packages: Optional[list[str]] = None,
+        env_vars: Optional[dict[str, str]] = None,
+        input_files: Optional[dict[str, bytes]] = None,
+    ):
+        self._sandbox = sandbox
+        self._pip_requirements = list(pip_requirements or [])
+        self._system_packages = list(system_packages or [])
+        self._env_vars = env_vars
+        self._input_files = input_files or {}
+        self._container = None
+        self._packages_installed = False
+
+    @property
+    def pip_requirements(self) -> list[str]:
+        return self._pip_requirements
+
+    async def __aenter__(self) -> "SandboxSession":
+        """Create container and install packages once."""
+        # Check for cached image
+        image_override = None
+        skip_packages = False
+        sandbox = self._sandbox
+
+        if (
+            sandbox._image_manager
+            and sandbox._enable_image_caching
+            and (self._pip_requirements or self._system_packages)
+        ):
+            try:
+                cached = await sandbox._image_manager.find_best_image(
+                    pip_requirements=self._pip_requirements,
+                    system_packages=self._system_packages,
+                )
+                if cached and cached.is_ready:
+                    try:
+                        sandbox.client.images.get(cached.image_tag)
+                        image_override = cached.image_tag
+                        skip_packages = True
+                        log.info(f"Session using cached image: {cached.image_tag}")
+                    except ImageNotFound:
+                        log.warning(f"Cached image {cached.image_tag} not found, using base")
+            except Exception as e:
+                log.warning(f"Failed to check image cache for session: {e}")
+
+        if not image_override:
+            await sandbox._ensure_image_exists()
+
+        self._container = await sandbox._create_container(
+            self._env_vars,
+            image_override=image_override,
+        )
+        log.info(f"Session container created: {self._container.short_id}")
+
+        # Install packages once
+        if not skip_packages:
+            if self._system_packages:
+                apt_result = await sandbox._install_system_packages(
+                    self._container, self._system_packages
+                )
+                if not apt_result.success:
+                    await self._cleanup()
+                    raise RuntimeError(f"Session apt install failed: {apt_result.error}")
+
+            if self._pip_requirements:
+                pip_result = await sandbox._install_pip_packages(
+                    self._container, self._pip_requirements
+                )
+                if not pip_result.success:
+                    await self._cleanup()
+                    raise RuntimeError(f"Session pip install failed: {pip_result.error}")
+
+        self._packages_installed = True
+
+        # Copy static input files
+        if self._input_files:
+            await sandbox._copy_files_to_container(self._container, self._input_files)
+
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Clean up the container."""
+        await self._cleanup()
+        return None
+
+    async def _cleanup(self) -> None:
+        if self._container:
+            try:
+                await self._sandbox._cleanup_container(self._container)
+            except Exception as e:
+                log.warning(f"Session container cleanup failed: {e}")
+            self._container = None
+
+    async def execute_code(
+        self,
+        code: str,
+        timeout: Optional[int] = None,
+        input_files: Optional[dict[str, bytes]] = None,
+        output_file_paths: Optional[list[str]] = None,
+    ) -> SandboxResult:
+        """
+        Execute code in the existing session container.
+
+        Packages are already installed — this only copies the script and runs it.
+        """
+        if not self._container:
+            raise RuntimeError("Session container not available. Use as async context manager.")
+
+        start_time = time.time()
+        timeout = timeout or self._sandbox.config.execution_timeout
+
+        # Copy any additional input files for this iteration
+        if input_files:
+            await self._sandbox._copy_files_to_container(self._container, input_files)
+
+        # Execute code
+        result = await self._sandbox._execute_code(self._container, code, timeout)
+
+        # Collect output files
+        if output_file_paths and result.success:
+            result.output_files = await self._sandbox._collect_output_files(
+                self._container, output_file_paths
+            )
+
+        result.installed_packages = self._pip_requirements
+        result.execution_time_ms = int((time.time() - start_time) * 1000)
+
+        return result
 
 
 class DynamicSandboxService:
@@ -144,6 +292,22 @@ class DynamicSandboxService:
         self._image_manager = image_manager
         self._enable_image_caching = enable_image_caching
         self._image_cache: dict[str, str] = {}  # requirements hash -> image tag
+
+    def session(
+        self,
+        pip_requirements: Optional[list[str]] = None,
+        system_packages: Optional[list[str]] = None,
+        env_vars: Optional[dict[str, str]] = None,
+        input_files: Optional[dict[str, bytes]] = None,
+    ) -> SandboxSession:
+        """Create a reusable sandbox session (async context manager)."""
+        return SandboxSession(
+            sandbox=self,
+            pip_requirements=pip_requirements,
+            system_packages=system_packages,
+            env_vars=env_vars,
+            input_files=input_files,
+        )
 
     @property
     def client(self) -> docker.DockerClient:
@@ -358,6 +522,16 @@ class DynamicSandboxService:
             "network_mode": "bridge" if self.config.network_enabled else "none",
         }
 
+        # Mount pip cache volume for faster repeated installs
+        if self.config.pip_cache_volume:
+            container_config["mounts"] = [
+                Mount(
+                    target="/root/.cache/pip",
+                    source=self.config.pip_cache_volume,
+                    type="volume",
+                ),
+            ]
+
         # Only add security options if specified
         if self.config.user:
             container_config["user"] = self.config.user
@@ -429,7 +603,7 @@ class DynamicSandboxService:
         log.info(f"Installing pip packages: {packages_str}")
 
         # Install packages as root (so they go to system site-packages)
-        cmd = f"pip install --no-cache-dir {packages_str}"
+        cmd = f"pip install {packages_str}"
 
         exit_code, output = await self._exec_in_container(
             container,
@@ -658,7 +832,7 @@ class DynamicSandboxService:
             # Install from requirements.txt
             exit_code, output = await self._exec_in_container(
                 container,
-                "pip install --no-cache-dir -r /workspace/requirements.txt",
+                "pip install -r /workspace/requirements.txt",
                 user="root",
                 timeout=self.config.pip_timeout,
             )

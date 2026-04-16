@@ -242,6 +242,50 @@ class CodeValidatorService:
             imports_used=imports_used,
         )
 
+    def validate_structure(self, code: str) -> ValidationResult:
+        """Validate that code has the required skill structure.
+
+        Checks:
+        - Code parses to valid AST
+        - A top-level `def execute(...)` function exists
+        - execute() accepts at least one parameter (input_data)
+        """
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as e:
+            return ValidationResult(
+                is_valid=False,
+                errors=[f"Syntax error at line {e.lineno}: {e.msg}"],
+            )
+
+        # Find top-level execute function
+        execute_funcs = [
+            node for node in ast.iter_child_nodes(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "execute"
+        ]
+
+        if not execute_funcs:
+            errors.append(
+                "Missing required `def execute(input_data: dict) -> dict` function"
+            )
+        else:
+            func = execute_funcs[0]
+            params = func.args.args
+            if len(params) < 1:
+                errors.append(
+                    "`execute()` must accept at least one parameter (input_data)"
+                )
+
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+        )
+
     def fingerprint(self, code: str) -> str:
         """
         Generate a fingerprint for code deduplication.

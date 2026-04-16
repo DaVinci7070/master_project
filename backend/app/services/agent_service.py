@@ -37,7 +37,6 @@ class AgentService:
         agent = Agent(
             id=str(uuid.uuid4()),
             name=agent_data.name,
-            capabilities=agent_data.capabilities,
             dependencies=agent_data.dependencies,
             io_schema=agent_data.io_schema,
             is_active=agent_data.is_active,

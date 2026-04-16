@@ -4,13 +4,11 @@ import type {
   Skill,
   Prompt,
   TelemetrySummary,
-  TelemetryAggregation,
   ExecutionTelemetry,
   Topology,
   ABTest,
   ChallengeAnalysisResponse,
   ChallengeExecutionResponse,
-  ChallengeResultsResponse,
   BlockedChallenge,
   DashboardMetrics,
 } from '@/types'
@@ -39,10 +37,6 @@ export async function fetchAgents(): Promise<Agent[]> {
   return response.agents
 }
 
-export async function fetchAgent(id: string): Promise<Agent> {
-  return fetchJson<Agent>(`/agents/${id}`)
-}
-
 // Skill operations
 export async function fetchSkills(): Promise<Skill[]> {
   const response = await fetchJson<{ skills: Skill[]; total: number }>('/skills')
@@ -51,6 +45,13 @@ export async function fetchSkills(): Promise<Skill[]> {
 
 export async function fetchSkill(id: string): Promise<Skill> {
   return fetchJson<Skill>(`/skills/${id}`)
+}
+
+export async function updateSkill(id: string, data: Partial<Skill>): Promise<Skill> {
+  return fetchJson<Skill>(`/skills/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
 }
 
 // Prompt operations
@@ -72,12 +73,6 @@ export async function fetchTelemetrySummary(): Promise<TelemetrySummary> {
   return fetchJson<TelemetrySummary>('/telemetry/summary')
 }
 
-export async function fetchTelemetryByAgent(
-  agentId: string
-): Promise<TelemetryAggregation> {
-  return fetchJson<TelemetryAggregation>(`/telemetry/agents/${agentId}`)
-}
-
 export async function fetchRecentExecutions(
   limit: number = 50
 ): Promise<ExecutionTelemetry[]> {
@@ -94,10 +89,6 @@ export async function fetchTopology(): Promise<Topology> {
 export async function fetchABTests(): Promise<ABTest[]> {
   const response = await fetchJson<{ tests: ABTest[]; total: number }>('/ab-tests')
   return response.tests
-}
-
-export async function fetchABTest(id: string): Promise<ABTest> {
-  return fetchJson<ABTest>(`/ab-tests/${id}`)
 }
 
 // Challenge operations
@@ -144,11 +135,6 @@ export async function uploadChallengeFile(
   return response.json()
 }
 
-// Blocked challenges
-export async function fetchBlockedChallenges(): Promise<BlockedChallenge[]> {
-  return fetchJson<BlockedChallenge[]>('/challenges/blocked')
-}
-
 // Execute challenge
 export async function executeChallenge(
   challengeId: string
@@ -156,13 +142,6 @@ export async function executeChallenge(
   return fetchJson<ChallengeExecutionResponse>(`/challenges/${challengeId}/execute`, {
     method: 'POST',
   })
-}
-
-// Get challenge execution results
-export async function fetchChallengeResults(
-  challengeId: string
-): Promise<ChallengeResultsResponse> {
-  return fetchJson<ChallengeResultsResponse>(`/challenges/${challengeId}/results`)
 }
 
 // Get challenge status
@@ -337,21 +316,6 @@ export async function fetchExecutions(
   return fetchJson<ExecutionsResponse>(url)
 }
 
-export async function fetchExecution(
-  executionId: string,
-  includeEvents: boolean = false
-): Promise<ExecutionDetail> {
-  return fetchJson<ExecutionDetail>(
-    `/executions/${executionId}?include_events=${includeEvents}`
-  )
-}
-
-export async function fetchExecutionEvents(
-  executionId: string
-): Promise<{ execution_id: string; total: number; events: AgentEvent[] }> {
-  return fetchJson(`/executions/${executionId}/events`)
-}
-
 // ============================================================================
 // Shared Memory operations
 // ============================================================================
@@ -396,20 +360,3 @@ export async function fetchSharedMemory(
   return fetchJson<SharedMemoryResponse>(`/shared-memory/execution/${executionId}`)
 }
 
-export async function fetchSharedMemoryFacts(
-  executionId: string,
-  minConfidence?: number
-): Promise<{ execution_id: string; total: number; facts: SharedMemoryFact[] }> {
-  let url = `/shared-memory/execution/${executionId}/facts`
-  if (minConfidence !== undefined) url += `?min_confidence=${minConfidence}`
-  return fetchJson(url)
-}
-
-export async function fetchSharedMemoryHypotheses(
-  executionId: string,
-  status?: string
-): Promise<{ execution_id: string; total: number; hypotheses: SharedMemoryHypothesis[] }> {
-  let url = `/shared-memory/execution/${executionId}/hypotheses`
-  if (status) url += `?status=${status}`
-  return fetchJson(url)
-}

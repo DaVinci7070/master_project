@@ -360,7 +360,7 @@ class ContainerImageManager:
             packages = " ".join(pip_requirements)
             lines.extend([
                 "# Install Python packages",
-                f"RUN pip install --no-cache-dir {packages}",
+                f"RUN pip install {packages}",
                 "",
             ])
 
@@ -371,14 +371,20 @@ class ContainerImageManager:
 
         return "\n".join(lines)
 
+    @staticmethod
+    def _normalize_pkg(pkg: str) -> str:
+        """Strip version specifiers and normalize: 'faster-whisper>=1.0.0' → 'faster-whisper'"""
+        import re
+        return re.split(r'[><=!~;@\s]', pkg.strip())[0].lower().replace('_', '-')
+
     def _generate_package_hash(
         self,
         pip_requirements: list[str],
         system_packages: list[str],
     ) -> str:
         """Generate a hash of the package combination for cache keying."""
-        # Sort for consistent hashing
-        pip_sorted = sorted(pip_requirements or [])
+        # Normalize and sort for consistent hashing
+        pip_sorted = sorted(self._normalize_pkg(p) for p in (pip_requirements or []))
         sys_sorted = sorted(system_packages or [])
 
         content = f"pip:{','.join(pip_sorted)}|apt:{','.join(sys_sorted)}"

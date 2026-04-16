@@ -50,6 +50,7 @@ class SkillSummaryResponse(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
+    skill_type: str = "functional"
     is_active: bool
     test_count: int = 0
     parent_id: Optional[str] = None
@@ -64,7 +65,12 @@ class SkillDetailResponse(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
-    code: str
+    skill_type: str = "functional"
+    applicability: Optional[str] = None
+    instructions: Optional[str] = None
+    termination: Optional[str] = None
+    interface: Optional[dict] = None
+    code: Optional[str] = None
     test_cases: list[dict] = Field(default_factory=list)
     skill_metadata: dict = Field(default_factory=dict)
     is_active: bool
@@ -170,6 +176,7 @@ async def list_skills(
                 id=s.id,
                 name=s.name,
                 description=s.description,
+                skill_type=s.skill_type or "functional",
                 is_active=s.is_active,
                 test_count=len(s.test_cases or []),
                 parent_id=s.parent_id,
@@ -210,6 +217,11 @@ async def get_skill(
         id=skill.id,
         name=skill.name,
         description=skill.description,
+        skill_type=skill.skill_type or "functional",
+        applicability=skill.applicability,
+        instructions=skill.instructions,
+        termination=skill.termination,
+        interface=skill.interface,
         code=skill.code,
         test_cases=skill.test_cases or [],
         skill_metadata=skill.skill_metadata or {},
@@ -266,6 +278,60 @@ async def get_skill_tests(
         executions=executions,
         total_runs=total_runs,
         pass_rate=pass_rate,
+    )
+
+
+class SkillUpdateRequest(BaseModel):
+    """Request model for updating a skill."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    skill_type: Optional[str] = None
+    applicability: Optional[str] = None
+    instructions: Optional[str] = None
+    termination: Optional[str] = None
+    interface: Optional[dict] = None
+    is_active: Optional[bool] = None
+
+
+@router.patch("/{skill_id}", response_model=SkillDetailResponse)
+async def update_skill(
+    skill_id: str,
+    update: SkillUpdateRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> SkillDetailResponse:
+    """Update a skill's fields. Planning skills support editing instructions, applicability, termination."""
+    repo = SkillRepository(session)
+
+    update_data = update.model_dump(exclude_none=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    skill = await repo.update(skill_id, update_data)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill not found: {skill_id}")
+
+    await session.commit()
+
+    children = await repo.get_children(skill_id)
+    version_count = len(children) + 1
+
+    return SkillDetailResponse(
+        id=skill.id,
+        name=skill.name,
+        description=skill.description,
+        skill_type=skill.skill_type or "functional",
+        applicability=skill.applicability,
+        instructions=skill.instructions,
+        termination=skill.termination,
+        interface=skill.interface,
+        code=skill.code,
+        test_cases=skill.test_cases or [],
+        skill_metadata=skill.skill_metadata or {},
+        is_active=skill.is_active,
+        parent_id=skill.parent_id,
+        created_at=skill.created_at.isoformat() if skill.created_at else "",
+        health_status=_compute_health_status(skill),
+        version_count=version_count,
     )
 
 

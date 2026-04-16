@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Rate Limiting & Security
-    rate_limit_per_minute: int = 30
+    rate_limit_per_minute: int = 120
     rate_limit_suspicious_threshold: int = 3
     ip_block_duration_hours: int = 24
 
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     skill_team_enabled: bool = True  # Enable team-based skill development
     skill_researcher_model: str | None = None  # Model for research (default: fast)
     skill_architect_model: str | None = "claude-3-5-sonnet-20241022"  # Model for design
-    skill_implementer_model: str | None = None  # Model for implementation (default: fast)
+    skill_implementer_model: str | None = "gemini/gemini-3-flash-preview"  # Strong model for code generation
     skill_reviewer_model: str | None = "claude-3-5-sonnet-20241022"  # Model for review
 
     # Semantic Validation settings
@@ -73,6 +73,11 @@ class Settings(BaseSettings):
 
     # Hot-Reload settings (Phase 3)
     hot_reload_enabled: bool = True  # Enable in-memory skill registry
+
+    # Self-Healing settings (Sprint 4)
+    intra_execution_self_healing_enabled: bool = True  # Enable self-healing during execution (on_unknown_tool -> build skill)
+    self_healing_build_timeout: int = 180  # Max seconds for on-demand skill build
+    self_healing_max_builds_per_execution: int = 3  # Max on-demand skill builds per execution
 
     class Config:
         env_file = ".env"

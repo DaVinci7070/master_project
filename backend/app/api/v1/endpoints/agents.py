@@ -133,7 +133,7 @@ async def list_agents(
             AgentResponse(
                 id=a.id,
                 name=a.name,
-                capabilities=a.capabilities or [],
+                capabilities=[],
                 dependencies=a.dependencies or [],
                 io_schema=a.io_schema or {},
                 is_active=a.is_active,
@@ -199,7 +199,7 @@ async def get_agent(
     return AgentDetailResponse(
         id=agent.id,
         name=agent.name,
-        capabilities=agent.capabilities or [],
+        capabilities=[],
         dependencies=agent.dependencies or [],
         io_schema=agent.io_schema or {},
         is_active=agent.is_active,
@@ -248,7 +248,7 @@ async def toggle_agent_status(
     return AgentResponse(
         id=agent.id,
         name=agent.name,
-        capabilities=agent.capabilities or [],
+        capabilities=[],
         dependencies=agent.dependencies or [],
         io_schema=agent.io_schema or {},
         is_active=agent.is_active,

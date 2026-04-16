@@ -20,13 +20,20 @@ export interface Skill {
   parent_id: string | null
   name: string
   description: string | null
-  code?: string  // Optional - not in summary response
-  test_cases?: SkillTestCase[]  // Optional - not in summary response
-  test_count?: number  // In summary response
-  skill_metadata?: Record<string, unknown>  // Optional - not in summary response
+  skill_type: string  // "functional" or "planning"
+  applicability?: string | null
+  instructions?: string | null
+  termination?: string | null
+  interface?: Record<string, unknown> | null
+  code?: string | null
+  test_cases?: SkillTestCase[]
+  test_count?: number
+  skill_metadata?: Record<string, unknown>
   is_active: boolean
   created_at: string
-  health_status?: string  // In summary response
+  health_status?: string
+  version_count?: number
+  dependencies?: Record<string, unknown>
 }
 
 export interface SkillTestCase {

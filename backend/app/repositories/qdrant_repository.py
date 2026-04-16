@@ -16,13 +16,7 @@ from app.adapters.qdrant.templates_port import TemplatesIndex
 from app.models.qdrant.qdrant_models import ReportRecord, UpsertBatchResult, SearchHit, TemplateHit, TemplateRecord
 from app.core.security import hash_user_id
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
 log = logging.getLogger("qdrant-reports-store")
-log.setLevel(logging.DEBUG)
-log.debug("Hallo, ich bin der Orchestrator")
 
 class QdrantReportsRepository(ReportsIndex, TemplatesIndex):
     def __init__(

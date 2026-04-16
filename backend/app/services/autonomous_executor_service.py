@@ -161,6 +161,27 @@ class AutonomousExecutorService:
         """Get current execution metrics."""
         return self._metrics
 
+    async def execute(
+        self,
+        code: str,
+        pip_requirements: Optional[list[str]] = None,
+        system_packages: Optional[list[str]] = None,
+        timeout: int = 300,
+        **kwargs,
+    ) -> "SandboxResult":
+        """
+        Proxy for GenericAgentExecutor compatibility.
+
+        GenericAgentExecutor calls sandbox_executor.execute() with a pre-built
+        runner script. This delegates to the underlying DynamicSandboxService.
+        """
+        return await self._sandbox.execute(
+            code=code,
+            pip_requirements=pip_requirements,
+            system_packages=system_packages,
+            timeout=timeout,
+        )
+
     async def execute_skill(
         self,
         code: str,

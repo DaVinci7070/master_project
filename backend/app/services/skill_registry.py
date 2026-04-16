@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from types import CodeType
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from app.core.config import settings
 
@@ -37,12 +37,26 @@ class LoadedSkill:
     success_count: int = 0
     failure_count: int = 0
     avg_execution_ms: float = 0.0
+    last_failure_reason: Optional[str] = None
+    needs_rebuild: bool = False
+    rebuild_requested_at: Optional[datetime] = None
 
     @property
     def success_rate(self) -> float:
         """Calculate success rate."""
         total = self.success_count + self.failure_count
         return self.success_count / total if total > 0 else 0.0
+
+    @property
+    def failure_rate(self) -> float:
+        """Calculate failure rate."""
+        if self.execution_count == 0:
+            return 0.0
+        return self.failure_count / self.execution_count
+
+    def should_rebuild(self, threshold: float = 0.3, min_executions: int = 5) -> bool:
+        """Check if skill should be rebuilt due to high failure rate."""
+        return self.failure_rate > threshold and self.execution_count >= min_executions
 
     def get_execute_function(self) -> Optional[Callable]:
         """
@@ -82,6 +96,7 @@ class SkillRegistry:
         self._name_index: dict[str, str] = {}  # name -> id
         self._capability_index: dict[str, list[str]] = {}  # capability -> [skill_ids]
         self._initialized: bool = False
+        self._on_rebuild_needed: Optional[Callable] = None
 
     @classmethod
     def get_instance(cls) -> "SkillRegistry":
@@ -208,6 +223,7 @@ class SkillRegistry:
         skill_id: str,
         success: bool,
         execution_time_ms: float = 0.0,
+        failure_reason: Optional[str] = None,
     ) -> None:
         """
         Record a skill execution for statistics.
@@ -216,6 +232,7 @@ class SkillRegistry:
             skill_id: ID of executed skill
             success: Whether execution succeeded
             execution_time_ms: Execution time in milliseconds
+            failure_reason: Reason for failure (if not successful)
         """
         skill = self._skills.get(skill_id)
         if skill:
@@ -226,11 +243,33 @@ class SkillRegistry:
                 skill.success_count += 1
             else:
                 skill.failure_count += 1
+                if failure_reason:
+                    skill.last_failure_reason = failure_reason
 
             # Update rolling average execution time
             if execution_time_ms > 0:
                 total_time = skill.avg_execution_ms * (skill.execution_count - 1)
                 skill.avg_execution_ms = (total_time + execution_time_ms) / skill.execution_count
+
+            # Auto-flag for rebuild if failure threshold exceeded
+            if not skill.needs_rebuild and skill.should_rebuild():
+                skill.needs_rebuild = True
+                skill.rebuild_requested_at = datetime.now(timezone.utc)
+                log.warning(
+                    f"Skill '{skill.name}' flagged for rebuild: "
+                    f"failure_rate={skill.failure_rate:.2f} "
+                    f"({skill.failure_count}/{skill.execution_count}), "
+                    f"last_error={skill.last_failure_reason}"
+                )
+                if self._on_rebuild_needed:
+                    try:
+                        asyncio.create_task(
+                            self._on_rebuild_needed(
+                                skill.id, skill.name, skill.last_failure_reason
+                            )
+                        )
+                    except Exception as e:
+                        log.error(f"Rebuild callback failed: {e}")
 
     async def execute_skill(
         self,
@@ -257,6 +296,7 @@ class SkillRegistry:
 
         start_time = datetime.now(timezone.utc)
         success = False
+        failure_reason = None
 
         try:
             execute_fn = skill.get_execute_function()
@@ -265,17 +305,55 @@ class SkillRegistry:
 
             result = execute_fn(input_data)
             success = result.get("success", False) if isinstance(result, dict) else False
+            if not success and isinstance(result, dict):
+                failure_reason = result.get("error")
             return result
 
         except Exception as e:
             log.error(f"Skill execution failed: {skill.name}: {e}")
+            failure_reason = str(e)
             return {"success": False, "error": str(e)}
 
         finally:
             execution_time_ms = (
                 datetime.now(timezone.utc) - start_time
             ).total_seconds() * 1000
-            self.record_execution(skill_id, success, execution_time_ms)
+            self.record_execution(skill_id, success, execution_time_ms, failure_reason)
+
+    def get_skills_needing_rebuild(
+        self,
+        threshold: float = 0.3,
+        min_executions: int = 5,
+    ) -> list[LoadedSkill]:
+        """Return loaded skills with failure rate above threshold."""
+        return [
+            skill for skill in self._skills.values()
+            if skill.should_rebuild(threshold, min_executions)
+        ]
+
+    def set_rebuild_callback(
+        self,
+        callback: Callable[[str, str, Optional[str]], Awaitable[None]],
+    ) -> None:
+        """
+        Set callback for when a skill is flagged for rebuild.
+
+        Args:
+            callback: async function(skill_id, skill_name, last_failure_reason)
+        """
+        self._on_rebuild_needed = callback
+
+    def mark_rebuild_complete(self, skill_id: str) -> None:
+        """Mark a skill's rebuild as complete, reset counters."""
+        skill = self._skills.get(skill_id)
+        if skill:
+            skill.needs_rebuild = False
+            skill.rebuild_requested_at = None
+            skill.execution_count = 0
+            skill.success_count = 0
+            skill.failure_count = 0
+            skill.last_failure_reason = None
+            log.info(f"Rebuild complete for skill {skill.name}, counters reset")
 
     async def initialize(self, db: "AsyncSession") -> int:
         """

@@ -76,6 +76,12 @@ class SkillBuildAttempt(Base):
     research_context = Column(JSON, nullable=True)  # Research data used
     failure_analysis = Column(JSON, nullable=True)  # LLM analysis of what went wrong
 
+    # Feedback-History (Sprint 3.1)
+    strategy_id = Column(String(100), nullable=True)          # Which strategy was used (e.g. "direct", "simplified_retry", "alt_package")
+    error_type_classified = Column(String(50), nullable=True)  # IMPORT_ERROR, STRUCTURE_ERROR, LOGIC_ERROR
+    lesson_learned = Column(Text, nullable=True)               # LLM-generated insight from the failure
+    related_attempt_ids = Column(JSON, default=list)            # IDs of earlier attempts that were referenced
+
     # Link to final skill (if successful)
     skill_id = Column(String(36), ForeignKey("skills.id"), nullable=True)
 

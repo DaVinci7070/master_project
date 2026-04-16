@@ -34,8 +34,28 @@ from app.services.package_resolver import PackageResolver
 from app.services.semantic_validator import SemanticValidator
 from app.models.sql.versioned_models import Skill
 from app.models.schemas.skill_build_schemas import ErrorType, SemanticValidationResult
+from pydantic import BaseModel
+from typing import Literal
 
 log = logging.getLogger(__name__)
+
+
+# -- Pydantic models for LLM-based interface derivation --
+
+class PropertySchema(BaseModel):
+    """Schema for a single skill parameter."""
+    type: Literal["string", "integer", "number", "boolean", "object", "array", "file"]
+    description: str = ""
+
+class InterfaceInput(BaseModel):
+    """Input schema of a skill."""
+    type: str = "object"
+    properties: dict[str, PropertySchema]
+    required: list[str]
+
+class SkillInterfaceOutput(BaseModel):
+    """Structured LLM response: only the interface schema."""
+    input: InterfaceInput
 
 
 @dataclass
@@ -58,6 +78,7 @@ class SkillDraft:
     pip_requirements: list[str] = field(default_factory=list)
     system_packages: list[str] = field(default_factory=list)
     function_name: str = "execute"
+    interface: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -72,72 +93,8 @@ class SkillBuildResult:
     execution_time_ms: int = 0
 
 
-# Common package mappings for quick lookup
-# "stdlib" entries tell the LLM to prefer standard library modules over pip packages
-CAPABILITY_PACKAGE_HINTS = {
-    "audio transcription": {
-        "pip": ["faster-whisper", "pydub"],
-        "apt": ["ffmpeg", "flac"],
-    },
-    "pdf reading": {
-        "pip": ["pypdf", "pdfplumber", "PyMuPDF"],
-        "apt": [],
-    },
-    "pdf file reading": {
-        "pip": ["pypdf", "pdfplumber", "PyMuPDF"],
-        "apt": [],
-    },
-    "image ocr": {
-        "pip": ["pytesseract", "easyocr", "paddleocr"],
-        "apt": ["tesseract-ocr"],
-    },
-    "image ocr text extraction": {
-        "pip": ["pytesseract", "easyocr"],
-        "apt": ["tesseract-ocr"],
-    },
-    "web scraping": {
-        "pip": ["beautifulsoup4", "requests", "lxml"],
-        "apt": [],
-    },
-    "excel reading": {
-        "pip": ["openpyxl", "pandas", "xlrd"],
-        "apt": [],
-    },
-    "excel spreadsheet reading": {
-        "pip": ["openpyxl", "pandas"],
-        "apt": [],
-    },
-    "word document reading": {
-        "pip": ["python-docx", "docx2txt"],
-        "apt": [],
-    },
-    "video transcription": {
-        "pip": ["faster-whisper", "moviepy"],
-        "apt": ["ffmpeg"],
-    },
-    # Stdlib-preferred capabilities — no pip packages needed
-    "database": {
-        "pip": [], "apt": [], "stdlib": ["sqlite3"],
-    },
-    "sqlite": {
-        "pip": [], "apt": [], "stdlib": ["sqlite3"],
-    },
-    "create sqlite database schema": {
-        "pip": [], "apt": [], "stdlib": ["sqlite3"],
-    },
-    "database operations": {
-        "pip": [], "apt": [], "stdlib": ["sqlite3"],
-    },
-    "csv processing": {
-        "pip": [], "apt": [], "stdlib": ["csv"],
-    },
-    "json processing": {
-        "pip": [], "apt": [], "stdlib": ["json"],
-    },
-    "data computation": {
-        "pip": [], "apt": [], "stdlib": ["math", "statistics"],
-    },
-}
+# Import shared package hints — single source of truth in research_service
+from app.services.research_service import CAPABILITY_PACKAGE_HINTS
 
 
 class AutonomousSkillBuilder:
@@ -243,182 +200,200 @@ class AutonomousSkillBuilder:
         log.info(f"Generated skill draft: {draft.name}, "
                  f"pip: {draft.pip_requirements}, apt: {draft.system_packages}")
 
-        # Step 3: Iterative testing
+        # Step 3: Iterative testing with session reuse
         last_error = None
         last_analysis: Optional[FailureAnalysis] = None
         iteration_errors: list[dict] = []  # Accumulated errors for approach-switching
+        iteration = 0
 
-        for iteration in range(self.MAX_ITERATIONS):
-            log.info(f"Testing iteration {iteration + 1}/{self.MAX_ITERATIONS}")
+        while iteration < self.MAX_ITERATIONS:
+            # Open a session for the current package requirements
+            current_pip = list(draft.pip_requirements)
+            current_apt = list(draft.system_packages)
 
-            # Build test code
-            test_code = self._build_test_code(draft, test_input, expected_output_type)
-
-            # Execute in sandbox
-            result = await self.sandbox.execute(
-                code=f"{draft.code}\n\n{test_code}",
-                pip_requirements=draft.pip_requirements,
-                system_packages=draft.system_packages,
+            async with self.sandbox.session(
+                pip_requirements=current_pip,
+                system_packages=current_apt,
                 input_files=input_files,
-            )
+            ) as session:
+                while iteration < self.MAX_ITERATIONS:
+                    log.info(f"Testing iteration {iteration + 1}/{self.MAX_ITERATIONS}")
 
-            execution_time_ms = int(
-                (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
-            )
+                    # Build test code
+                    test_code = self._build_test_code(draft, test_input, expected_output_type)
 
-            if result.success:
-                log.info(f"Skill test passed on iteration {iteration + 1}")
+                    # Execute in session (reuses container)
+                    result = await session.execute_code(
+                        code=f"{draft.code}\n\n{test_code}",
+                    )
 
-                # Step 3.5: Semantic validation (if enabled)
-                semantic_result: Optional[SemanticValidationResult] = None
-                if self.enable_semantic_validation and (expected_output is not None or expected_output_type != "any"):
-                    log.info("Running semantic validation...")
-                    try:
-                        # Parse output from stdout
-                        skill_output = self._parse_skill_output(result.stdout)
+                    execution_time_ms = int(
+                        (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+                    )
 
-                        semantic_result = await self.semantic_validator.validate(
-                            expected_behavior=f"Skill for {capability}",
-                            actual_output=skill_output,
-                            expected_output=expected_output,
-                            expected_type=expected_output_type,
-                            expected_keys=expected_keys,
+                    if result.success:
+                        log.info(f"Skill test passed on iteration {iteration + 1}")
+
+                        # Step 3.5: Semantic validation (if enabled)
+                        semantic_result: Optional[SemanticValidationResult] = None
+                        if self.enable_semantic_validation and (expected_output is not None or expected_output_type != "any"):
+                            log.info("Running semantic validation...")
+                            try:
+                                # Parse output from stdout
+                                skill_output = self._parse_skill_output(result.stdout)
+
+                                semantic_result = await self.semantic_validator.validate(
+                                    expected_behavior=f"Skill for {capability}",
+                                    actual_output=skill_output,
+                                    expected_output=expected_output,
+                                    expected_type=expected_output_type,
+                                    expected_keys=expected_keys,
+                                )
+
+                                if not semantic_result.passed:
+                                    log.warning(
+                                        f"Semantic validation failed: score={semantic_result.similarity_score:.2f}, "
+                                        f"reason={semantic_result.value_comparison}"
+                                    )
+                                    # Treat as failure and continue iteration
+                                    last_error = f"Semantic validation failed: {semantic_result.value_comparison}"
+                                    last_analysis = await self.failure_analyzer.analyze_failure(
+                                        capability=capability,
+                                        code=draft.code,
+                                        error_message=last_error,
+                                        stderr="",
+                                        pip_requirements=draft.pip_requirements,
+                                    )
+                                    # Override error type to semantic
+                                    last_analysis.error_type = ErrorType.SEMANTIC_ERROR
+
+                                    # Record semantic failure
+                                    await self.failure_analyzer.record_attempt(
+                                        capability=capability,
+                                        code=draft.code,
+                                        success=False,
+                                        error_type=ErrorType.SEMANTIC_ERROR,
+                                        error_message=last_error,
+                                        stdout=result.stdout,
+                                        pip_requirements=draft.pip_requirements,
+                                        system_packages=draft.system_packages,
+                                        approach="direct" if iteration == 0 else "iterative",
+                                        attempt_number=iteration + 1,
+                                        execution_time_ms=execution_time_ms,
+                                        failure_analysis={
+                                            "error_type": "semantic_error",
+                                            "root_cause": semantic_result.value_comparison,
+                                            "similarity_score": semantic_result.similarity_score,
+                                        },
+                                    )
+
+                                    if iteration < self.MAX_ITERATIONS - 1:
+                                        draft = await self._fix_skill_code(
+                                            draft, last_error, research, last_analysis, iteration_errors
+                                        )
+                                        iteration += 1
+                                        # Check if requirements changed
+                                        if set(draft.pip_requirements) != set(current_pip) or set(draft.system_packages) != set(current_apt):
+                                            log.info("Requirements changed after fix, restarting session")
+                                            break
+                                    continue  # Try next iteration
+
+                                log.info(f"Semantic validation passed: score={semantic_result.similarity_score:.2f}")
+
+                            except Exception as e:
+                                log.warning(f"Semantic validation error: {e}")
+                                # Don't fail the build on validation errors, just log
+
+                        # Record successful attempt
+                        attempt_id = await self.failure_analyzer.record_attempt(
+                            capability=capability,
+                            code=draft.code,
+                            success=True,
+                            pip_requirements=draft.pip_requirements,
+                            system_packages=draft.system_packages,
+                            approach="direct" if iteration == 0 else "iterative",
+                            attempt_number=iteration + 1,
+                            execution_time_ms=execution_time_ms,
+                            research_context={
+                                "packages": research.recommended_packages,
+                                "sources": research.sources,
+                            },
                         )
 
-                        if not semantic_result.passed:
-                            log.warning(
-                                f"Semantic validation failed: score={semantic_result.similarity_score:.2f}, "
-                                f"reason={semantic_result.value_comparison}"
-                            )
-                            # Treat as failure and continue iteration
-                            last_error = f"Semantic validation failed: {semantic_result.value_comparison}"
-                            last_analysis = await self.failure_analyzer.analyze_failure(
-                                capability=capability,
-                                code=draft.code,
-                                error_message=last_error,
-                                stderr="",
-                                pip_requirements=draft.pip_requirements,
-                            )
-                            # Override error type to semantic
-                            last_analysis.error_type = ErrorType.SEMANTIC_ERROR
+                        # Learn from success
+                        await self.failure_analyzer.learn_from_success(
+                            capability=capability,
+                            pip_requirements=draft.pip_requirements,
+                            code=draft.code,
+                        )
 
-                            # Record semantic failure
-                            await self.failure_analyzer.record_attempt(
-                                capability=capability,
-                                code=draft.code,
-                                success=False,
-                                error_type=ErrorType.SEMANTIC_ERROR,
-                                error_message=last_error,
-                                stdout=result.stdout,
-                                pip_requirements=draft.pip_requirements,
-                                system_packages=draft.system_packages,
-                                approach="direct" if iteration == 0 else "iterative",
-                                attempt_number=iteration + 1,
-                                execution_time_ms=execution_time_ms,
-                                failure_analysis={
-                                    "error_type": "semantic_error",
-                                    "root_cause": semantic_result.value_comparison,
-                                    "similarity_score": semantic_result.similarity_score,
-                                },
-                            )
+                        # Step 4: Persist skill
+                        skill = await self._persist_skill(draft, research, iteration + 1)
 
-                            if iteration < self.MAX_ITERATIONS - 1:
-                                draft = await self._fix_skill_code(
-                                    draft, last_error, research, last_analysis, iteration_errors
-                                )
-                            continue  # Try next iteration
+                        return SkillBuildResult(
+                            success=True,
+                            skill=skill,
+                            skill_id=skill.id,
+                            iterations=iteration + 1,
+                            research_sources=research.sources,
+                            execution_time_ms=execution_time_ms,
+                        )
 
-                        log.info(f"Semantic validation passed: score={semantic_result.similarity_score:.2f}")
+                    # Test failed - analyze and try to fix
+                    last_error = result.error or result.stderr
+                    log.warning(f"Iteration {iteration + 1} failed: {last_error[:200]}")
 
-                    except Exception as e:
-                        log.warning(f"Semantic validation error: {e}")
-                        # Don't fail the build on validation errors, just log
+                    # Detect which libraries are being used for approach-switching
+                    used_libs = self._detect_libraries(draft.code)
 
-                # Record successful attempt
-                attempt_id = await self.failure_analyzer.record_attempt(
-                    capability=capability,
-                    code=draft.code,
-                    success=True,
-                    pip_requirements=draft.pip_requirements,
-                    system_packages=draft.system_packages,
-                    approach="direct" if iteration == 0 else "iterative",
-                    attempt_number=iteration + 1,
-                    execution_time_ms=execution_time_ms,
-                    research_context={
-                        "packages": research.recommended_packages,
-                        "sources": research.sources,
-                    },
-                )
+                    # Accumulate error for approach-switching logic
+                    iteration_errors.append({
+                        "iteration": iteration + 1,
+                        "error": last_error[:300],
+                        "libraries": used_libs,
+                    })
 
-                # Learn from success
-                await self.failure_analyzer.learn_from_success(
-                    capability=capability,
-                    pip_requirements=draft.pip_requirements,
-                    code=draft.code,
-                )
+                    # Analyze the failure
+                    last_analysis = await self.failure_analyzer.analyze_failure(
+                        capability=capability,
+                        code=draft.code,
+                        error_message=last_error,
+                        stderr=result.stderr,
+                        pip_requirements=draft.pip_requirements,
+                    )
 
-                # Step 4: Persist skill
-                skill = await self._persist_skill(draft, research, iteration + 1)
+                    # Record failed attempt
+                    await self.failure_analyzer.record_attempt(
+                        capability=capability,
+                        code=draft.code,
+                        success=False,
+                        error_type=last_analysis.error_type,
+                        error_message=last_error,
+                        stderr=result.stderr,
+                        stdout=result.stdout,
+                        pip_requirements=draft.pip_requirements,
+                        system_packages=draft.system_packages,
+                        approach="direct" if iteration == 0 else "iterative",
+                        attempt_number=iteration + 1,
+                        execution_time_ms=execution_time_ms,
+                        failure_analysis={
+                            "error_type": last_analysis.error_type.value,
+                            "root_cause": last_analysis.root_cause,
+                            "suggested_fixes": last_analysis.suggested_fixes,
+                            "alternative_packages": last_analysis.alternative_packages,
+                        },
+                    )
 
-                return SkillBuildResult(
-                    success=True,
-                    skill=skill,
-                    skill_id=skill.id,
-                    iterations=iteration + 1,
-                    research_sources=research.sources,
-                    execution_time_ms=execution_time_ms,
-                )
-
-            # Test failed - analyze and try to fix
-            last_error = result.error or result.stderr
-            log.warning(f"Iteration {iteration + 1} failed: {last_error[:200]}")
-
-            # Detect which libraries are being used for approach-switching
-            used_libs = self._detect_libraries(draft.code)
-
-            # Accumulate error for approach-switching logic
-            iteration_errors.append({
-                "iteration": iteration + 1,
-                "error": last_error[:300],
-                "libraries": used_libs,
-            })
-
-            # Analyze the failure
-            last_analysis = await self.failure_analyzer.analyze_failure(
-                capability=capability,
-                code=draft.code,
-                error_message=last_error,
-                stderr=result.stderr,
-                pip_requirements=draft.pip_requirements,
-            )
-
-            # Record failed attempt
-            await self.failure_analyzer.record_attempt(
-                capability=capability,
-                code=draft.code,
-                success=False,
-                error_type=last_analysis.error_type,
-                error_message=last_error,
-                stderr=result.stderr,
-                stdout=result.stdout,
-                pip_requirements=draft.pip_requirements,
-                system_packages=draft.system_packages,
-                approach="direct" if iteration == 0 else "iterative",
-                attempt_number=iteration + 1,
-                execution_time_ms=execution_time_ms,
-                failure_analysis={
-                    "error_type": last_analysis.error_type.value,
-                    "root_cause": last_analysis.root_cause,
-                    "suggested_fixes": last_analysis.suggested_fixes,
-                    "alternative_packages": last_analysis.alternative_packages,
-                },
-            )
-
-            if iteration < self.MAX_ITERATIONS - 1:
-                # Try to fix the code using analysis + accumulated errors
-                draft = await self._fix_skill_code(
-                    draft, last_error, research, last_analysis, iteration_errors
-                )
+                    iteration += 1
+                    if iteration < self.MAX_ITERATIONS:
+                        # Try to fix the code using analysis + accumulated errors
+                        draft = await self._fix_skill_code(
+                            draft, last_error, research, last_analysis, iteration_errors
+                        )
+                        # Check if requirements changed — need a new session
+                        if set(draft.pip_requirements) != set(current_pip) or set(draft.system_packages) != set(current_apt):
+                            log.info("Requirements changed after fix, restarting session")
+                            break
 
         # All iterations failed
         execution_time_ms = int(
@@ -601,6 +576,7 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
             pip_requirements=pip_requirements,
             system_packages=research.recommended_system_packages,
             function_name="execute",
+            interface=await self._derive_interface_with_llm(code, capability),
         )
 
     def _detect_libraries(self, code: str) -> list[str]:
@@ -769,6 +745,7 @@ Fix the code to resolve this error. Return ONLY the fixed Python code, no explan
             pip_requirements=all_requirements,
             system_packages=draft.system_packages,
             function_name=draft.function_name,
+            interface=await self._derive_interface_with_llm(fixed_code, draft.name),
         )
 
     def _build_test_code(
@@ -891,6 +868,7 @@ if __name__ == "__main__":
             # Update existing skill
             existing_skill.code = draft.code
             existing_skill.description = draft.description
+            existing_skill.interface = draft.interface or existing_skill.interface
             existing_skill.skill_metadata = metadata
             existing_skill.is_active = True
             await self.db.commit()
@@ -904,6 +882,7 @@ if __name__ == "__main__":
             description=draft.description,
             code=draft.code,
             test_cases=[],
+            interface=draft.interface,
             skill_metadata=metadata,
             is_active=True,
         )
@@ -914,6 +893,109 @@ if __name__ == "__main__":
 
         log.info(f"Created new skill: {skill.id}")
         return skill
+
+    async def _derive_interface_with_llm(self, code: str, capability: str) -> dict:
+        """Use LLM + Instructor to derive accurate interface from generated code."""
+        prompt = f"""Analyze this Python skill code and extract its interface schema.
+
+The function `execute(input_data: dict)` reads parameters from `input_data`.
+For each parameter found, determine the correct type:
+- "file" for file paths (parameters containing file/path in name, or used with open())
+- "object" for dict parameters (used with .get(), ["key"], .keys(), .items())
+- "array" for list parameters (iterated over, used with .append(), len())
+- "integer" / "number" for numeric parameters
+- "boolean" for flag parameters
+- "string" for text parameters
+
+Mark parameters as required if the code does not provide a default value (i.e. uses input_data["key"] instead of input_data.get("key", default)).
+
+```python
+{code}
+```"""
+
+        try:
+            result: SkillInterfaceOutput = await self.llm.chat_structured(
+                messages=[
+                    {"role": "system", "content": "You are a code analyzer. Extract parameter interfaces accurately."},
+                    {"role": "user", "content": prompt},
+                ],
+                response_model=SkillInterfaceOutput,
+                temperature=0.1,
+                max_tokens=1000,
+            )
+            return {
+                "input": result.input.model_dump(),
+                "output": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "result": {"type": "object"},
+                    },
+                },
+            }
+        except Exception as e:
+            log.warning(f"LLM interface derivation failed for '{capability}': {e}, falling back to regex")
+            return self._derive_interface_from_code(code)
+
+    @staticmethod
+    def _derive_interface_from_code(code: str) -> dict:
+        """Derive an interface schema from the execute() function signature via AST (fallback)."""
+        import ast
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            return {}
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef) or node.name != "execute":
+                continue
+
+            # Parse docstring for parameter descriptions
+            docstring = ast.get_docstring(node) or ""
+            param_descriptions: dict[str, str] = {}
+            for line in docstring.split("\n"):
+                line = line.strip()
+                # Match "param_name: description" or "param_name (type): description"
+                if ":" in line and not line.startswith("Args") and not line.startswith("Returns"):
+                    parts = line.split(":", 1)
+                    key = parts[0].strip().strip("-").strip()
+                    if key and not key[0].isupper() and len(parts) > 1:
+                        param_descriptions[key] = parts[1].strip()
+
+            # Check if function takes a single dict param (input_data: dict)
+            args = node.args
+            params = args.args
+            if len(params) == 1:
+                # Single dict param — look at docstring/code for inner keys
+                properties: dict[str, dict] = {}
+                # Scan code for input_data.get("key") or input_data["key"] patterns
+                import re
+                for match in re.finditer(r'input_data(?:\.get\(|\.?\[)["\'](\w+)["\']', code):
+                    key = match.group(1)
+                    ptype = "file" if "file" in key or "path" in key else "string"
+                    properties[key] = {
+                        "type": ptype,
+                        "description": param_descriptions.get(key, ""),
+                    }
+
+                if properties:
+                    return {
+                        "input": {
+                            "type": "object",
+                            "properties": properties,
+                            "required": list(properties.keys())[:1],  # First param as required
+                        },
+                        "output": {
+                            "type": "object",
+                            "properties": {
+                                "success": {"type": "boolean"},
+                                "result": {"type": "object"},
+                            },
+                        },
+                    }
+            break
+
+        return {}
 
     def _parse_skill_output(self, stdout: str) -> Any:
         """Parse skill output from sandbox stdout."""

@@ -212,7 +212,7 @@ async def get_topology(
             agent_id=agent.id,
             name=agent.name,
             prompt_id=agent.prompt_id,
-            capabilities=agent.capabilities or [],
+            capabilities=[],
             dependencies=resolved_deps,
             skill_ids=[],  # Agent model doesn't have skill_ids
             config={},  # Agent model doesn't have config
@@ -297,7 +297,7 @@ async def get_topology_reactflow(
             data=ReactFlowNodeData(
                 label=agent.name,
                 agent_id=agent.id,
-                capabilities=agent.capabilities or [],
+                capabilities=[],
                 is_active=agent.is_active,
                 prompt_id=agent.prompt_id,
                 io_schema=agent.io_schema or {},

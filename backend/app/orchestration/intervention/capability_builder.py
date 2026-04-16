@@ -108,6 +108,12 @@ class CapabilityBuilder:
             return await self._build_skill(
                 gap, challenge_text, approach.name, approach.constraints, previous_failures
             )
+        elif gap.gap_type == GapType.MISSING_PLANNING_SKILL:
+            # Planning skills will be built via Proposer-Agent in Sprint 3
+            # For now: route to prompt builder (closest semantic match)
+            return await self._build_prompt(
+                gap, challenge_text, approach.name, approach.constraints, previous_failures
+            )
         elif gap.gap_type == GapType.WEAK_PROMPT:
             return await self._build_prompt(
                 gap, challenge_text, approach.name, approach.constraints, previous_failures
@@ -131,7 +137,7 @@ class CapabilityBuilder:
                 duration_seconds=0.0
             )
 
-    def _get_skill_team(self) -> "SkillTeamOrchestrator":
+    def get_skill_team(self) -> "SkillTeamOrchestrator":
         """Get or create the Skill Team Orchestrator."""
         if self._skill_team is None:
             from app.services.skill_team_orchestrator import SkillTeamOrchestrator
@@ -168,6 +174,29 @@ class CapabilityBuilder:
         """
         import time
         start_time = time.time()
+
+        # Check if a matching skill already exists (deduplication)
+        skill_name = f"skill_{gap.affected_capability.lower().replace(' ', '_').replace('-', '_')}"
+        existing = await self._find_existing_skill(skill_name)
+        if existing and existing.is_active:
+            logger.info(
+                f"Skill already exists for '{gap.affected_capability}': "
+                f"id={existing.id[:8]}..., name={existing.name} — skipping build"
+            )
+            # Ensure it's bound to an agent
+            bound_agent_id = await self._expand_agent_capabilities(
+                skill_id=existing.id,
+                affected_capability=gap.affected_capability,
+            )
+            return BuildResult(
+                success=True,
+                artifact_id=existing.id,
+                artifact_type="skill",
+                failure_reason=None,
+                approach_used="reuse_existing",
+                duration_seconds=time.time() - start_time,
+                bound_to_agent_id=bound_agent_id,
+            )
 
         # Try Skill Team first if enabled
         if self._use_skill_team:
@@ -252,7 +281,7 @@ class CapabilityBuilder:
         import time
 
         try:
-            skill_team = self._get_skill_team()
+            skill_team = self.get_skill_team()
 
             result = await skill_team.develop_skill(
                 capability=gap.affected_capability,
@@ -261,17 +290,12 @@ class CapabilityBuilder:
             duration = time.time() - start_time
 
             if result.success:
-                # Create skill binding
-                expanded_agent_id = await self._expand_agent_capabilities(
-                    skill_id=result.skill_id,
-                    affected_capability=gap.affected_capability
-                )
-
                 logger.info(
                     f"Skill Team built skill: {result.skill_name}, "
-                    f"duration={duration:.1f}s, bound_to={expanded_agent_id}"
+                    f"duration={duration:.1f}s"
                 )
 
+                # Pass integration plan through — binding handled by injector
                 return BuildResult(
                     success=True,
                     artifact_id=result.skill_id,
@@ -279,7 +303,7 @@ class CapabilityBuilder:
                     failure_reason=None,
                     approach_used="skill_team",
                     duration_seconds=duration,
-                    bound_to_agent_id=expanded_agent_id,
+                    integration_plan=result.integration_plan,
                 )
             else:
                 logger.warning(
@@ -562,6 +586,27 @@ class CapabilityBuilder:
         normalized = normalized.replace('_', ' ').replace('-', ' ')
         return ' '.join(normalized.split())
 
+    async def _get_agent_capabilities(self, agent) -> list[str]:
+        """Derive agent capabilities from assigned skills' applicability fields."""
+        from sqlalchemy import select
+        from app.models.sql.versioned_models import Skill
+
+        skills = (await self.db.execute(
+            select(Skill).where(Skill.is_active == True)
+        )).scalars().all()
+
+        caps = []
+        for skill in skills:
+            meta = skill.skill_metadata or {}
+            target = meta.get("target_agent_id") or meta.get("assigned_agent")
+            if target and target != agent.id and target != agent.name:
+                continue
+            if skill.applicability:
+                caps.append(skill.applicability)
+            elif meta.get("affected_capability"):
+                caps.append(meta["affected_capability"])
+        return caps
+
     async def _find_best_agent_for_capability(
         self,
         affected_capability: str
@@ -587,7 +632,7 @@ class CapabilityBuilder:
         best_score = 0.0
 
         for agent in agents:
-            agent_caps = agent.capabilities or []
+            agent_caps = await self._get_agent_capabilities(agent)
             if not agent_caps:
                 continue
 
@@ -656,7 +701,7 @@ class CapabilityBuilder:
             return await self._create_specialist_agent(skill_id, affected_capability)
 
         # Check if capability already exists
-        current_caps = best_agent.capabilities or []
+        current_caps = await self._get_agent_capabilities(best_agent)
         cap_normalized = self._normalize_capability(affected_capability)
 
         for existing_cap in current_caps:

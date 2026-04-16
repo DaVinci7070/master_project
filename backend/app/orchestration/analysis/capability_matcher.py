@@ -78,7 +78,8 @@ class CapabilityMatcher:
         all_capabilities: set[str] = set()
 
         for agent in topology.get_active_agents():
-            caps = agent.capabilities or []
+            # Capabilities derived from agent's assigned skills
+            caps = list(agent.capabilities) if agent.capabilities else []
             agent_capabilities[agent.agent_id] = caps
             all_capabilities.update(caps)
 
@@ -132,16 +133,21 @@ class CapabilityMatcher:
         for skill in skills:
             caps = []
 
-            # PRIMARY: affected_capability from metadata (most important!)
-            # This is set by CapabilityBuilder when filling a gap
-            if skill.skill_metadata:
+            # PRIMARY: Skill.applicability (SoK C field)
+            if skill.applicability:
+                caps.append(skill.applicability)
+                logger.info(
+                    f"Skill '{skill.name}' provides applicability: '{skill.applicability}'"
+                )
+
+            # SECONDARY: affected_capability from metadata (legacy)
+            if not caps and skill.skill_metadata:
                 if affected_cap := skill.skill_metadata.get("affected_capability"):
                     caps.append(affected_cap)
                     logger.info(
                         f"Skill '{skill.name}' provides affected_capability: '{affected_cap}'"
                     )
 
-                # Secondary: explicit capability_name
                 if cap_name := skill.skill_metadata.get("capability_name"):
                     if cap_name not in caps:
                         caps.append(cap_name)

@@ -179,6 +179,14 @@ async def reset_system(
             delete(Agent).where(Agent.source == "system_generated")
         )).rowcount
 
+        # Delete all tables that reference skills (FK dependencies)
+        from sqlalchemy import text
+        for dep_table in ("skill_build_attempts", "skill_bindings", "research_cache"):
+            try:
+                await session.execute(text(f"DELETE FROM {dep_table}"))
+            except Exception:
+                pass
+
         # Delete all skills
         deleted_skills = (await session.execute(
             delete(Skill)
@@ -209,24 +217,6 @@ async def reset_system(
             from app.models.sql.agent_event_models import AgentExecutionEvent
             deleted_events += (await session.execute(
                 delete(AgentExecutionEvent)
-            )).rowcount
-        except Exception:
-            pass
-
-        # Clean up skill build attempts (failure history)
-        try:
-            from app.models.sql.skill_build_models import SkillBuildAttempt
-            deleted_events += (await session.execute(
-                delete(SkillBuildAttempt)
-            )).rowcount
-        except Exception:
-            pass
-
-        # Clean up research cache
-        try:
-            from app.models.sql.skill_build_models import ResearchCache
-            deleted_events += (await session.execute(
-                delete(ResearchCache)
             )).rowcount
         except Exception:
             pass
@@ -338,7 +328,7 @@ async def create_snapshot(
             {
                 "id": a.id,
                 "name": a.name,
-                "capabilities": a.capabilities,
+                "capabilities": [],
                 "dependencies": a.dependencies,
                 "io_schema": a.io_schema,
                 "is_active": a.is_active,

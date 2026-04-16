@@ -12,7 +12,9 @@ from app.orchestration.shared_memory.service import SharedMemoryService
 from app.orchestration.context_manager import ContextBudgetManager
 from app.models.schemas.shared_memory_schemas import FactCreate
 from app.orchestration.executors.tool_calling import (
+    AgentResponse,
     ToolCallDetector,
+    ToolCallRequest,
     ToolResult,
     build_tool_prompt_section,
     format_tool_result_for_llm,
@@ -24,6 +26,17 @@ if TYPE_CHECKING:
     from app.orchestration.topology.loader import TopologyLoader
 
 logger = logging.getLogger(__name__)
+
+# Map JSON Schema type strings to Python types for Pydantic validation
+_SCHEMA_TYPE_MAP: dict[str, type] = {
+    "string": str, "str": str,
+    "integer": int, "int": int,
+    "number": float, "float": float,
+    "boolean": bool, "bool": bool,
+    "object": dict, "dict": dict,
+    "array": list, "list": list,
+    "file": str,
+}
 
 
 class ArtifactWriteError(Exception):
@@ -56,7 +69,8 @@ class GenericAgentExecutor:
         context_manager: Optional[ContextBudgetManager] = None,
         max_context_tokens: int = 100000,
         db: Optional[AsyncSession] = None,  # For auto-creating skills
-        sandbox_executor: Optional[Any] = None  # SandboxExecutorService for skill execution
+        sandbox_executor: Optional[Any] = None,  # SandboxExecutorService for skill execution
+        intervention_orchestrator: Optional[Any] = None,  # For self-healing skill builds
     ):
         """
         Initialize generic executor.
@@ -79,6 +93,9 @@ class GenericAgentExecutor:
         self.max_context_tokens = max_context_tokens
         self.db = db  # For auto-creating skills
         self.sandbox_executor = sandbox_executor
+        self._intervention = intervention_orchestrator
+        self._self_healing_count = 0     # Track builds per execution
+        self._in_self_healing = False    # Recursion guard
         self.tool_detector = ToolCallDetector()
 
     async def execute(
@@ -114,7 +131,7 @@ class GenericAgentExecutor:
         context = await self._build_context(agent, execution_id)
 
         # 2. Load skills from TopologyLoader cache (per CONTEXT: eager loading)
-        skills = self._get_agent_skills(agent)
+        skills, planning_skills = self._get_agent_skills(agent)
 
         # 3. Construct prompt with tool calling format if skills available
         full_prompt = self._construct_prompt(
@@ -131,6 +148,7 @@ class GenericAgentExecutor:
                 full_prompt=full_prompt,
                 agent=agent,
                 skills=skills,
+                planning_skills=planning_skills,
                 execution_id=execution_id
             )
         except Exception as e:
@@ -180,7 +198,8 @@ class GenericAgentExecutor:
         full_prompt: str,
         agent: AgentNode,
         skills: list[dict[str, Any]],
-        execution_id: str
+        execution_id: str,
+        planning_skills: Optional[list[dict[str, Any]]] = None
     ) -> dict[str, Any]:
         """
         Execute LLM with tool calling loop.
@@ -193,14 +212,16 @@ class GenericAgentExecutor:
         Args:
             full_prompt: Initial prompt with context and tool docs
             agent: Agent definition
-            skills: Available skills for this agent
+            skills: Available functional skills for this agent
             execution_id: Current execution ID
+            planning_skills: Planning skills to inject into system prompt
 
         Returns:
             Final agent output dict
         """
+        planning_context = self._build_planning_prompt(planning_skills or [])
         messages = [
-            {"role": "system", "content": f"You are {agent.name}. {', '.join(agent.capabilities)}"},
+            {"role": "system", "content": f"You are {agent.name}.{planning_context}"},
             {"role": "user", "content": full_prompt}
         ]
 
@@ -208,19 +229,24 @@ class GenericAgentExecutor:
         tool_results_log: list[dict] = []
 
         while tool_call_count < MAX_TOOL_CALLS:
-            # Call LLM
-            response = await self._call_llm_messages(messages, agent)
-
-            # Try to detect tool call in response
-            agent_response = self.tool_detector.detect_from_text(response)
-
-            if agent_response is None:
-                # No structured response detected - treat as final answer
-                logger.debug(f"No structured response detected, treating as final answer")
-                return self._parse_response(response, agent)
+            # Call LLM with Instructor for structured, validated output
+            try:
+                agent_response = await self.llm_client.chat_structured(
+                    messages=messages,
+                    response_model=AgentResponse,
+                    temperature=agent.config.get("temperature", 0.2),
+                    max_tokens=agent.config.get("max_tokens", 8192),
+                    max_retries=2,
+                )
+            except Exception as e:
+                # Fallback to raw text parsing if chat_structured fails
+                logger.warning(f"chat_structured failed, falling back to text parsing: {e}")
+                response = await self._call_llm_messages(messages, agent)
+                agent_response = self.tool_detector.detect_from_text(response)
+                if agent_response is None:
+                    return self._parse_response(response, agent)
 
             if agent_response.is_final_answer():
-                # Final answer - return the response
                 logger.info(f"Agent {agent.name} returned final answer after {tool_call_count} tool calls")
                 return {
                     "result": agent_response.response or "",
@@ -233,6 +259,9 @@ class GenericAgentExecutor:
                 if not tool_call:
                     logger.warning("Failed to parse tool call request")
                     return {"error": "Invalid tool call format", "success": False}
+
+                # Validate and fix arguments against skill interface schema
+                tool_call = await self._validate_and_fix_arguments(tool_call, skills)
 
                 tool_call_count += 1
                 logger.info(f"Tool call {tool_call_count}/{MAX_TOOL_CALLS}: {tool_call.tool}")
@@ -257,7 +286,7 @@ class GenericAgentExecutor:
                 })
 
                 # Add assistant's response and tool result to messages
-                messages.append({"role": "assistant", "content": response})
+                messages.append({"role": "assistant", "content": agent_response.model_dump_json()})
                 messages.append({
                     "role": "user",
                     "content": format_tool_result_for_llm(tool_result)
@@ -298,12 +327,27 @@ class GenericAgentExecutor:
         # Find the skill
         skill = next((s for s in skills if s["name"] == tool_name), None)
         if not skill:
-            return ToolResult(
-                tool=tool_name,
-                success=False,
-                error=f"Tool '{tool_name}' not found",
-                execution_time_ms=(time.time() - start_time) * 1000
-            )
+            # Attempt self-healing if enabled
+            from app.core.config import settings
+            if (settings.intra_execution_self_healing_enabled
+                    and self._intervention
+                    and self._self_healing_count < settings.self_healing_max_builds_per_execution
+                    and not self._in_self_healing):
+                built = await self._self_heal_missing_tool(tool_name, arguments, skills)
+                if built:
+                    skill = built
+                else:
+                    return ToolResult(
+                        tool=tool_name, success=False,
+                        error=f"Tool '{tool_name}' not found (self-healing failed)",
+                        execution_time_ms=(time.time() - start_time) * 1000,
+                    )
+            else:
+                return ToolResult(
+                    tool=tool_name, success=False,
+                    error=f"Tool '{tool_name}' not found",
+                    execution_time_ms=(time.time() - start_time) * 1000,
+                )
 
         code = skill.get("code")
         if not code:
@@ -314,8 +358,8 @@ class GenericAgentExecutor:
                 execution_time_ms=(time.time() - start_time) * 1000
             )
 
-        # Extract function name from code (first function definition)
-        import re
+        # Extract function name from code (standard: "execute")
+        import re, os
         func_match = re.search(r"def\s+(\w+)\s*\(", code)
         function_name = func_match.group(1) if func_match else "execute"
 
@@ -323,27 +367,112 @@ class GenericAgentExecutor:
         skill_metadata = skill.get("metadata", {})
         pip_requirements = skill_metadata.get("pip_requirements", [])
         system_packages = skill_metadata.get("system_packages", [])
+        logger.debug(f"Skill {tool_name}: pip={pip_requirements}, sys={system_packages}")
 
-        # Execute in sandbox (with fallback to AST-based executor)
-        if self.sandbox_executor:
+        # Identify file parameters from skill interface schema
+        skill_interface = skill.get("interface") or {}
+        input_props = skill_interface.get("input", {}).get("properties", {})
+        file_params = {
+            k for k, v in input_props.items()
+            if isinstance(v, dict) and (
+                v.get("type") == "file"
+                or (v.get("type") == "array" and isinstance(v.get("items"), dict)
+                    and v["items"].get("type") == "file")
+            )
+        }
+
+        # Fallback for skills without interface: name-based detection
+        if not file_params:
+            file_params = {
+                k for k in arguments
+                if isinstance(arguments.get(k), str)
+                and ("file_path" in k or "path" in k)
+            }
+
+        # Collect input_files: read referenced files so sandbox can access them
+        input_files: dict[str, bytes] = {}
+        sandbox_arguments = dict(arguments)
+
+        # Also check actual argument keys that look like file paths but aren't in file_params
+        # (agent may use slightly different key names than the interface defines)
+        for k, v in arguments.items():
+            if k not in file_params and isinstance(v, str) and (
+                "file" in k or "path" in k
+            ):
+                file_params.add(k)
+
+        logger.debug(f"File detection: file_params={file_params}, arguments_keys={list(arguments.keys())}")
+        for arg_key in file_params:
+            arg_val = arguments.get(arg_key)
+            if not isinstance(arg_val, str):
+                continue
+
+            # Resolve host-side path (may be /workspace/... referencing uploads dir)
+            host_path = arg_val
+            if arg_val.startswith("/workspace/"):
+                upload_dir = os.path.join(
+                    os.path.dirname(__file__), '..', '..', '..', 'uploads'
+                )
+                host_path = os.path.join(upload_dir, os.path.basename(arg_val))
+
+            if os.path.isfile(host_path):
+                filename = os.path.basename(host_path)
+                with open(host_path, "rb") as f:
+                    input_files[filename] = f.read()
+                sandbox_arguments[arg_key] = f"/workspace/{filename}"
+                logger.info(f"Providing file to sandbox: {filename} ({len(input_files[filename])} bytes)")
+
+        # Execute in sandbox via execute_skill (supports input_files)
+        if self.sandbox_executor and hasattr(self.sandbox_executor, 'execute_skill'):
             try:
                 result = await self.sandbox_executor.execute_skill(
                     code=code,
                     function_name=function_name,
-                    arguments=arguments,
+                    arguments=sandbox_arguments,
                     pip_requirements=pip_requirements,
                     system_packages=system_packages,
+                    input_files=input_files if input_files else None,
                 )
                 return ToolResult(
                     tool=tool_name,
                     success=result.success,
-                    output=json.loads(result.stdout) if result.success and result.stdout else result.output,
+                    output=result.output,
                     error=result.error,
                     execution_time_ms=result.execution_time_ms
                 )
             except Exception as e:
                 logger.warning(f"Sandbox execution failed for {tool_name}: {e}, falling back to AST executor")
-                # Fall through to AST-based executor below
+        elif self.sandbox_executor:
+            try:
+                # Fallback: execute() proxy (no input_files support)
+                args_json = json.dumps(sandbox_arguments)
+                runner_code = (
+                    f"{code}\n\n"
+                    f"import json, sys\n"
+                    f"_args = json.loads({repr(args_json)})\n"
+                    f"_result = {function_name}(_args)\n"
+                    f"print(json.dumps(_result))\n"
+                )
+                result = await self.sandbox_executor.execute(
+                    code=runner_code,
+                    pip_requirements=pip_requirements,
+                    system_packages=system_packages,
+                )
+                output = None
+                if result.success and result.stdout:
+                    try:
+                        output = json.loads(result.stdout.strip())
+                    except json.JSONDecodeError:
+                        output = result.stdout.strip()
+                return ToolResult(
+                    tool=tool_name,
+                    success=result.success,
+                    output=output,
+                    error=result.error,
+                    execution_time_ms=result.execution_time_ms
+                )
+            except Exception as e:
+                logger.warning(f"Sandbox execution failed for {tool_name}: {e}, falling back to AST executor")
 
         # Fallback: Use SkillExecutor (AST-based) if no sandbox or sandbox failed
         try:
@@ -387,41 +516,191 @@ class GenericAgentExecutor:
 
         return response.content
 
-    def _get_agent_skills(self, agent: AgentNode) -> list[dict[str, Any]]:
+    async def _self_heal_missing_tool(
+        self,
+        tool_name: str,
+        arguments: dict,
+        skills: list[dict],
+    ) -> Optional[dict]:
+        """Attempt to build a missing tool on-the-fly via InterventionOrchestrator."""
+        import asyncio
+        from app.core.config import settings
+
+        logger.info(f"Self-healing: attempting to build missing tool '{tool_name}'")
+        self._in_self_healing = True
+        self._self_healing_count += 1
+        try:
+            build_result = await asyncio.wait_for(
+                self._intervention.build_on_demand(
+                    capability=tool_name,
+                    context=arguments,
+                ),
+                timeout=float(settings.self_healing_build_timeout),
+            )
+            if build_result and build_result.success:
+                new_tool = self._build_result_to_tool_dict(build_result, tool_name)
+                skills.append(new_tool)
+                logger.info(f"Self-healing successful: built tool '{tool_name}'")
+                return new_tool
+            logger.warning(f"Self-healing build failed for '{tool_name}'")
+            return None
+        except asyncio.TimeoutError:
+            logger.warning(f"Self-healing build timed out for '{tool_name}'")
+            return None
+        except Exception as e:
+            logger.error(f"Self-healing failed for '{tool_name}': {e}")
+            return None
+        finally:
+            self._in_self_healing = False
+
+    @staticmethod
+    def _build_result_to_tool_dict(build_result: Any, tool_name: str) -> dict:
+        """Convert a build result to the tool dict format used by skills list."""
+        return {
+            "name": build_result.skill_name or tool_name,
+            "description": f"Auto-built skill for: {tool_name}",
+            "parameters": {},
+            "skill_id": build_result.skill_id or "",
+            "code": build_result.final_code or "",
+            "metadata": {
+                "pip_requirements": (build_result.requirements_txt or "").split("\n") if build_result.requirements_txt else [],
+                "system_packages": [],
+                "self_healed": True,
+            },
+        }
+
+    async def _validate_and_fix_arguments(
+        self, tool_call: ToolCallRequest, skills: list[dict]
+    ) -> ToolCallRequest:
+        """Validate tool arguments against skill interface schema, fix via Instructor re-prompt."""
+        skill = next((s for s in skills if s["name"] == tool_call.tool), None)
+        if not skill:
+            return tool_call
+
+        iface = (skill.get("interface") or {}).get("input", {})
+        props = iface.get("properties", {})
+        if not props:
+            return tool_call
+
+        # Build dynamic Pydantic model from interface schema
+        from pydantic import create_model as pydantic_create_model
+        fields: dict[str, Any] = {}
+        for name, schema in props.items():
+            if not isinstance(schema, dict):
+                continue
+            st = schema.get("type", "string")
+            ptype = _SCHEMA_TYPE_MAP.get(st, str)
+            required_keys = iface.get("required", [])
+            if name in required_keys:
+                fields[name] = (ptype, ...)
+            else:
+                fields[name] = (Optional[ptype], None)
+
+        if not fields:
+            return tool_call
+
+        DynamicArgs = pydantic_create_model(f"{tool_call.tool}_Args", **fields)
+
+        # Step 1: Try to validate current arguments directly
+        try:
+            validated = DynamicArgs(**tool_call.arguments)
+            tool_call.arguments = validated.model_dump(exclude_none=True)
+            return tool_call
+        except Exception:
+            pass
+
+        # Step 2: Re-prompt via Instructor — LLM gets the exact schema and fixes the arguments
+        logger.info(f"Arguments invalid for {tool_call.tool}, re-prompting via Instructor")
+        fix_prompt = (
+            f"You called tool '{tool_call.tool}' with arguments: {json.dumps(tool_call.arguments)}\n"
+            f"But the tool expects these exact parameters:\n{json.dumps(props, indent=2)}\n"
+            f"Provide the corrected arguments with the correct parameter names and types. "
+            f"Map the values from the original arguments to the correct parameter names."
+        )
+        try:
+            fixed = await self.llm_client.chat_structured(
+                messages=[{"role": "user", "content": fix_prompt}],
+                response_model=DynamicArgs,
+                max_retries=2,
+            )
+            tool_call.arguments = fixed.model_dump(exclude_none=True)
+            logger.info(f"Fixed arguments for {tool_call.tool} via Instructor re-prompt")
+        except Exception as e:
+            logger.warning(f"Instructor re-prompt failed for {tool_call.tool}: {e}")
+
+        return tool_call
+
+    def _get_agent_skills(self, agent: AgentNode) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         Get skills for agent from TopologyLoader's eagerly loaded cache.
 
-        Per CONTEXT: Skills loaded eagerly at topology load time, not lazy.
+        Returns:
+            Tuple of (functional_skills, planning_skills).
+            Functional skills are offered as tools in the tool-calling loop.
+            Planning skills are injected into the system prompt as reasoning guidelines.
         """
         if not self.topology_loader or not agent.skill_ids:
-            return []
+            return [], []
 
-        skills = []
+        functional_skills = []
+        planning_skills = []
+
         for skill_id in agent.skill_ids:
             skill = self.topology_loader.get_loaded_skill(skill_id)
-            if skill:
-                # Extract metadata for sandbox execution
-                skill_meta = skill.skill_metadata or {}
+            if not skill:
+                logger.warning(f"Skill {skill_id} not found in TopologyLoader cache for agent {agent.agent_id}")
+                continue
 
-                # Format skill as LLM tool with execution metadata
-                skill_tool = {
+            skill_type = getattr(skill, 'skill_type', 'functional') or 'functional'
+
+            if skill_type == "planning":
+                planning_skills.append({
                     "name": skill.name,
-                    "description": skill.description or f"Skill: {skill.name}",
-                    "parameters": skill_meta.get("input", {}),
+                    "applicability": getattr(skill, 'applicability', '') or '',
+                    "instructions": getattr(skill, 'instructions', '') or '',
+                    "termination": getattr(skill, 'termination', '') or '',
+                })
+            else:
+                # Functional skill — offer as tool
+                skill_meta = skill.skill_metadata or {}
+                skill_interface = getattr(skill, 'interface', None) or {}
+                functional_skills.append({
+                    "name": skill.name,
+                    "description": getattr(skill, 'applicability', None) or skill.description or f"Skill: {skill.name}",
+                    "parameters": skill_interface.get("input", skill_meta.get("input", {})),
+                    "interface": skill_interface,
                     "skill_id": skill.id,
                     "code": skill.code,
-                    # Include metadata for DynamicSandbox (pip/apt requirements)
                     "metadata": {
                         "pip_requirements": skill_meta.get("pip_requirements", []),
                         "system_packages": skill_meta.get("system_packages", []),
                     }
-                }
-                skills.append(skill_tool)
-            else:
-                logger.warning(f"Skill {skill_id} not found in TopologyLoader cache for agent {agent.agent_id}")
+                })
 
-        logger.debug(f"Loaded {len(skills)} skills for agent {agent.name}: {[s['name'] for s in skills]}")
-        return skills
+        if functional_skills:
+            logger.debug(f"Agent {agent.name}: {len(functional_skills)} functional skills: {[s['name'] for s in functional_skills]}")
+        if planning_skills:
+            logger.debug(f"Agent {agent.name}: {len(planning_skills)} planning skills: {[s['name'] for s in planning_skills]}")
+
+        return functional_skills, planning_skills
+
+    @staticmethod
+    def _build_planning_prompt(planning_skills: list[dict[str, Any]]) -> str:
+        """Build system prompt section from planning skills."""
+        if not planning_skills:
+            return ""
+
+        sections = ["\n\n## Reasoning Guidelines"]
+        for ps in planning_skills:
+            sections.append(f"\n### {ps['name']}")
+            if ps['applicability']:
+                sections.append(f"When to apply: {ps['applicability']}")
+            if ps['instructions']:
+                sections.append(ps['instructions'])
+            if ps['termination']:
+                sections.append(f"Done when: {ps['termination']}")
+
+        return "\n".join(sections)
 
     async def _build_context(
         self,
@@ -454,8 +733,21 @@ class GenericAgentExecutor:
         if self.shared_memory:
             try:
                 from app.models.schemas.shared_memory_schemas import SharedMemoryQuery
+                # Build query from artifacts content (task-relevant) instead of generic agent name
+                query_text = f"Context for {agent.name} agent"
+                if context["artifacts"]:
+                    # Use artifact content for semantic search — finds related past executions
+                    artifact_texts = []
+                    for a in context["artifacts"][:3]:
+                        payload = a.get("payload", {})
+                        for key in ("transcript", "challenge_text", "text", "summary", "key_points"):
+                            if key in payload and payload[key]:
+                                artifact_texts.append(str(payload[key])[:300])
+                                break
+                    if artifact_texts:
+                        query_text = " ".join(artifact_texts)
                 query = SharedMemoryQuery(
-                    query_text=f"Context for {agent.name} agent",
+                    query_text=query_text,
                     agent_id=None,  # Get from all agents
                     max_items=30
                 )
@@ -532,15 +824,17 @@ class GenericAgentExecutor:
         self,
         prompt: str,
         agent: AgentNode,
-        skills: list[dict[str, Any]]
+        skills: list[dict[str, Any]],
+        planning_skills: Optional[list[dict[str, Any]]] = None
     ) -> str:
         """Call LLM with prompt and optional tools from skills."""
         # Use agent config for LLM parameters if available
         temperature = agent.config.get("temperature", 0.2)
         max_tokens = agent.config.get("max_tokens", 8192)
 
+        planning_context = self._build_planning_prompt(planning_skills or [])
         messages = [
-            {"role": "system", "content": f"You are {agent.name}. {', '.join(agent.capabilities)}"},
+            {"role": "system", "content": f"You are {agent.name}.{planning_context}"},
             {"role": "user", "content": prompt}
         ]
 

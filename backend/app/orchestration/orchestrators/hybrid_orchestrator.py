@@ -191,6 +191,19 @@ class HybridOrchestrator:
         sandbox_executor = await self._create_sandbox_executor()
 
         # 4. Create executor with topology_loader for skill injection
+        # Create intervention orchestrator for self-healing (if enabled)
+        intervention = None
+        from app.core.config import settings
+        if settings.intra_execution_self_healing_enabled and self.db:
+            try:
+                from app.orchestration.intervention.orchestrator import create_intervention_orchestrator
+                intervention = await create_intervention_orchestrator(
+                    db=self.db,
+                    topology_loader=self.topology_loader,
+                )
+            except Exception as e:
+                logger.warning(f"Could not create intervention orchestrator for self-healing: {e}")
+
         self._executor = GenericAgentExecutor(
             llm_client=self.llm_client,
             artifact_pool=self._artifact_pool,
@@ -198,7 +211,8 @@ class HybridOrchestrator:
             context_manager=self.context_manager,
             topology_loader=self.topology_loader,  # Pass for skill injection
             db=self.db,  # Pass for auto-creating skills
-            sandbox_executor=sandbox_executor  # Pass for secure skill execution
+            sandbox_executor=sandbox_executor,  # Pass for secure skill execution
+            intervention_orchestrator=intervention,  # Pass for self-healing
         )
 
         # 5. Store input for all waves (transcript should be available to all agents)
@@ -270,6 +284,14 @@ class HybridOrchestrator:
             completed_at=end_time,
         )
 
+        # Persist execution outcome to SharedMemory for cross-run learning
+        await self._persist_execution_learnings(
+            results=results,
+            success=overall_success,
+            duration_ms=duration_ms,
+            input_data=input_data,
+        )
+
         return result
 
     async def _execute_wave(
@@ -284,6 +306,9 @@ class HybridOrchestrator:
         tasks = []
         wave_results: dict[str, Any] = {}
 
+        # Pre-fetch all prompts before parallel execution to avoid
+        # concurrent DB session access (greenlet_spawn errors)
+        agents_to_run: list[AgentNode] = []
         for agent_id in agent_ids:
             agent = topology.get_agent(agent_id)
             if not agent:
@@ -310,16 +335,24 @@ class HybridOrchestrator:
                 )
                 continue
 
+            agents_to_run.append(agent)
+
+        # Prefetch prompts sequentially (safe DB access)
+        prompt_cache = await self._prefetch_prompts(agents_to_run)
+
+        for agent in agents_to_run:
             # Emit agent_start event
             await self._emit_agent_event(
                 event_type="agent_start",
-                agent_id=agent_id,
+                agent_id=agent.agent_id,
                 agent_name=agent.name,
                 wave=wave_number
             )
 
-            task = self._execute_agent_with_events(agent, input_data, wave_number)
-            tasks.append((agent.name, agent_id, task))
+            task = self._execute_agent_with_events(
+                agent, input_data, wave_number, prompt_cache=prompt_cache
+            )
+            tasks.append((agent.name, agent.agent_id, task))
 
         # Execute in parallel
         if tasks:
@@ -362,11 +395,12 @@ class HybridOrchestrator:
         self,
         agent: AgentNode,
         input_data: Optional[dict],
-        wave_number: int
+        wave_number: int,
+        prompt_cache: Optional[dict[str, str]] = None,
     ) -> dict[str, Any]:
         """Execute agent and emit completion/error events."""
         try:
-            result = await self._execute_agent(agent, input_data)
+            result = await self._execute_agent(agent, input_data, prompt_cache=prompt_cache)
 
             # Emit agent_complete event
             await self._emit_agent_event(
@@ -392,14 +426,29 @@ class HybridOrchestrator:
             )
             raise
 
+    async def _prefetch_prompts(self, agents: list[AgentNode]) -> dict[str, str]:
+        """Pre-load all prompts for a wave before parallel execution."""
+        prompt_cache: dict[str, str] = {}
+        for agent in agents:
+            if agent.prompt_id and agent.prompt_id not in prompt_cache:
+                content = await self._get_prompt(agent.prompt_id)
+                if content:
+                    prompt_cache[agent.prompt_id] = content
+        return prompt_cache
+
     async def _execute_agent(
         self,
         agent: AgentNode,
-        input_data: Optional[dict]
+        input_data: Optional[dict],
+        prompt_cache: Optional[dict[str, str]] = None,
     ) -> dict[str, Any]:
         """Execute a single agent."""
-        # Get prompt from database
-        prompt_content = await self._get_prompt(agent.prompt_id)
+        # Use pre-fetched prompt if available, otherwise fetch (with lock)
+        prompt_content = None
+        if prompt_cache and agent.prompt_id:
+            prompt_content = prompt_cache.get(agent.prompt_id)
+        if not prompt_content:
+            prompt_content = await self._get_prompt(agent.prompt_id)
         if not prompt_content:
             prompt_content = f"You are {agent.name}. Execute your task."
 
@@ -495,6 +544,10 @@ class HybridOrchestrator:
 
         retry_results: dict[str, Any] = {}
 
+        # Prefetch prompts for retryable agents to avoid greenlet errors
+        retry_agents = [topology.get_agent(aid) for aid in retryable if topology.get_agent(aid)]
+        prompt_cache = await self._prefetch_prompts(retry_agents)
+
         for agent_id, record in retryable.items():
             agent_node = topology.get_agent(agent_id)
             if not agent_node:
@@ -558,7 +611,7 @@ class HybridOrchestrator:
             )
 
             try:
-                result = await self._execute_agent_with_events(agent_node, input_data, wave_number)
+                result = await self._execute_agent_with_events(agent_node, input_data, wave_number, prompt_cache=prompt_cache)
 
                 if isinstance(result, dict) and result.get("success"):
                     record.resolved = True
@@ -592,6 +645,86 @@ class HybridOrchestrator:
             )
             prompt = result.scalar_one_or_none()
             return prompt.content if prompt else None
+
+    async def _persist_execution_learnings(
+        self,
+        results: dict[str, Any],
+        success: bool,
+        duration_ms: int,
+        input_data: Optional[dict],
+    ) -> None:
+        """
+        Persist execution outcome to SharedMemory for cross-run learning.
+
+        Stores the final result and key agent outputs as Facts so the
+        context_retriever agent can find them in future executions.
+        """
+        if not self.shared_memory:
+            return
+
+        from app.models.schemas.shared_memory_schemas import FactCreate
+
+        try:
+            # Build a summary of what was executed and the outcome
+            outcome = "successful" if success else "failed"
+            input_summary = ""
+            if input_data:
+                transcript = input_data.get("transcript") or input_data.get("challenge_text") or ""
+                input_summary = transcript[:500] if transcript else str(input_data)[:500]
+
+            # Collect final agent outputs (last wave typically has the final report)
+            agent_outputs = []
+            for wave_key, wave_data in results.items():
+                if not isinstance(wave_data, dict) or "retries" in wave_key:
+                    continue
+                for agent_name, agent_result in wave_data.items():
+                    if not isinstance(agent_result, dict):
+                        continue
+                    if agent_result.get("success"):
+                        output = agent_result.get("output")
+                        if isinstance(output, dict):
+                            # Extract the most meaningful output field (full content)
+                            for key in ("final_report", "report", "result", "summary"):
+                                if key in output and output[key]:
+                                    agent_outputs.append((agent_name, key, str(output[key])))
+                                    break
+
+            # Fact 1: Execution summary (always persisted)
+            summary_text = (
+                f"Execution {self._execution_id} ({outcome}): "
+                f"{duration_ms}ms, input: {input_summary[:200]}"
+            )
+            tags = [
+                f"execution:{outcome}",
+                f"challenge:{self._challenge_id}" if self._challenge_id else "challenge:none",
+            ]
+            await self.shared_memory.create_fact(FactCreate(
+                text=summary_text,
+                confidence=0.9 if success else 0.5,
+                source_agent_id="hybrid_orchestrator",
+                execution_id=self._execution_id,
+                project_id=self._project_id,
+                tags=tags,
+            ))
+
+            # Fact 2+: Successful agent outputs (for context retrieval)
+            for agent_name, output_key, output_text in agent_outputs:
+                await self.shared_memory.create_fact(FactCreate(
+                    text=f"[{agent_name}] {output_text}",
+                    confidence=0.85,
+                    source_agent_id=agent_name,
+                    execution_id=self._execution_id,
+                    project_id=self._project_id,
+                    tags=[f"agent:{agent_name}", f"output:{output_key}", f"execution:{outcome}"],
+                ))
+
+            logger.info(
+                f"Persisted {1 + len(agent_outputs)} facts to shared memory "
+                f"for execution {self._execution_id}"
+            )
+        except Exception as e:
+            # Learning is non-critical — never fail the execution because of it
+            logger.warning(f"Failed to persist execution learnings: {e}")
 
     async def _create_sandbox_executor(self) -> Optional[Any]:
         """
@@ -671,10 +804,12 @@ class HybridOrchestrator:
         Emit an agent execution event to the database.
 
         Events are consumed by SSE endpoint for real-time timeline updates.
-        Uses lock to prevent concurrent session access.
+        Uses a dedicated short-lived DB session to avoid conflicts with
+        the main execution session (which may be mid-transaction).
         """
-        async with self._db_lock:
-            try:
+        try:
+            from app.dependencies.dependencies import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
                 event = AgentExecutionEvent(
                     id=str(uuid4()),
                     execution_id=self._execution_id,
@@ -685,16 +820,12 @@ class HybridOrchestrator:
                     data=data,
                     error=error
                 )
-                self.db.add(event)
-                await self.db.commit()
+                session.add(event)
+                await session.commit()
                 logger.debug(f"Emitted {event_type} event for agent {agent_name}")
-            except Exception as e:
-                # Table may not exist if migration not run - log and continue
-                logger.warning(f"Failed to emit agent event (table may not exist): {e}")
-                try:
-                    await self.db.rollback()
-                except Exception:
-                    pass
+        except Exception as e:
+            # Table may not exist if migration not run - log and continue
+            logger.warning(f"Failed to emit agent event: {e}")
 
     async def _create_execution_record(
         self,

@@ -5,7 +5,7 @@
 
 set -e
 
-PROJECT_DIR="/Users/patrick/Documents/Projects/lumari-backend"
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_DIR"
 
 echo "========================================"

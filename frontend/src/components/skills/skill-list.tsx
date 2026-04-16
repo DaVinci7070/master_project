@@ -126,7 +126,15 @@ export function SkillList() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredSkills.map((skill) => (
-            <SkillCard key={skill.id} skill={skill} />
+            <SkillCard
+              key={skill.id}
+              skill={skill}
+              onUpdated={(updated) =>
+                setSkills((prev) =>
+                  prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
+                )
+              }
+            />
           ))}
         </div>
       )}

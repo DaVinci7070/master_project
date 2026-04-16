@@ -124,10 +124,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
-            request_id=request_id,
-            path=request.url.path,
-            method=request.method,
-            user_id="unknown"
+            req=request_id[:8],
         )
 
         start_time = time.time()
@@ -139,15 +136,23 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
              if not is_health_check:
                  log.info("request_finished",
+                          method=request.method,
+                          path=request.url.path,
                           status=status_code,
-                          duration=round(process_time, 3))
+                          duration=round(process_time, 3),
+                          request_id=request_id)
 
              response.headers["X-Request-ID"] = request_id
              return response
         except Exception as e:
             process_time = time.time() - start_time
             if not is_health_check:
-                log.error("request_failed", duration=round(process_time, 3), error=str(e))
+                log.error("request_failed",
+                          method=request.method,
+                          path=request.url.path,
+                          duration=round(process_time, 3),
+                          error=str(e),
+                          request_id=request_id)
             raise e
 
 

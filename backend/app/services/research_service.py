@@ -32,9 +32,9 @@ log = logging.getLogger(__name__)
 # Capability-specific package hints for common tasks
 CAPABILITY_PACKAGE_HINTS = {
     "audio transcription": {
-        "pip": ["faster-whisper", "openai-whisper", "speechrecognition", "pydub"],
+        "pip": ["faster-whisper", "pydub"],
         "apt": ["ffmpeg"],
-        "approach": "Use faster-whisper for local transcription or OpenAI Whisper API",
+        "approach": "Use faster-whisper for local transcription (lightweight, no PyTorch needed)",
     },
     "pdf reading": {
         "pip": ["pypdf", "pdfplumber", "PyMuPDF"],
@@ -80,6 +80,27 @@ CAPABILITY_PACKAGE_HINTS = {
         "pip": ["pydantic", "cerberus", "jsonschema"],
         "apt": [],
         "approach": "Pydantic for type validation, jsonschema for JSON validation",
+    },
+    # Stdlib-preferred capabilities — no pip packages needed
+    "database": {
+        "pip": [], "apt": [], "stdlib": ["sqlite3"],
+        "approach": "Use stdlib sqlite3 for local database operations",
+    },
+    "sqlite": {
+        "pip": [], "apt": [], "stdlib": ["sqlite3"],
+        "approach": "Use stdlib sqlite3 for local database operations",
+    },
+    "csv processing": {
+        "pip": [], "apt": [], "stdlib": ["csv"],
+        "approach": "Use stdlib csv module for reading/writing CSV files",
+    },
+    "json processing": {
+        "pip": [], "apt": [], "stdlib": ["json"],
+        "approach": "Use stdlib json module for JSON parsing and serialization",
+    },
+    "data computation": {
+        "pip": [], "apt": [], "stdlib": ["math", "statistics"],
+        "approach": "Use stdlib math/statistics for numerical computations",
     },
 }
 
@@ -152,6 +173,7 @@ class ResearchService:
         """
         log.info(f"Researching capability: {capability}")
         start_time = datetime.now(timezone.utc)
+        self.reset_search_count()
 
         # Check cache first
         if not force_refresh:
@@ -297,65 +319,479 @@ class ResearchService:
             log.warning(f"Failed to cache research: {e}")
 
     async def _web_research(self, capability: str) -> ResearchContext:
-        """Perform web-based research."""
+        """Perform web-based research with content extraction and LLM summary."""
         context = ResearchContext(capability=capability)
 
         try:
-            # Search for Python implementations
+            # 1. Search for implementations and approaches
             search_results = await self._search_web(
                 f"python {capability} implementation example code"
             )
-            if search_results:
-                context.example_sources.extend(search_results[:3])
 
-            # If we have package suggestions, fetch their docs
+            fetched_sources: list[dict[str, str]] = []
+
+            if search_results:
+                context.example_sources.extend(
+                    r["url"] for r in search_results[:3]
+                )
+
+                # 2. Fetch full page content from top results (parallel)
+                async def _fetch_one(result: dict) -> Optional[dict]:
+                    content = await self._fetch_page_content(result["url"])
+                    if content:
+                        return {
+                            "url": result["url"],
+                            "title": result.get("title", ""),
+                            "content": content,
+                        }
+                    return None
+
+                fetch_tasks = [_fetch_one(r) for r in search_results[:10]]
+                fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+                for fr in fetch_results:
+                    if isinstance(fr, dict):
+                        fetched_sources.append(fr)
+
+                # 3. Add search snippets as a source too
+                snippet_content = "\n".join(
+                    f"- {r['title']}: {r['snippet']}"
+                    for r in search_results if r.get("snippet")
+                )
+                if snippet_content:
+                    fetched_sources.append({
+                        "url": "DuckDuckGo search snippets",
+                        "title": "Search result summaries",
+                        "content": snippet_content,
+                    })
+
+            # 4. Fetch package docs (existing logic)
             for package in context.pip_packages[:3]:
-                doc_snippet = await self._fetch_package_docs(package)
+                doc_snippet = await self._fetch_package_docs(package, capability)
                 if doc_snippet:
                     context.code_examples.append(doc_snippet)
+
+            # 5. LLM summarization of all sources into actionable research
+            if fetched_sources:
+                summary = await self._summarize_research_sources(
+                    capability, fetched_sources
+                )
+                if summary:
+                    context.code_examples.insert(0, summary)
 
         except Exception as e:
             log.warning(f"Web research failed: {e}")
 
         return context
 
-    async def _search_web(self, query: str) -> list[str]:
-        """Search the web for relevant results."""
-        # For now, return empty - would integrate with search API
-        # Could use: SerpAPI, Google Custom Search, DuckDuckGo, etc.
-        return []
+    # Max searches per skill build to avoid rate-limiting
+    MAX_SEARCHES_PER_BUILD = 3
+    _search_count: int = 0
 
-    async def _fetch_package_docs(self, package: str) -> Optional[str]:
-        """Fetch documentation snippet for a package."""
+    async def _search_web(self, query: str) -> list[dict]:
+        """Search the web via DuckDuckGo, return results with snippets.
+
+        Returns list of {url, title, snippet} dicts.
+        Rate-limited to MAX_SEARCHES_PER_BUILD per skill build cycle.
+        """
+        if self._search_count >= self.MAX_SEARCHES_PER_BUILD:
+            log.debug(f"Search limit reached ({self.MAX_SEARCHES_PER_BUILD}), skipping")
+            return []
+
         try:
-            # Try PyPI first for package description
+            from ddgs import DDGS
+
+            self._search_count += 1
+            raw = await asyncio.to_thread(
+                lambda: DDGS().text(query, max_results=5)
+            )
+            results = [
+                {
+                    "url": r.get("href", ""),
+                    "title": r.get("title", ""),
+                    "snippet": r.get("body", ""),
+                }
+                for r in raw
+                if r.get("href")
+            ]
+            log.info(f"Web search for '{query[:60]}' returned {len(results)} results")
+            return results
+
+        except ImportError:
+            log.warning("ddgs not installed, skipping web search")
+            return []
+        except Exception as e:
+            log.warning(f"Web search failed: {e}")
+            return []
+
+    async def _fetch_page_content(self, url: str) -> Optional[str]:
+        """Fetch a URL and extract readable content (text + all code blocks).
+
+        Handles Markdown, HTML (including Sphinx/RTD docs), and GitHub raw URLs.
+        Returns cleaned text content or None on failure.
+        """
+        try:
+            fetch_url = self._to_raw_url(url)
+
+            response = await self.http_client.get(
+                fetch_url,
+                follow_redirects=True,
+                timeout=15.0,
+                headers={"User-Agent": "Lumari-ResearchBot/1.0"},
+            )
+            if response.status_code != 200:
+                return None
+
+            text = response.text
+
+            # If HTML: extract code blocks + clean prose
+            if "<html" in text.lower()[:500]:
+                text = self._extract_from_html(text)
+            else:
+                # Markdown or plain text — use as-is
+                text = text[:5000]
+
+            return text if len(text) > 50 else None
+
+        except Exception as e:
+            log.debug(f"Failed to fetch {url[:60]}: {e}")
+            return None
+
+    def _extract_from_html(self, html: str) -> str:
+        """Extract readable content + code blocks from HTML documentation pages.
+
+        Handles Sphinx/RTD, MkDocs, and generic HTML. Strips navigation,
+        sidebars, headers, and footers to focus on main content.
+        """
+        import html as html_mod
+
+        # Remove non-content sections first
+        cleaned = html
+        for tag in ("script", "style", "nav", "header", "footer"):
+            cleaned = re.sub(
+                rf'<{tag}[^>]*>.*?</{tag}>', '', cleaned, flags=re.DOTALL | re.IGNORECASE
+            )
+        # Remove sidebar/toc divs (common in Sphinx/RTD/MkDocs)
+        cleaned = re.sub(
+            r'<div[^>]*class="[^"]*(?:sidebar|sphinxsidebar|toctree|nav-|breadcrumb|headerlink)[^"]*"[^>]*>.*?</div>',
+            '', cleaned, flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        # Extract code blocks — multiple patterns for different doc generators
+        code_patterns = [
+            # Sphinx/RTD: <div class="highlight"><pre><span>...</span></pre></div>
+            r'<div[^>]*class="[^"]*highlight[^"]*"[^>]*>\s*<pre[^>]*>(.*?)</pre>',
+            # Generic: <pre><code>...</code></pre>
+            r'<pre[^>]*><code[^>]*>(.*?)</code></pre>',
+            # Bare <pre> blocks (some older docs)
+            r'<pre[^>]*class="[^"]*(?:literal-block|code-block|sourcecode)[^"]*"[^>]*>(.*?)</pre>',
+            # MkDocs: <code class="...">multiline</code> inside <pre>
+            r'<pre[^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>',
+        ]
+
+        code_blocks: list[str] = []
+        seen_blocks: set[str] = set()
+        for pattern in code_patterns:
+            for match in re.finditer(pattern, cleaned, re.DOTALL | re.IGNORECASE):
+                raw = match.group(1)
+                # Strip inner HTML tags (syntax highlighting spans etc.)
+                block = re.sub(r'<[^>]+>', '', html_mod.unescape(raw)).strip()
+                if block and len(block) > 20 and block not in seen_blocks:
+                    seen_blocks.add(block)
+                    code_blocks.append(block)
+
+        code_section = ""
+        if code_blocks:
+            code_section = "\n\n".join(
+                f"```\n{b}\n```" for b in code_blocks[:8]
+            )
+
+        # Try to isolate main content area (Sphinx, MkDocs, generic)
+        main_html = cleaned
+        for pattern in [
+            r'<div[^>]*class="[^"]*(?:body|document|main-content|md-content|content)[^"]*"[^>]*>(.*)',
+            r'<main[^>]*>(.*?)</main>',
+            r'<article[^>]*>(.*?)</article>',
+        ]:
+            m = re.search(pattern, cleaned, re.DOTALL | re.IGNORECASE)
+            if m:
+                main_html = m.group(1)
+                break
+
+        # Strip remaining HTML tags for prose
+        prose = re.sub(r'<[^>]+>', ' ', main_html)
+        prose = html_mod.unescape(prose)
+        prose = re.sub(r'\s+', ' ', prose).strip()[:3000]
+
+        if code_section:
+            return f"{prose}\n\n{code_section}"
+        return prose
+
+    async def _summarize_research_sources(
+        self, capability: str, sources: list[dict[str, str]]
+    ) -> str:
+        """Use LLM to summarize fetched web sources into actionable research.
+
+        Args:
+            capability: What we're trying to build
+            sources: List of {url, title, content} dicts
+
+        Returns:
+            Condensed research summary with key concepts + code examples
+        """
+        if not sources:
+            return ""
+
+        source_text = ""
+        for i, src in enumerate(sources, 1):
+            source_text += f"\n\n--- Source {i}: {src['title']} ({src['url']}) ---\n"
+            source_text += src["content"][:3000]
+
+        prompt = f"""You are a research assistant for a skill-building system.
+We need to build a Python skill for: "{capability}"
+
+Below are web sources found via search. Analyze them and produce a concise research summary:
+
+1. **Key Concepts**: Core patterns, algorithms, or approaches (language-agnostic)
+2. **Recommended Libraries**: Python packages with install commands and version info
+3. **Implementation Pattern**: Step-by-step how to implement this in Python
+4. **Code Examples**: Working Python code snippets (translate from other languages if needed)
+5. **Gotchas**: Common pitfalls, edge cases, or important configuration details
+
+Be concise. Focus on what a developer needs to write a working `def execute(input_data: dict) -> dict` function.
+
+{source_text}"""
+
+        try:
+            response = await self.llm.chat([{"role": "user", "content": prompt}])
+            summary = response.content
+            log.info(f"Summarized {len(sources)} sources into {len(summary)} chars")
+            return summary[:4000]
+        except Exception as e:
+            log.warning(f"LLM summarization failed: {e}")
+            # Fallback: return raw snippets
+            return "\n".join(
+                f"# {s['title']}\n{s['content'][:500]}" for s in sources[:3]
+            )
+
+    @staticmethod
+    def _to_raw_url(url: str) -> str:
+        """Convert GitHub URLs to raw content URLs for direct access.
+
+        GitHub HTML pages require JS rendering. Raw URLs return plain text.
+        """
+        # github.com/owner/repo -> raw README
+        match = re.match(r'https?://github\.com/([^/]+/[^/]+)/?$', url)
+        if match:
+            return f"https://raw.githubusercontent.com/{match.group(1)}/HEAD/README.md"
+
+        # github.com/owner/repo/blob/branch/path -> raw
+        match = re.match(
+            r'https?://github\.com/([^/]+/[^/]+)/blob/([^/]+)/(.*)', url
+        )
+        if match:
+            return f"https://raw.githubusercontent.com/{match.group(1)}/{match.group(2)}/{match.group(3)}"
+
+        return url
+
+    def reset_search_count(self) -> None:
+        """Reset per-build search counter. Call at start of each skill build."""
+        self._search_count = 0
+
+    async def _fetch_package_docs(self, package: str, capability: str = "") -> Optional[str]:
+        """Fetch full package documentation from PyPI + official docs.
+
+        Hierarchy:
+        1. PyPI JSON API → full README with all code examples
+        2. Official docs URL from PyPI project_urls → fetch + extract
+        3. Targeted doc search for capability-relevant pages
+        """
+        try:
+            # 1. PyPI JSON API — full README as Markdown
             url = self.PYPI_API_URL.format(package)
             response = await self.http_client.get(url)
 
-            if response.status_code == 200:
-                data = response.json()
-                info = data.get("info", {})
+            if response.status_code != 200:
+                return None
 
-                # Get description
-                description = info.get("description", "")
-                if description:
-                    # Extract code examples from description
-                    code_blocks = re.findall(
-                        r'```python\n(.*?)\n```',
-                        description,
-                        re.DOTALL
-                    )
-                    if code_blocks:
-                        return code_blocks[0][:500]
+            data = response.json()
+            info = data.get("info", {})
+            description = info.get("description", "")
 
-                    # Or just return first part of description
-                    return description[:300]
+            content_type = info.get("description_content_type", "") or ""
 
-            return None
+            # Extract code blocks based on content type
+            code_blocks: list[str] = []
+
+            if "rst" in content_type.lower():
+                # reStructuredText: .. code-block:: python
+                rst_blocks = re.findall(
+                    r'\.\.\s+code(?:-block)?::\s*\w*\s*\n((?:\s+.+\n?)+)',
+                    description,
+                )
+                code_blocks.extend(
+                    b.replace("\n    ", "\n").strip() for b in rst_blocks
+                )
+
+            # Markdown fenced code blocks (works for md and as fallback for rst)
+            fenced = re.findall(
+                r'```\w*\s*\n(.*?)```',
+                description,
+                re.DOTALL,
+            )
+            code_blocks.extend(fenced)
+
+            # Indented code blocks (4 spaces, preceded by blank line)
+            indented = re.findall(
+                r'\n\n((?:    .+\n?)+)',
+                description,
+            )
+            code_blocks.extend(
+                b.replace("\n    ", "\n").lstrip() for b in indented
+            )
+
+            # Deduplicate, sort by length, take top 5
+            seen: set[str] = set()
+            unique_blocks: list[str] = []
+            for b in code_blocks:
+                stripped = b.strip()
+                if stripped and stripped not in seen and len(stripped) > 30:
+                    seen.add(stripped)
+                    unique_blocks.append(stripped)
+            unique_blocks.sort(key=len, reverse=True)
+
+            code_section = "\n\n".join(
+                f"```\n{b}\n```" for b in unique_blocks[:5]
+            )
+
+            # Package summary (first 500 chars of description without code blocks)
+            clean = re.sub(r'```.*?```', '', description, flags=re.DOTALL)
+            clean = re.sub(r'\.\.\s+code(?:-block)?::\s*\w*\s*\n(?:\s+.+\n?)+', '', clean)
+            summary = clean.strip()[:500]
+
+            result = f"# {package} (PyPI)\n{summary}"
+            if code_section:
+                result += f"\n\n## Code Examples\n{code_section}"
+
+            # 2. Try to fetch official docs — landing page + targeted search
+            project_urls = info.get("project_urls") or {}
+            docs_url = (
+                project_urls.get("Documentation")
+                or project_urls.get("Docs")
+                or project_urls.get("Homepage")
+            )
+            if docs_url:
+                docs_content = await self._fetch_page_content(docs_url)
+                if docs_content:
+                    result += f"\n\n## Official Docs ({docs_url})\n{docs_content[:2000]}"
+
+                # Try common quickstart/getting-started subpages (parallel)
+                base = docs_url.rstrip("/")
+                quickstart_paths = [
+                    "/quickstart", "/getting-started", "/tutorial",
+                    "/quickstart.html", "/getting_started.html",
+                    "/usage", "/usage.html",
+                ]
+                qs_tasks = [
+                    self._fetch_page_content(base + p) for p in quickstart_paths
+                ]
+                qs_results = await asyncio.gather(*qs_tasks, return_exceptions=True)
+                for i, qs_content in enumerate(qs_results):
+                    if isinstance(qs_content, str) and len(qs_content) > 200:
+                        qs_url = base + quickstart_paths[i]
+                        result += f"\n\n## Getting Started ({qs_url})\n{qs_content[:2000]}"
+                        break  # one quickstart page is enough
+
+            # 3. Search docs for capability-specific pages
+            docs_extra = await self._search_library_docs(
+                package, docs_url, capability
+            )
+            if docs_extra:
+                result += f"\n\n## Relevant Doc Pages\n{docs_extra}"
+
+            return result[:8000]
 
         except Exception as e:
             log.debug(f"Failed to fetch docs for {package}: {e}")
             return None
+
+    async def _search_library_docs(
+        self, package: str, docs_url: Optional[str], capability: str
+    ) -> Optional[str]:
+        """Search library documentation for capability-relevant pages.
+
+        Strategy:
+        1. Try ReadTheDocs search API (most Python libs use it)
+        2. Fall back to DuckDuckGo site-scoped search
+        3. Fetch top matching pages and extract code examples
+        """
+        if not capability:
+            return None
+
+        results: list[str] = []
+
+        try:
+            # 1. ReadTheDocs search API
+            rtd_base = None
+            if docs_url and "readthedocs" in docs_url:
+                rtd_base = docs_url.rstrip("/")
+            else:
+                # Try common ReadTheDocs URL pattern
+                rtd_base = self.READTHEDOCS_URL.format(package.replace("-", "")).rstrip("/")
+
+            if rtd_base:
+                search_url = f"{rtd_base}/_/api/v3/search/?q={capability}&page_size=3"
+                try:
+                    resp = await self.http_client.get(
+                        search_url, follow_redirects=True, timeout=10.0,
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for hit in data.get("results", [])[:3]:
+                            page_url = hit.get("domain", rtd_base) + hit.get("path", "")
+                            title = hit.get("title", "")
+                            # Fetch the actual page for code examples
+                            page_content = await self._fetch_page_content(page_url)
+                            if page_content and len(page_content) > 100:
+                                results.append(
+                                    f"### {title}\n_Source: {page_url}_\n{page_content[:1500]}"
+                                )
+                except Exception:
+                    pass  # RTD search not available, fall through
+
+            # 2. Fallback: DuckDuckGo site-scoped search
+            if not results and docs_url:
+                from urllib.parse import urlparse
+                domain = urlparse(docs_url).netloc
+                if domain:
+                    site_results = await self._search_web(
+                        f"site:{domain} {package} {capability} example"
+                    )
+                    for sr in site_results[:2]:
+                        page_content = await self._fetch_page_content(sr["url"])
+                        if page_content and len(page_content) > 100:
+                            results.append(
+                                f"### {sr.get('title', '')}\n_Source: {sr['url']}_\n{page_content[:1500]}"
+                            )
+
+            # 3. Fallback: general search for package + capability docs
+            if not results:
+                search_results = await self._search_web(
+                    f"{package} python documentation {capability} example"
+                )
+                for sr in search_results[:2]:
+                    page_content = await self._fetch_page_content(sr["url"])
+                    if page_content and len(page_content) > 100:
+                        results.append(
+                            f"### {sr.get('title', '')}\n_Source: {sr['url']}_\n{page_content[:1500]}"
+                        )
+
+        except Exception as e:
+            log.debug(f"Doc search failed for {package}/{capability}: {e}")
+
+        if not results:
+            return None
+
+        return "\n\n".join(results)[:4000]
 
     async def _find_similar_skills(self, capability: str) -> list[dict]:
         """Find similar successful skills in the database."""

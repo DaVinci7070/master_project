@@ -49,7 +49,7 @@ def setup_logging(level: str = "INFO", json_format: bool = None):
         formatter = structlog.stdlib.ProcessorFormatter(
             processor=structlog.dev.ConsoleRenderer(
                 colors=True,
-                pad_event=30,
+                pad_event=40,
             ),
             foreign_pre_chain=shared_processors,
         )
@@ -72,6 +72,11 @@ def setup_logging(level: str = "INFO", json_format: bool = None):
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
         logging.getLogger("qdrant_client").setLevel(logging.WARNING)
+        logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+        logging.getLogger("litellm").setLevel(logging.WARNING)
+        logging.getLogger("instructor").setLevel(logging.WARNING)
+        logging.getLogger("fastembed").setLevel(logging.WARNING)
+        logging.getLogger("onnxruntime").setLevel(logging.WARNING)
 
     logging.getLogger("uvicorn").setLevel(level)
     logging.getLogger("uvicorn.error").setLevel(level)

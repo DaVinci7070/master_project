@@ -25,6 +25,7 @@ from app.core.config import settings
 from app.services.dynamic_sandbox_service import DynamicSandboxService
 from app.services.failure_analyzer import FailureAnalyzer
 from app.services.semantic_validator import SemanticValidator
+from app.services.code_validator_service import CodeValidatorService
 from app.services.research_service import ResearchService
 from app.services.skill_directory_service import SkillDirectoryService
 from app.services.skill_registry import SkillRegistry
@@ -40,6 +41,7 @@ from app.models.schemas.skill_build_schemas import (
     ReviewFinding,
     SemanticValidationResult,
     SkillBuildResult,
+    SkillIntegrationPlan,
     ErrorType,
 )
 from app.prompts.skill_team_prompts import (
@@ -48,6 +50,8 @@ from app.prompts.skill_team_prompts import (
     get_implementer_prompt,
     get_reviewer_prompt,
     get_revision_prompt,
+    get_proposer_prompt,
+    get_debug_prompt,
 )
 
 log = logging.getLogger(__name__)
@@ -177,6 +181,11 @@ class SkillTeamOrchestrator:
             phase_times["architecture"] = int((time.time() - phase_start) * 1000)
             log.info(f"Architecture complete: {len(design.test_cases)} test cases defined")
 
+            # Resolve agent name -> ID in integration plan
+            if design.integration_plan:
+                agents = await self._get_available_agents()
+                design.integration_plan = self._resolve_agent_id_by_name(design.integration_plan, agents)
+
             # Phase 3: Implementation (with iterations)
             phase_start = time.time()
             code = await self._implementation_phase(
@@ -266,6 +275,44 @@ class SkillTeamOrchestrator:
                         attempt_id=attempt_id,
                     )
 
+            # Phase 7: Parent regression check (if evolving an existing skill)
+            existing_skill = await self._find_existing_skill(capability)
+            if existing_skill and existing_skill.code:
+                phase_start = time.time()
+                from app.services.skill_validator import SkillValidator
+                validator = SkillValidator(self.db, self.sandbox)
+
+                # Build a temporary Skill-like object for the new code
+                candidate = Skill(
+                    id=str(uuid.uuid4()),
+                    name=f"skill_{capability.lower().replace(' ', '_').replace('-', '_')}",
+                    code=code,
+                    test_cases=[tc.model_dump() for tc in design.test_cases],
+                    dependencies={"pip": design.pip_requirements, "system": design.system_requirements},
+                    parent_id=existing_skill.id,
+                    is_active=False,
+                )
+
+                activation = await validator.validate_for_activation(candidate)
+                phase_times["parent_validation"] = int((time.time() - phase_start) * 1000)
+
+                if not activation.approved:
+                    log.warning(f"Skill rejected by parent validation: {activation.reason}")
+                    return SkillBuildResult(
+                        success=False,
+                        failure_phase=TeamRole.TESTER,
+                        failure_reason=f"Parent regression: {activation.reason}",
+                        error_type=ErrorType.SEMANTIC_ERROR,
+                        research=research,
+                        design=design,
+                        review=review,
+                        final_code=code,
+                        total_time_ms=int((time.time() - start_time) * 1000),
+                        phase_times=phase_times,
+                        attempt_id=attempt_id,
+                    )
+                log.info(f"Parent validation passed: {activation.reason}")
+
             # Success! Persist the skill
             skill = await self._persist_skill(capability, code, design, research)
 
@@ -310,6 +357,7 @@ class SkillTeamOrchestrator:
                 design=design,
                 review=review,
                 semantic_validation=semantic_result,
+                integration_plan=design.integration_plan,
                 final_code=code,
                 requirements_txt=requirements_txt,
                 implementation_iterations=1,  # Could track this
@@ -329,6 +377,176 @@ class SkillTeamOrchestrator:
                 phase_times=phase_times,
                 attempt_id=attempt_id,
             )
+
+    async def develop_planning_skill(
+        self,
+        capability: str,
+        failure_traces: Optional[list[str]] = None,
+        hints: Optional[dict] = None,
+    ) -> SkillBuildResult:
+        """
+        Develop a planning skill using the Proposer agent.
+
+        Planning skills are reasoning instructions (no executable code).
+        They get injected into an agent's system prompt.
+
+        Args:
+            capability: What reasoning capability to address
+            failure_traces: Recent failure messages for context
+            hints: Optional hints
+
+        Returns:
+            SkillBuildResult with planning skill details
+        """
+        start_time = time.time()
+        attempt_id = str(uuid.uuid4())
+
+        log.info(f"Starting planning skill development for: {capability}")
+
+        try:
+            # 1. Load failure history
+            failure_history = await self.failure_analyzer.get_failure_history(capability)
+            failure_context = self.failure_analyzer.format_failure_context(failure_history)
+            if failure_traces:
+                failure_context += "\n\nRecent failures:\n" + "\n".join(
+                    f"- {t[:200]}" for t in failure_traces[:5]
+                )
+
+            # 2. Load existing planning skills for dedup
+            result = await self.db.execute(
+                select(Skill).where(Skill.skill_type == "planning", Skill.is_active == True)
+            )
+            existing_skills = result.scalars().all()
+            existing_str = "\n".join(
+                f"- {s.name}: {s.applicability or s.description or '(no description)'}"
+                for s in existing_skills
+            ) or "None"
+
+            # 3. Proposer LLM call
+            llm = self._get_role_llm(TeamRole.PROPOSER) if hasattr(TeamRole, 'PROPOSER') else self.llm
+            prompt = get_proposer_prompt(
+                capability=capability,
+                existing_skills=existing_str,
+                failure_context=failure_context or "None",
+            )
+
+            response = await llm.chat(
+                messages=[
+                    {"role": "system", "content": "You are a planning-skill designer for an autonomous AI system."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+            )
+
+            # 4. Parse structured output
+            data = self._extract_json(response.content)
+            if not data or "instructions" not in data:
+                return SkillBuildResult(
+                    success=False,
+                    failure_phase=TeamRole.PROPOSER,
+                    failure_reason="Proposer failed to produce valid planning skill JSON",
+                    total_time_ms=int((time.time() - start_time) * 1000),
+                    attempt_id=attempt_id,
+                )
+
+            # 5. Persist planning skill
+            skill = await self._persist_planning_skill(
+                capability=capability,
+                name=data.get("name", f"planning_{capability.lower().replace(' ', '_')}"),
+                applicability=data.get("applicability", ""),
+                instructions=data.get("instructions", ""),
+                termination=data.get("termination", ""),
+            )
+
+            total_time_ms = int((time.time() - start_time) * 1000)
+
+            # 6. Record attempt
+            related_ids = [a.id for a in failure_history[:5]]
+            await self.failure_analyzer.record_attempt(
+                capability=capability,
+                code="",
+                success=True,
+                team_role=TeamRole.PROPOSER.value,
+                execution_time_ms=total_time_ms,
+                skill_id=skill.id,
+                strategy_id="planning_proposer",
+                related_attempt_ids=related_ids,
+            )
+
+            log.info(f"Planning skill created: {skill.name} ({skill.id[:8]}...)")
+
+            return SkillBuildResult(
+                success=True,
+                skill_id=skill.id,
+                skill_name=skill.name,
+                total_time_ms=total_time_ms,
+                attempt_id=attempt_id,
+            )
+
+        except Exception as e:
+            log.error(f"Planning skill development failed: {e}", exc_info=True)
+            return SkillBuildResult(
+                success=False,
+                failure_reason=str(e),
+                total_time_ms=int((time.time() - start_time) * 1000),
+                attempt_id=attempt_id,
+            )
+
+    async def _persist_planning_skill(
+        self,
+        capability: str,
+        name: str,
+        applicability: str,
+        instructions: str,
+        termination: str,
+    ) -> Skill:
+        """Persist a planning skill to database."""
+        # Dedup check
+        result = await self.db.execute(
+            select(Skill).where(Skill.name == name)
+        )
+        existing = result.scalar_one_or_none()
+
+        metadata = {
+            "auto_generated": True,
+            "team_built": True,
+            "build_path": "planning_proposer",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "affected_capability": capability,
+        }
+
+        if existing:
+            existing.skill_type = "planning"
+            existing.applicability = applicability
+            existing.instructions = instructions
+            existing.termination = termination
+            existing.skill_metadata = metadata
+            existing.is_active = True
+            await self.db.commit()
+            log.info(f"Updated existing planning skill: {existing.id}")
+            return existing
+
+        skill = Skill(
+            id=str(uuid.uuid4()),
+            name=name,
+            description=f"Planning skill for: {capability}",
+            skill_type="planning",
+            applicability=applicability,
+            instructions=instructions,
+            termination=termination,
+            code=None,
+            test_cases=[],
+            skill_metadata=metadata,
+            is_active=True,
+        )
+
+        self.db.add(skill)
+        await self.db.commit()
+        await self.db.refresh(skill)
+
+        log.info(f"Created new planning skill: {skill.id}")
+        return skill
 
     async def _research_phase(
         self,
@@ -390,8 +608,11 @@ class SkillTeamOrchestrator:
             "code_examples": research.code_examples[:2] if research.code_examples else [],
         }, indent=2)
 
+        # Load available agents for integration planning
+        available_agents = await self._get_available_agents()
+
         # Include failure context in architecture prompt
-        prompt = get_architect_prompt(capability, research_context, failure_context)
+        prompt = get_architect_prompt(capability, research_context, failure_context, available_agents)
 
         response = await llm.chat(
             messages=[
@@ -426,6 +647,19 @@ class SkillTeamOrchestrator:
                         expected_keys=tc.get("expected_keys", ["success"]),
                     ))
 
+                # Parse integration plan from target_agent block
+                integration_plan = None
+                target_agent = data.get("target_agent")
+                if target_agent and isinstance(target_agent, dict):
+                    integration_plan = SkillIntegrationPlan(
+                        target_agent_name=target_agent.get("agent_name"),
+                        rationale=target_agent.get("rationale", ""),
+                        artifact_declarations={
+                            "produces": target_agent.get("produces_artifacts", []),
+                            "consumes": target_agent.get("consumes_artifacts", []),
+                        },
+                    )
+
                 return ArchitectureDesign(
                     capability=capability,
                     function_signature=data.get(
@@ -441,6 +675,7 @@ class SkillTeamOrchestrator:
                     ],
                     error_handling=data.get("error_handling", ""),
                     design_notes=data.get("design_notes", ""),
+                    integration_plan=integration_plan,
                 )
 
         except Exception as e:
@@ -456,6 +691,90 @@ class SkillTeamOrchestrator:
                 TestCase(name="basic", expected_output_type="dict", expected_keys=["success"])
             ],
         )
+
+    async def _get_available_agents(self) -> list[dict]:
+        """Load active agents from DB for integration planning."""
+        try:
+            from app.models.sql.versioned_models import Agent
+            result = await self.db.execute(
+                select(Agent).where(Agent.is_active == True)
+            )
+            agents = result.scalars().all()
+            return [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "description": (a.agent_metadata or {}).get("description", ""),
+                }
+                for a in agents
+            ]
+        except Exception as e:
+            log.warning(f"Failed to load agents for integration planning: {e}")
+            return []
+
+    def _resolve_agent_id_by_name(self, plan: SkillIntegrationPlan, agents: list[dict]) -> SkillIntegrationPlan:
+        """Resolve target_agent_name to target_agent_id using the agents list."""
+        if plan.target_agent_id or not plan.target_agent_name:
+            return plan
+        name_lower = plan.target_agent_name.lower()
+        for a in agents:
+            if a["name"].lower() == name_lower:
+                plan.target_agent_id = a["id"]
+                break
+        return plan
+
+    async def _debug_code(
+        self,
+        code: str,
+        error_type_classified: str,
+        error_message: str,
+        capability: str,
+        design: ArchitectureDesign,
+        research: ResearchContext,
+    ) -> str:
+        """Debug code with error-type-specific strategy routing."""
+        llm = self._get_role_llm(TeamRole.IMPLEMENTER)
+
+        # Gather fix hints from propose_strategy
+        proposal = await self.failure_analyzer.propose_strategy(
+            capability=capability,
+            error_type_classified=error_type_classified,
+            current_attempt_number=2,
+        )
+        fix_hints = "; ".join(proposal.hints[:3]) if proposal.hints else ""
+
+        # Extract missing module for import errors
+        missing_module = ""
+        if error_type_classified == "IMPORT_ERROR":
+            missing_module = self.failure_analyzer.extract_missing_module(error_message) or ""
+
+        design_context = json.dumps({
+            "function_signature": design.function_signature,
+            "pip_requirements": design.pip_requirements,
+            "error_handling": design.error_handling,
+        }, indent=2)
+
+        prompt = get_debug_prompt(
+            error_type=error_type_classified,
+            code=code,
+            error_message=error_message[:1000],
+            missing_module=missing_module,
+            design_context=design_context,
+            fix_hints=fix_hints,
+        )
+
+        response = await llm.chat(
+            messages=[
+                {"role": "system", "content": "You are a Python debugger. Fix the code precisely."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            max_tokens=3000,
+        )
+
+        fixed_code = self._extract_code(response.content)
+        log.info(f"Debug [{error_type_classified}]: produced fixed code ({len(fixed_code)} chars)")
+        return fixed_code
 
     async def _implementation_phase(
         self,
@@ -485,51 +804,109 @@ class SkillTeamOrchestrator:
             "examples": research.code_examples[:1] if research.code_examples else [],
         }, indent=2)
 
-        for iteration in range(self.config.max_implementation_iterations):
-            log.info(f"Implementation iteration {iteration + 1}/{self.config.max_implementation_iterations}")
+        # Use a session to reuse the same container across iterations
+        async with self.sandbox.session(
+            pip_requirements=design.pip_requirements,
+            system_packages=design.system_requirements,
+            input_files=input_files,
+        ) as session:
+            for iteration in range(self.config.max_implementation_iterations):
+                log.info(f"Implementation iteration {iteration + 1}/{self.config.max_implementation_iterations}")
 
-            prompt = get_implementer_prompt(
-                capability=capability,
-                design=design_str,
-                research_context=research_str,
-                failure_context=failure_context,
-            )
+                prompt = get_implementer_prompt(
+                    capability=capability,
+                    design=design_str,
+                    research_context=research_str,
+                    failure_context=failure_context,
+                )
 
-            response = await llm.chat(
-                messages=[
-                    {"role": "system", "content": "You are a Python expert. Write clean, working code."},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.2,
-                max_tokens=3000,
-            )
+                response = await llm.chat(
+                    messages=[
+                        {"role": "system", "content": "You are a Python expert. Write clean, working code."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                    max_tokens=3000,
+                )
 
-            code = self._extract_code(response.content)
+                code = self._extract_code(response.content)
 
-            # Quick test in sandbox
-            test_result = await self._quick_test(
-                code, design, input_files
-            )
+                # AST structure validation: def execute() must exist
+                validator = CodeValidatorService()
+                structure_result = validator.validate_structure(code)
+                if not structure_result.is_valid:
+                    error_msg = "; ".join(structure_result.errors)
+                    log.warning(f"Structure validation failed (iteration {iteration + 1}): {error_msg}")
 
-            if test_result["success"]:
-                return code
+                    error_type_classified = "STRUCTURE_ERROR"
+                    await self.failure_analyzer.record_attempt(
+                        capability=capability,
+                        code=code,
+                        success=False,
+                        error_type=ErrorType.STRUCTURE_ERROR,
+                        error_message=error_msg,
+                        stderr="",
+                        pip_requirements=design.pip_requirements,
+                        system_packages=design.system_requirements,
+                        team_role=TeamRole.IMPLEMENTER.value,
+                        attempt_number=iteration + 1,
+                        error_type_classified=error_type_classified,
+                        lesson_learned=f"STRUCTURE_ERROR: {error_msg}",
+                    )
 
-            # Update failure context for next iteration
-            failure_context += f"\n\nIteration {iteration + 1} failed:\n{test_result.get('error', 'Unknown error')[:500]}"
+                    # Debug: fix structure error
+                    code = await self._debug_code(
+                        code, error_type_classified, error_msg,
+                        capability, design, research,
+                    )
+                    # Re-validate immediately; if still broken, next iteration will re-generate
+                    recheck = validator.validate_structure(code)
+                    if recheck.is_valid:
+                        # Fixed! Continue to test phase below instead of skipping
+                        pass
+                    else:
+                        failure_context += f"\n\nIteration {iteration + 1} STRUCTURE ERROR (debug failed): {error_msg}"
+                        continue
 
-            # Record failure
-            await self.failure_analyzer.record_attempt(
-                capability=capability,
-                code=code,
-                success=False,
-                error_type=ErrorType.RUNTIME_ERROR,
-                error_message=test_result.get("error", ""),
-                stderr=test_result.get("stderr", ""),
-                pip_requirements=design.pip_requirements,
-                system_packages=design.system_requirements,
-                team_role=TeamRole.IMPLEMENTER.value,
-                attempt_number=iteration + 1,
-            )
+                # Quick test in session (reuses container)
+                test_code = self._build_test_code(code, design)
+                result = await session.execute_code(code=test_code)
+                test_result = {
+                    "success": result.success,
+                    "error": result.error or result.stderr,
+                    "stderr": result.stderr,
+                    "stdout": result.stdout,
+                }
+
+                if test_result["success"]:
+                    return code
+
+                # Classify the error and debug with type-aware strategy
+                error_msg = test_result.get("error", "Unknown error")
+                error_type = self.failure_analyzer.classify_error(error_msg, test_result.get("stderr", ""))
+                error_type_classified = self.failure_analyzer.classify_error_coarse(error_type)
+
+                await self.failure_analyzer.record_attempt(
+                    capability=capability,
+                    code=code,
+                    success=False,
+                    error_type=error_type,
+                    error_message=error_msg,
+                    stderr=test_result.get("stderr", ""),
+                    pip_requirements=design.pip_requirements,
+                    system_packages=design.system_requirements,
+                    team_role=TeamRole.IMPLEMENTER.value,
+                    attempt_number=iteration + 1,
+                    error_type_classified=error_type_classified,
+                    lesson_learned=f"{error_type_classified}: {error_msg[:200]}",
+                )
+
+                # Error-type-aware debug: fix the code for next iteration
+                code = await self._debug_code(
+                    code, error_type_classified, error_msg,
+                    capability, design, research,
+                )
+                failure_context += f"\n\nIteration {iteration + 1} [{error_type_classified}]: {error_msg[:300]}"
 
         return None
 
@@ -854,6 +1231,14 @@ if __name__ == "__main__":
         """Generate requirements.txt content."""
         return "\n".join(packages)
 
+    async def _find_existing_skill(self, capability: str) -> Optional[Skill]:
+        """Find existing skill for a capability (for parent comparison)."""
+        skill_name = f"skill_{capability.lower().replace(' ', '_').replace('-', '_')}"
+        result = await self.db.execute(
+            select(Skill).where(Skill.name == skill_name, Skill.is_active == True)
+        )
+        return result.scalar_one_or_none()
+
     async def _persist_skill(
         self,
         capability: str,
@@ -880,10 +1265,17 @@ if __name__ == "__main__":
             "design_notes": design.design_notes,
         }
 
+        # Build formal interface from architect's schema
+        interface = {
+            "input": design.input_schema,
+            "output": design.output_schema,
+        }
+
         if existing:
             existing.code = code
             existing.description = f"Auto-generated skill for: {capability}"
             existing.skill_metadata = metadata
+            existing.interface = interface
             existing.is_active = True
             await self.db.commit()
             log.info(f"Updated existing skill: {existing.id}")
@@ -904,6 +1296,7 @@ if __name__ == "__main__":
             description=f"Auto-generated skill for: {capability}",
             code=code,
             test_cases=[tc.model_dump() for tc in design.test_cases],
+            interface=interface,
             skill_metadata=metadata,
             is_active=True,
         )

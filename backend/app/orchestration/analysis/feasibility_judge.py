@@ -168,7 +168,7 @@ class FeasibilityJudge:
                     return {
                         "name": agent.name or agent_id,
                         "description": getattr(agent, "description", "") or "",
-                        "capabilities": agent.capabilities or [],
+                        "capabilities": [],
                     }
 
             # Check if it's a skill: or prompt: prefixed ID

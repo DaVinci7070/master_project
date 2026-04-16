@@ -42,7 +42,7 @@ class Agent(Base):
     """
     Versioned agent model for storing agent configurations.
 
-    Agents have capabilities, dependencies, and IO schemas.
+    Agents have dependencies and IO schemas. Capabilities are derived from assigned skills.
     Source tracks origin: 'initial' (migration), 'system_generated', 'manual'
     """
     __tablename__ = "agents"
@@ -50,7 +50,6 @@ class Agent(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, unique=True)
-    capabilities = Column(JSON, default=list)
     dependencies = Column(JSON, default=list)
     io_schema = Column(JSON, nullable=False)
     is_active = Column(Boolean, default=True)
@@ -68,7 +67,12 @@ class Skill(Base):
     Versioned skill model for storing executable skills/tools.
 
     Supports parent-child relationships for tracking skill evolution.
-    Skills have test cases for validation.
+    Skills follow the SoK formal skill definition S = (C, π, T, R):
+      C = applicability, π = code/instructions, T = termination, R = interface
+
+    Two skill types:
+      - "functional": executable Python code, exposed as tool call
+      - "planning": reasoning instructions, injected into agent system prompt
     """
     __tablename__ = "skills"
     __versioned__ = {}
@@ -76,8 +80,21 @@ class Skill(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     parent_id = Column(String(36), ForeignKey("skills.id"), nullable=True)
     name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    code = Column(Text, nullable=False)
+    description = Column(String(150), nullable=True)
+
+    # Skill type: "planning" or "functional"
+    skill_type = Column(String(20), nullable=False, default="functional")
+
+    # SoK S=(C, π, T, R)
+    applicability = Column(Text, nullable=True)    # C: when to use this skill
+    instructions = Column(Text, nullable=True)     # π (NL): reasoning guidelines
+    termination = Column(Text, nullable=True)      # T: completion condition
+    interface = Column(JSON, nullable=True)        # R: input/output schema
+
+    # Executable policy π (code) — nullable for planning skills
+    code = Column(Text, nullable=True)
+    dependencies = Column(JSON, default=dict)      # pip + system deps
+
     test_cases = Column(JSON, default=list)
     skill_metadata = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)

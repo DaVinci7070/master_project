@@ -218,11 +218,14 @@ class GapSeverity(str, Enum):
 
 class GapType(str, Enum):
     """
-    Categories of capability gaps from CONTEXT.md topology analysis.
+    Categories of capability gaps from topology analysis.
 
-    Covers: skills, prompts, missing agents, broken dependencies, schema mismatches.
+    Two skill gap types map to different build paths:
+    - MISSING_SKILL → Functional skill (executable code/tool)
+    - MISSING_PLANNING_SKILL → Planning skill (reasoning instructions)
     """
     MISSING_SKILL = "missing_skill"
+    MISSING_PLANNING_SKILL = "missing_planning_skill"
     WEAK_PROMPT = "weak_prompt"
     TOPOLOGY_ISSUE = "topology_issue"
     MISSING_AGENT = "missing_agent"

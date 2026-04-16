@@ -34,7 +34,7 @@ class TaskType(str, Enum):
 DEFAULT_TASK_MODELS = {
     TaskType.RESEARCH: "gemini/gemini-2.0-flash",  # Fast for research
     TaskType.ARCHITECTURE: "claude-3-5-sonnet-20241022",  # Strong for design
-    TaskType.IMPLEMENTATION: "gemini/gemini-2.0-flash",  # Fast for iteration
+    TaskType.IMPLEMENTATION: "gemini/gemini-3-flash-preview",  # Strong for code generation
     TaskType.REVIEW: "claude-3-5-sonnet-20241022",  # Strong for review
     TaskType.CODE_FIX: "gemini/gemini-2.0-flash",  # Fast for fixes
     TaskType.SEMANTIC_VALIDATION: "claude-3-5-sonnet-20241022",  # Strong for validation

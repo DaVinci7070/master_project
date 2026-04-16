@@ -36,7 +36,7 @@ class AgentContext(BaseModel):
     )
     dependencies: List[str] = Field(
         default_factory=list,
-        description="File paths this agent may read (not entire codebase)"
+        description="File paths this agent may read (not entire context)"
     )
     interface_contract: Dict[str, Any] = Field(
         default_factory=dict,

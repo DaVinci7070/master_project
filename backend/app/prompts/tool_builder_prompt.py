@@ -139,6 +139,22 @@ Return JSON matching this exact schema:
 ```json
 {
   "code": "Complete Python function code with docstring and type hints",
+  "interface": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "param_name": {"type": "string", "description": "Description of the parameter"}
+      },
+      "required": ["param_name"]
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "success": {"type": "boolean"},
+        "result": {"type": "object", "description": "The result data"}
+      }
+    }
+  },
   "test_cases": [
     {
       "name": "test_basic_functionality",
@@ -165,6 +181,12 @@ Return JSON matching this exact schema:
   "edge_cases_handled": ["empty input", "zero value", "negative numbers"]
 }
 ```
+
+The `interface` field describes the function's input and output schema using JSON Schema format.
+- Use standard JSON Schema types: `string`, `number`, `integer`, `boolean`, `object`, `array`
+- For file parameters (paths to files the function reads), use `"type": "file"`
+- For multiple file parameters, use `"type": "array", "items": {"type": "file"}`
+- The function MUST follow `def execute(input_data: dict) -> dict` signature
 
 ## Important Notes
 

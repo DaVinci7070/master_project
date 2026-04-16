@@ -220,6 +220,25 @@ class AgentPromptImprover:
         normalized = normalized.replace('_', ' ').replace('-', ' ')
         return ' '.join(normalized.split())
 
+    async def _get_agent_capabilities(self, agent) -> list[str]:
+        """Derive agent capabilities from assigned skills' applicability fields."""
+        from app.models.sql.versioned_models import Skill
+        skills = (await self.db.execute(
+            select(Skill).where(Skill.is_active == True)
+        )).scalars().all()
+
+        caps = []
+        for skill in skills:
+            meta = skill.skill_metadata or {}
+            target = meta.get("target_agent_id") or meta.get("assigned_agent")
+            if target and target != agent.id and target != agent.name:
+                continue
+            if skill.applicability:
+                caps.append(skill.applicability)
+            elif meta.get("affected_capability"):
+                caps.append(meta["affected_capability"])
+        return caps
+
     async def _find_agent_for_capability(
         self,
         affected_capability: str
@@ -244,7 +263,7 @@ class AgentPromptImprover:
         best_score = 0.0
 
         for agent in agents:
-            agent_caps = agent.capabilities or []
+            agent_caps = await self._get_agent_capabilities(agent)
 
             for agent_cap in agent_caps:
                 agent_cap_normalized = self._normalize_capability(agent_cap)
@@ -404,7 +423,7 @@ Output ONLY the prompt text."""}
                 {"role": "system", "content": "You are an expert prompt engineer."},
                 {"role": "user", "content": f"""Create a prompt for agent "{agent.name}" that handles: {affected_capability}
 
-Agent capabilities: {agent.capabilities}
+Agent name: {agent.name}
 
 Gap description: {gap_description}
 
@@ -419,7 +438,7 @@ Output ONLY the prompt text."""}
             ]
             content = await self._call_llm(messages)
         else:
-            content = f"You are {agent.name}, specialized in {', '.join(agent.capabilities or [affected_capability])}."
+            content = f"You are {agent.name}, specialized in {affected_capability}."
 
         prompt = Prompt(
             id=str(uuid.uuid4()),

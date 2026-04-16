@@ -1,20 +1,15 @@
 from typing import AsyncGenerator
-from functools import lru_cache
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.services.report_service import ReportService
 from app.services.template_service import TemplateService
 from app.repositories.qdrant_repository import QdrantReportsRepository
-from app.adapters.sql_protocols import ReportRepositoryProtocol
-from app.repositories.postgres_repository import PostgresRepository
-from app.adapters.orchestrator_adapter import OrchestratorAdapter
 
 async_engine = create_async_engine(
     settings.database_url,
-    echo=False,  
+    echo=False,
     pool_pre_ping=True
 )
 
@@ -28,12 +23,6 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         yield session
 
-def get_postgres_repository(
-    session: AsyncSession = Depends(get_db_session)
-) ->  ReportRepositoryProtocol:
-
-    return PostgresRepository(session=session)
-
 def get_qdrant_repository() -> QdrantReportsRepository:
     return QdrantReportsRepository(
         qdrant_url=settings.qdrant_url,
@@ -43,39 +32,11 @@ def get_qdrant_repository() -> QdrantReportsRepository:
         collection_prefix=settings.qdrant_collection,
     )
 
-@lru_cache(maxsize=1)
-def get_orchestrator_adapter() -> OrchestratorAdapter:
-    return OrchestratorAdapter(base_url=settings.orchestrator_url)
-
 def get_template_service(
     repository: QdrantReportsRepository = Depends(get_qdrant_repository),
 ) -> TemplateService:
     return TemplateService(
         qdrant_repo=repository,
-    )
-
-def get_report_service(
-    repository: QdrantReportsRepository = Depends(get_qdrant_repository),
-    orchestrator: OrchestratorAdapter = Depends(get_orchestrator_adapter),
-    postgres_repo: PostgresRepository = Depends(get_postgres_repository),
-    template_service: TemplateService = Depends(get_template_service)
-) -> ReportService:
-    return ReportService(
-        orchestrator=orchestrator,
-        qdrant_repo=repository,
-        postgres_repo=postgres_repo,
-        template_service=template_service
-    )
-
-from app.services.assistant_service import AssistantService
-
-def get_assistant_service(
-    repository: QdrantReportsRepository = Depends(get_qdrant_repository),
-    postgres_repo: PostgresRepository = Depends(get_postgres_repository)
-) -> AssistantService:
-    return AssistantService(
-        qdrant_repo=repository,
-        postgres_repo=postgres_repo
     )
 
 

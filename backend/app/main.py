@@ -24,7 +24,7 @@ _telemetry_provider = None
 
 
 async def init_db():
-    from sqlalchemy import inspect
+    from sqlalchemy import inspect, text
 
     async with async_engine.begin() as conn:
         # Check if tables already exist
@@ -36,10 +36,123 @@ async def init_db():
 
         if existing_tables:
             logger.info(f"Database already initialized ({len(existing_tables)} tables)")
+            # Auto-migrate: add SoK skill columns if missing
+            if "skills" in existing_tables:
+                await _migrate_skill_columns(conn)
+            if "skill_build_attempts" in existing_tables:
+                await _migrate_build_attempt_columns(conn)
         else:
             logger.info("Initializing database tables...")
             await conn.run_sync(Base.metadata.create_all)
             logger.info("Database tables initialized.")
+
+
+async def _migrate_skill_columns(conn):
+    """Add SoK skill columns to existing skills table if missing."""
+    from sqlalchemy import text
+
+    # Detect database dialect and get existing columns
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        result = await conn.execute(text("PRAGMA table_info(skills)"))
+        existing = {row[1] for row in result.fetchall()}
+    else:
+        result = await conn.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'skills'"
+        ))
+        existing = {row[0] for row in result.fetchall()}
+
+    new_columns = [
+        ("skill_type", "VARCHAR(20) NOT NULL DEFAULT 'functional'"),
+        ("applicability", "TEXT"),
+        ("instructions", "TEXT"),
+        ("termination", "TEXT"),
+        ("interface", "JSON"),
+        ("dependencies", "JSON"),
+    ]
+
+    for col_name, col_def in new_columns:
+        if col_name not in existing:
+            await conn.execute(text(f"ALTER TABLE skills ADD COLUMN {col_name} {col_def}"))
+            logger.info(f"Migrated skills table: added column '{col_name}'")
+
+
+async def _migrate_build_attempt_columns(conn):
+    """Add feedback-history columns to skill_build_attempts table if missing."""
+    from sqlalchemy import text
+
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        result = await conn.execute(text("PRAGMA table_info(skill_build_attempts)"))
+        existing = {row[1] for row in result.fetchall()}
+    else:
+        result = await conn.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'skill_build_attempts'"
+        ))
+        existing = {row[0] for row in result.fetchall()}
+
+    new_columns = [
+        ("strategy_id", "VARCHAR(100)"),
+        ("error_type_classified", "VARCHAR(50)"),
+        ("lesson_learned", "TEXT"),
+        ("related_attempt_ids", "JSON"),
+    ]
+
+    for col_name, col_def in new_columns:
+        if col_name not in existing:
+            await conn.execute(text(
+                f"ALTER TABLE skill_build_attempts ADD COLUMN {col_name} {col_def}"
+            ))
+            logger.info(f"Migrated skill_build_attempts: added column '{col_name}'")
+
+
+async def _backfill_skill_applicability():
+    """One-time backfill: generate applicability via LLM for skills that lack it."""
+    from sqlalchemy import select
+    from app.dependencies.dependencies import AsyncSessionLocal
+    from app.models.sql.versioned_models import Skill
+    from app.core.llm_client import LLMClient
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Skill).where(Skill.applicability.is_(None))
+        )
+        skills = result.scalars().all()
+
+        if not skills:
+            return
+
+        logger.info(f"Backfilling applicability for {len(skills)} skills...")
+        client = LLMClient()
+
+        for skill in skills:
+            if skill.skill_type != "functional":
+                skill.skill_type = "functional"
+            try:
+                code_snippet = (skill.code or "")[:3000]
+                prompt = (
+                    "Given this skill's name, description, and code, write a concise "
+                    "applicability statement (1-2 sentences) describing WHEN and UNDER "
+                    "WHAT CONDITIONS this skill should be selected.\n\n"
+                    f"Skill name: {skill.name}\n"
+                    f"Description: {skill.description or '(none)'}\n"
+                    f"Code:\n{code_snippet}\n\n"
+                    "Respond with ONLY the applicability statement."
+                )
+                response = await client.chat(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=200,
+                )
+                skill.applicability = response.content.strip()
+                logger.info(f"  {skill.name}: applicability set")
+            except Exception as e:
+                logger.warning(f"  {skill.name}: LLM backfill failed: {e}")
+
+        await session.commit()
+        logger.info("Applicability backfill complete")
 
 
 @asynccontextmanager
@@ -58,6 +171,9 @@ async def lifespan(app: FastAPI):
     )
     logger.info("OpenTelemetry instrumentation initialized")
 
+    # Backfill applicability for skills that don't have it yet
+    await _backfill_skill_applicability()
+
     # Initialize Skill Registry (Hot-Reload) if enabled
     from app.core.config import settings
     if settings.hot_reload_enabled:
@@ -69,17 +185,20 @@ async def lifespan(app: FastAPI):
             skill_count = await registry.initialize(db)
             logger.info(f"Skill registry initialized with {skill_count} skills")
 
+        # Register rebuild callback for auto-rebuild flagged skills
+        async def _on_skill_rebuild_needed(skill_id: str, skill_name: str, reason: str | None) -> None:
+            logger.warning(
+                f"REBUILD_NEEDED: skill '{skill_name}' (id={skill_id[:8]}...) "
+                f"flagged for rebuild. Reason: {reason}"
+            )
+
+        registry.set_rebuild_callback(_on_skill_rebuild_needed)
+
     yield
 
     # Shutdown telemetry
     shutdown_telemetry(_telemetry_provider)
     logger.info("OpenTelemetry shutdown complete")
-
-    # Close orchestrator client
-    from app.dependencies.dependencies import get_orchestrator_adapter
-    orchestrator = get_orchestrator_adapter()
-    await orchestrator.close()
-    logger.info("Closed orchestrator HTTP client")
 
 app = FastAPI(
     title="Lumari Report AI - Backend",

@@ -90,21 +90,24 @@ class SharedMemoryService:
             supersedes_id=fact_data.supersedes_id
         )
 
-        # Store metadata in PostgreSQL
-        fact = Fact(
-            id=fact_id,
-            text=fact_data.text,
-            confidence=fact_data.confidence,
-            source_agent_id=fact_data.source_agent_id,
-            execution_id=fact_data.execution_id,
-            project_id=fact_data.project_id,
-            tags=fact_data.tags,
-            supersedes_id=fact_data.supersedes_id,
-            embedding_id=fact_id  # Same ID in Qdrant
-        )
-        self.db.add(fact)
-        await self.db.commit()
-        await self.db.refresh(fact)
+        # Store metadata in PostgreSQL using a dedicated session to avoid
+        # poisoning the main execution session on constraint violations.
+        from app.dependencies.dependencies import AsyncSessionLocal
+        async with AsyncSessionLocal() as fact_session:
+            fact = Fact(
+                id=fact_id,
+                text=fact_data.text,
+                confidence=fact_data.confidence,
+                source_agent_id=fact_data.source_agent_id,
+                execution_id=fact_data.execution_id,
+                project_id=fact_data.project_id,
+                tags=fact_data.tags,
+                supersedes_id=fact_data.supersedes_id,
+                embedding_id=fact_id  # Same ID in Qdrant
+            )
+            fact_session.add(fact)
+            await fact_session.commit()
+            await fact_session.refresh(fact)
 
         # Automatic contradiction detection (per CONTEXT)
         await self._check_contradictions(fact_id, embedding, fact_data.confidence)

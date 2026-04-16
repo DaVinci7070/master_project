@@ -20,6 +20,7 @@ class TeamRole(str, Enum):
     ARCHITECT = "architect"       # Designs API, test cases, dependencies
     IMPLEMENTER = "implementer"   # Writes the actual code
     REVIEWER = "reviewer"         # Reviews code for quality, security
+    PROPOSER = "proposer"         # Proposes planning-skills (reasoning instructions)
     TESTER = "tester"             # Runs tests, validates output
 
 
@@ -32,6 +33,7 @@ class ErrorType(str, Enum):
     TIMEOUT_ERROR = "timeout_error"     # Execution took too long
     RESOURCE_ERROR = "resource_error"   # OOM, disk full, etc.
     DEPENDENCY_ERROR = "dependency_error"  # Package conflict, version issue
+    STRUCTURE_ERROR = "structure_error"    # Missing execute(), wrong signature
 
 
 class SkillTeamConfig(BaseModel):
@@ -98,6 +100,15 @@ class TestCase(BaseModel):
     timeout_seconds: int = Field(default=60, ge=1)
 
 
+class SkillIntegrationPlan(BaseModel):
+    """Architect's plan for where and how a skill integrates into the agent topology."""
+    target_agent_id: Optional[str] = Field(default=None, description="ID of the agent that should receive this skill")
+    target_agent_name: Optional[str] = Field(default=None, description="Name of target agent (fallback if ID unknown)")
+    rationale: str = Field(default="", description="Why this agent is the best fit")
+    artifact_declarations: dict = Field(default_factory=dict, description="What the skill produces/consumes")
+    dependency_changes: Optional[list[dict]] = Field(default=None, description="Optional DAG dependency changes")
+
+
 class ArchitectureDesign(BaseModel):
     """Design output from architect phase."""
     capability: str = Field(..., description="Capability being designed")
@@ -119,6 +130,9 @@ class ArchitectureDesign(BaseModel):
 
     # Design rationale
     design_notes: str = Field(default="", description="Explanation of design decisions")
+
+    # Integration plan (from architect)
+    integration_plan: Optional[SkillIntegrationPlan] = Field(default=None, description="Where/how to integrate this skill")
 
     # Metadata
     design_time_ms: int = Field(default=0, ge=0)
@@ -195,6 +209,9 @@ class SkillBuildResult(BaseModel):
     review: Optional[ReviewResult] = Field(default=None)
     semantic_validation: Optional[SemanticValidationResult] = Field(default=None)
 
+    # Integration
+    integration_plan: Optional[SkillIntegrationPlan] = Field(default=None)
+
     # Code
     final_code: Optional[str] = Field(default=None)
     requirements_txt: Optional[str] = Field(default=None)
@@ -214,6 +231,31 @@ class SkillBuildResult(BaseModel):
 
     # Learning data
     attempt_id: Optional[str] = Field(default=None, description="SkillBuildAttempt ID for tracking")
+
+
+class TestSuiteResult(BaseModel):
+    """Result of running a skill's test suite in sandbox."""
+    passed: int = Field(default=0, ge=0)
+    failed: int = Field(default=0, ge=0)
+    total: int = Field(default=0, ge=0)
+    score: float = Field(default=0.0, ge=0.0, le=1.0, description="passed / total")
+    details: list[dict] = Field(default_factory=list, description="Per-test results")
+
+
+class ComparisonResult(BaseModel):
+    """Result of comparing a skill against its parent."""
+    new_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    parent_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    regression: bool = Field(default=False, description="True if new skill is worse than parent")
+    details: str = Field(default="")
+
+
+class ActivationResult(BaseModel):
+    """Result of skill activation validation gate."""
+    approved: bool = Field(default=True)
+    reason: str = Field(default="")
+    test_result: Optional[TestSuiteResult] = Field(default=None)
+    comparison: Optional[ComparisonResult] = Field(default=None)
 
 
 class SkillBindingCreate(BaseModel):

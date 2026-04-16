@@ -198,12 +198,21 @@ def build_tool_prompt_section(skills: list[dict[str, Any]]) -> str:
         description = skill.get("description", "No description")
         params = skill.get("parameters", {})
 
-        # Build parameter signature
+        # Build parameter signature from JSON Schema properties
         param_sig = ""
-        if params:
+        # params may be a full JSON Schema with "properties" key, or a flat dict
+        properties = params.get("properties", params) if isinstance(params, dict) else {}
+        if properties:
             param_parts = []
-            for param_name, param_info in params.items():
-                param_type = param_info.get("type", "any") if isinstance(param_info, dict) else "any"
+            for param_name, param_info in properties.items():
+                if not isinstance(param_info, dict):
+                    continue
+                param_type = param_info.get("type", "any")
+                if param_type == "file":
+                    param_type = "file (path)"
+                elif param_type == "array" and isinstance(param_info.get("items"), dict):
+                    if param_info["items"].get("type") == "file":
+                        param_type = "list[file (path)]"
                 param_parts.append(f"{param_name}: {param_type}")
             param_sig = ", ".join(param_parts)
 
@@ -241,6 +250,7 @@ CRITICAL RULES:
 2. Always respond with ONLY valid JSON. No text outside the JSON block.
 3. Put all detailed analysis in "response" field for final_answer, NOT in "thought".
 4. Extract data from input and pass it directly as tool arguments.
+5. Use EXACTLY the parameter names shown in the tool signatures below. Do not rename, abbreviate, or use alternative key names.
 
 ### Available Tools:
 {chr(10).join(tool_docs)}

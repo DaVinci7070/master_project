@@ -7,13 +7,14 @@ Key difference from old approach:
 - Only re-assesses at END of cycle
 """
 import logging
-from typing import Optional, Callable, Awaitable
+from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.schemas.intervention_schemas import BuildResult
 from app.models.sql.gap_plan_models import GapStatus
 from app.services.gap_plan_service import GapPlanService
+from app.services.failure_analyzer import FailureAnalyzer
 from app.orchestration.intervention.capability_builder import CapabilityBuilder
 from app.orchestration.intervention.injector import CapabilityInjector
 from app.services.agent_prompt_improver import AgentPromptImprover
@@ -38,7 +39,8 @@ class GapPlanExecutor:
         capability_builder: CapabilityBuilder,
         prompt_improver: AgentPromptImprover,
         injector: CapabilityInjector,
-        db: AsyncSession
+        db: AsyncSession,
+        failure_analyzer: Optional[FailureAnalyzer] = None,
     ):
         """
         Initialize gap plan executor.
@@ -49,12 +51,14 @@ class GapPlanExecutor:
             prompt_improver: Improver for weak_prompt gaps
             injector: Injector for topology updates
             db: Database session
+            failure_analyzer: Analyzer for recording and learning from build attempts
         """
         self.plan_service = gap_plan_service
         self.builder = capability_builder
         self.prompt_improver = prompt_improver
         self.injector = injector
         self.db = db
+        self.failure_analyzer = failure_analyzer
 
     async def execute_plan(
         self,
@@ -123,11 +127,18 @@ class GapPlanExecutor:
             all_results.append(result)
 
             if result.success and result.artifact_id:
-                # Inject capability
-                inject_success, inject_msg = await self.injector.inject(
-                    artifact_type=result.artifact_type,
-                    artifact_id=result.artifact_id
-                )
+                # Inject capability — use plan-based injection if available
+                if result.integration_plan and result.integration_plan.target_agent_id:
+                    inject_success, inject_msg = await self.injector.inject_with_plan(
+                        plan=result.integration_plan,
+                        skill_id=result.artifact_id,
+                        capability=gap_dict["affected_capability"],
+                    )
+                else:
+                    inject_success, inject_msg = await self.injector.inject(
+                        artifact_type=result.artifact_type,
+                        artifact_id=result.artifact_id
+                    )
 
                 if inject_success:
                     successful_artifacts.append(result.artifact_id)
@@ -140,6 +151,22 @@ class GapPlanExecutor:
                         artifact_id=result.artifact_id,
                         artifact_type=result.artifact_type
                     )
+
+                    # Feed success back to FailureAnalyzer
+                    if self.failure_analyzer:
+                        await self.failure_analyzer.record_attempt(
+                            capability=affected_capability,
+                            code="",
+                            success=True,
+                            skill_id=result.artifact_id,
+                            strategy_id=getattr(result, '_strategy_id', None),
+                        )
+                        if result.artifact_type == "skill":
+                            await self.failure_analyzer.learn_from_success(
+                                capability=affected_capability,
+                                pip_requirements=[],
+                                code="",
+                            )
 
                     logger.info(
                         f"Gap completed: {gap_id[:8]}... -> "
@@ -155,15 +182,35 @@ class GapPlanExecutor:
                     )
                     logger.warning(f"Gap injection failed: {gap_id[:8]}... - {inject_msg}")
             else:
-                # Build failed
+                # Build failed — feed back to FailureAnalyzer
+                failure_reason = result.failure_reason or "Unknown build failure"
+
+                if self.failure_analyzer:
+                    analysis = await self.failure_analyzer.analyze_failure(
+                        capability=affected_capability,
+                        code="",
+                        error_message=failure_reason,
+                    )
+                    await self.failure_analyzer.record_attempt(
+                        capability=affected_capability,
+                        code="",
+                        success=False,
+                        error_type=analysis.error_type,
+                        error_message=failure_reason,
+                        attempt_number=attempt_number,
+                        strategy_id=getattr(result, '_strategy_id', None),
+                        error_type_classified=analysis.error_type_classified,
+                        lesson_learned=analysis.lesson_learned,
+                    )
+
                 await self.plan_service.update_gap_status(
                     plan_id=plan_id,
                     gap_id=gap_id,
                     status=GapStatus.FAILED.value,
-                    error_message=result.failure_reason
+                    error_message=failure_reason
                 )
                 logger.warning(
-                    f"Gap build failed: {gap_id[:8]}... - {result.failure_reason}"
+                    f"Gap build failed: {gap_id[:8]}... - {failure_reason}"
                 )
 
         # Complete the plan
@@ -199,6 +246,24 @@ class GapPlanExecutor:
         affected_capability = gap_dict["affected_capability"]
         description = gap_dict.get("description", "")
         severity = gap_dict.get("severity", "important")
+
+        # Ask FailureAnalyzer for strategy if available
+        strategy_id = None
+        if self.failure_analyzer and gap_type in ("missing_skill", "configuration_needed"):
+            proposal = await self.failure_analyzer.propose_strategy(
+                capability=affected_capability,
+                current_attempt_number=attempt_number,
+            )
+            strategy_id = proposal.strategy_id
+            # Add lessons as hints to previous failures
+            if proposal.hints:
+                previous_failures = list(previous_failures) + [
+                    f"[Lesson] {h}" for h in proposal.hints
+                ]
+            logger.info(
+                f"Strategy proposed for {affected_capability}: {strategy_id} "
+                f"(confidence={proposal.confidence:.1f})"
+            )
 
         # Route based on gap type
         if gap_type == "weak_prompt":

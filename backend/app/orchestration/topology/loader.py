@@ -95,8 +95,8 @@ class TopologyLoader:
         # Build name->id lookup for resolving dependencies
         name_to_id = {agent.name: agent.id for agent, _ in agents_with_prompts}
 
-        # Load provisional skills and map by affected_capability
-        capability_to_skills = await self._map_skills_to_capabilities()
+        # Load skills and map by capability (applicability → metadata → name fallback)
+        capability_to_skills, skill_metadata_map = await self._map_skills_to_capabilities()
 
         # Convert to AgentNode models
         agent_nodes = []
@@ -112,33 +112,27 @@ class TopologyLoader:
                 else:
                     logger.warning(f"Agent {agent.name}: dependency '{dep}' not found")
 
-            # Find skills matching this agent's capabilities
+            # Bind skills to agent:
+            # 1. Explicit assignment via skill_metadata.target_agent_id
+            # 2. All unassigned skills are available to all agents
             agent_skill_ids = []
-            for cap in (agent.capabilities or []):
-                cap_normalized = self._normalize_capability_for_matching(cap)
-                # Try exact match first
-                if cap_normalized in capability_to_skills:
-                    agent_skill_ids.extend(capability_to_skills[cap_normalized])
-                else:
-                    # Try word-overlap match (at least 50% of words overlap)
-                    cap_words = set(cap_normalized.split())
-                    for skill_cap, skill_ids in capability_to_skills.items():
-                        skill_words = set(skill_cap.split())
-                        overlap = cap_words & skill_words
-                        # Match if significant word overlap (at least 1 word and >= 50% of smaller set)
-                        min_words = min(len(cap_words), len(skill_words))
-                        if overlap and len(overlap) >= max(1, min_words * 0.5):
-                            agent_skill_ids.extend(skill_ids)
-                            logger.debug(
-                                f"Word-overlap match: agent cap '{cap_normalized}' ~ skill cap '{skill_cap}' "
-                                f"(overlap: {overlap})"
-                            )
+            agent_caps = []
+            for cap, sids in capability_to_skills.items():
+                for sid in sids:
+                    # Check if skill is explicitly assigned to a different agent
+                    skill_meta = skill_metadata_map.get(sid, {})
+                    target = skill_meta.get("target_agent_id") or skill_meta.get("assigned_agent")
+                    if target and target != agent.id and target != agent.name:
+                        continue
+                    if sid not in agent_skill_ids:
+                        agent_skill_ids.append(sid)
+                        agent_caps.append(cap)
 
             node = AgentNode(
                 agent_id=agent.id,
                 name=agent.name,
                 prompt_id=agent.prompt_id,
-                capabilities=agent.capabilities or [],
+                capabilities=agent_caps,
                 dependencies=resolved_deps,
                 skill_ids=list(set(agent_skill_ids)),  # Deduplicate skill IDs
                 config={},
@@ -215,19 +209,21 @@ class TopologyLoader:
         normalized = ' '.join(normalized.split())
         return normalized
 
-    async def _map_skills_to_capabilities(self) -> dict[str, list[str]]:
+    async def _map_skills_to_capabilities(self) -> tuple[dict[str, list[str]], dict[str, dict]]:
         """
-        Map provisional skills to capabilities for agent binding.
+        Map active skills to capabilities for agent binding.
 
-        Queries active skills and creates a mapping of capability_name -> [skill_ids].
-        Uses both metadata.affected_capability and skill name for matching.
+        Returns:
+            Tuple of (capability_name -> [skill_ids], skill_id -> skill_metadata).
 
-        This enables automatic binding of dynamically built skills to
-        agents that declare matching capabilities.
+        Capability sources (priority order):
+        1. skill.applicability (SoK C field — primary, set by builder)
+        2. skill_metadata.affected_capability (legacy fallback)
+        3. skill name derived (last resort)
         """
         capability_to_skills: dict[str, list[str]] = {}
+        skill_metadata_map: dict[str, dict] = {}
 
-        # Query all active skills
         result = await self.db.execute(
             select(Skill).where(Skill.is_active == True)
         )
@@ -235,23 +231,29 @@ class TopologyLoader:
 
         for skill in skills:
             mapped_caps = []
+            skill_metadata_map[skill.id] = skill.skill_metadata or {}
 
-            # Method 1: Check affected_capability in metadata
-            if skill.skill_metadata and skill.skill_metadata.get("affected_capability"):
+            # Priority 1: Skill.applicability (SoK field)
+            if skill.applicability:
+                cap_normalized = self._normalize_capability_for_matching(skill.applicability)
+                mapped_caps.append(cap_normalized)
+                logger.debug(f"Skill {skill.name} mapped via applicability to '{cap_normalized}'")
+
+            # Priority 2: affected_capability in metadata (legacy)
+            if not mapped_caps and skill.skill_metadata and skill.skill_metadata.get("affected_capability"):
                 affected_cap = skill.skill_metadata["affected_capability"]
                 cap_normalized = self._normalize_capability_for_matching(affected_cap)
                 mapped_caps.append(cap_normalized)
                 logger.debug(f"Skill {skill.name} mapped via metadata to '{cap_normalized}'")
 
-            # Method 2: Fallback - derive capability from skill name
-            # e.g., "skill_financial_calculation" -> "financial calculation"
-            skill_name_cap = skill.name.replace("skill_", "").replace("_", " ")
-            cap_from_name = self._normalize_capability_for_matching(skill_name_cap)
-            if cap_from_name and cap_from_name not in mapped_caps:
-                mapped_caps.append(cap_from_name)
-                logger.debug(f"Skill {skill.name} mapped via name to '{cap_from_name}'")
+            # Priority 3: Fallback - derive from skill name
+            if not mapped_caps:
+                skill_name_cap = skill.name.replace("skill_", "").replace("_", " ")
+                cap_from_name = self._normalize_capability_for_matching(skill_name_cap)
+                if cap_from_name:
+                    mapped_caps.append(cap_from_name)
+                    logger.debug(f"Skill {skill.name} mapped via name to '{cap_from_name}'")
 
-            # Add to mapping
             for cap in mapped_caps:
                 if cap not in capability_to_skills:
                     capability_to_skills[cap] = []
@@ -264,7 +266,7 @@ class TopologyLoader:
                 f"Mapped {total_skills} skill entries to {len(capability_to_skills)} capabilities"
             )
 
-        return capability_to_skills
+        return capability_to_skills, skill_metadata_map
 
     async def _load_skills(self, topology: Topology) -> None:
         """

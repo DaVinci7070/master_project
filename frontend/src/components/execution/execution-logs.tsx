@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -13,6 +13,7 @@ interface LogEntry {
 
 interface ExecutionLogsProps {
   logs: LogEntry[]
+  forceOpen?: boolean
 }
 
 const levelColors = {
@@ -22,8 +23,12 @@ const levelColors = {
   debug: 'text-gray-400',
 }
 
-export function ExecutionLogs({ logs }: ExecutionLogsProps) {
+export function ExecutionLogs({ logs, forceOpen }: ExecutionLogsProps) {
   const [isOpen, setIsOpen] = useState(false) // Hidden by default per CONTEXT
+
+  useEffect(() => {
+    if (forceOpen) setIsOpen(true)
+  }, [forceOpen])
 
   return (
     <Card>

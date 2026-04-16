@@ -363,7 +363,6 @@ async def create_agent_with_prompt(session: AsyncSession, agent_data: dict, team
     agent = Agent(
         id=agent_id,
         name=agent_data["name"],
-        capabilities=agent_data["capabilities"],
         dependencies=agent_data["dependencies"],
         io_schema=agent_data["io_schema"],
         prompt_id=prompt_id,
@@ -448,13 +447,13 @@ async def show_status():
             logger.info("\n[Main Team]")
             for a in main_team:
                 status = "active" if a.is_active else "inactive"
-                logger.info(f"  - {a.name} ({status}): {', '.join(a.capabilities[:3])}...")
+                logger.info(f"  - {a.name} ({status})")
 
         if dev_team:
             logger.info("\n[Developer Team]")
             for a in dev_team:
                 status = "active" if a.is_active else "inactive"
-                logger.info(f"  - {a.name} ({status}): {', '.join(a.capabilities[:3])}...")
+                logger.info(f"  - {a.name} ({status})")
 
         if other:
             logger.info("\n[Other/Legacy]")

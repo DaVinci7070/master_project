@@ -467,6 +467,66 @@ class InterventionOrchestrator:
         if self._notify_fn:
             await self._notify_fn(notification)
 
+    async def build_on_demand(
+        self,
+        capability: str,
+        context: dict = None,
+    ):
+        """
+        Build a skill on-the-fly for intra-execution self-healing.
+
+        Lightweight path: directly calls SkillTeamOrchestrator.develop_skill()
+        without the full blocked-challenge lifecycle, gap plans, or cycles.
+        After successful build, injects the skill into topology.
+
+        Args:
+            capability: The capability/tool name to build
+            context: Optional context (e.g. arguments the tool was called with)
+
+        Returns:
+            SkillBuildResult or None on failure
+        """
+        from app.models.schemas.skill_build_schemas import SkillBuildResult
+
+        logger.info(f"build_on_demand: building skill for '{capability}'")
+
+        try:
+            skill_team = self.builder.get_skill_team()
+            result = await skill_team.develop_skill(capability=capability)
+
+            if result.success and result.skill_id:
+                # Inject into topology
+                if result.integration_plan and result.integration_plan.target_agent_id:
+                    inject_ok, inject_msg = await self.injector.inject_with_plan(
+                        plan=result.integration_plan,
+                        skill_id=result.skill_id,
+                        capability=capability,
+                    )
+                else:
+                    inject_ok, inject_msg = await self.injector.inject(
+                        artifact_type="skill",
+                        artifact_id=result.skill_id,
+                    )
+
+                logger.info(
+                    f"build_on_demand: skill '{result.skill_name}' built and injected "
+                    f"(inject_ok={inject_ok}, msg={inject_msg})"
+                )
+            else:
+                logger.warning(
+                    f"build_on_demand: failed for '{capability}': "
+                    f"{result.failure_reason}"
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"build_on_demand failed for '{capability}': {e}", exc_info=True)
+            return SkillBuildResult(
+                success=False,
+                failure_reason=f"On-demand build error: {str(e)}",
+            )
+
     async def run_intervention_loop(
         self,
         poll_interval_seconds: float = 5.0
@@ -625,12 +685,16 @@ async def create_intervention_orchestrator(
 
     prompt_improver = AgentPromptImprover(db, llm_fn=llm_wrapper)
 
+    from app.services.failure_analyzer import FailureAnalyzer
+    failure_analyzer = FailureAnalyzer(db, llm_client)
+
     gap_plan_executor = GapPlanExecutor(
         gap_plan_service=gap_plan_service,
         capability_builder=capability_builder,
         prompt_improver=prompt_improver,
         injector=injector,
-        db=db
+        db=db,
+        failure_analyzer=failure_analyzer,
     )
 
     return InterventionOrchestrator(

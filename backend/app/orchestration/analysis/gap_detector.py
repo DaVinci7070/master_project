@@ -41,7 +41,13 @@ GAP_IDENTIFICATION_PROMPT = """You are analyzing a system's capability to handle
 
 Identify specific gaps between what's required and what's available.
 For each gap, specify:
-- gap_type: one of [missing_skill, weak_prompt, topology_issue, missing_agent, schema_mismatch]
+- gap_type: one of [missing_skill, missing_planning_skill, weak_prompt, topology_issue, missing_agent, schema_mismatch]
+  - missing_skill: agent needs executable code/tool (API calls, data processing, file handling, computation)
+  - missing_planning_skill: agent needs reasoning instructions (validation rules, decision logic, format guidelines, domain knowledge)
+  - weak_prompt: agent exists but prompt is too weak for this capability
+  - topology_issue: dependency or routing problem
+  - missing_agent: no suitable agent exists
+  - schema_mismatch: input/output schema incompatibility
 - severity: one of [critical, important, minor]
   - critical: blocks execution entirely
   - important: significantly degrades quality
@@ -304,11 +310,17 @@ class GapDetector:
                 else:
                     severity = GapSeverity.MINOR
 
-                # Determine gap type
+                # Determine gap type based on capability type
                 if match.matched_capability is None:
-                    gap_type = GapType.MISSING_SKILL
+                    # No match at all — classify by capability type
+                    if match.capability_type == CapabilityType.KNOWLEDGE:
+                        gap_type = GapType.MISSING_PLANNING_SKILL
+                    else:
+                        gap_type = GapType.MISSING_SKILL
+                elif match.capability_type == CapabilityType.KNOWLEDGE:
+                    gap_type = GapType.MISSING_PLANNING_SKILL  # Weak knowledge match
                 else:
-                    gap_type = GapType.WEAK_PROMPT  # Partial match suggests weak capability
+                    gap_type = GapType.WEAK_PROMPT  # Partial execution match
 
                 gap = CapabilityGap(
                     gap_type=gap_type,
@@ -366,7 +378,9 @@ class GapDetector:
         for gap in gaps:
             if gap.severity in (GapSeverity.CRITICAL, GapSeverity.IMPORTANT):
                 if gap.gap_type == GapType.MISSING_SKILL:
-                    suggestions.append(f"Consider adding skill for: {gap.affected_capability}")
+                    suggestions.append(f"Add functional skill (executable code) for: {gap.affected_capability}")
+                elif gap.gap_type == GapType.MISSING_PLANNING_SKILL:
+                    suggestions.append(f"Add planning skill (reasoning guidelines) for: {gap.affected_capability}")
                 elif gap.gap_type == GapType.WEAK_PROMPT:
                     suggestions.append(f"Improve prompt for: {gap.affected_capability}")
                 elif gap.gap_type == GapType.MISSING_AGENT:

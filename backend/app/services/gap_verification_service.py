@@ -76,6 +76,26 @@ class GapVerificationService:
 
         return intersection / union if union > 0 else 0.0
 
+    async def _get_agent_capabilities(self, agent) -> list[str]:
+        """Derive agent capabilities from assigned skills' applicability fields."""
+        from sqlalchemy import select
+        skills = (await self.db.execute(
+            select(Skill).where(Skill.is_active == True)
+        )).scalars().all()
+
+        caps = []
+        for skill in skills:
+            # Check if skill is assigned to this agent
+            meta = skill.skill_metadata or {}
+            target = meta.get("target_agent_id") or meta.get("assigned_agent")
+            if target and target != agent.id and target != agent.name:
+                continue
+            if skill.applicability:
+                caps.append(skill.applicability)
+            elif meta.get("affected_capability"):
+                caps.append(meta["affected_capability"])
+        return caps
+
     def _match_capability(
         self,
         required: str,
@@ -217,7 +237,9 @@ class GapVerificationService:
         agents = result.scalars().all()
 
         for agent in agents:
-            for agent_cap in (agent.capabilities or []):
+            # Derive capabilities from agent's assigned skills
+            agent_caps = await self._get_agent_capabilities(agent)
+            for agent_cap in agent_caps:
                 matches, match_type, score = self._match_capability(
                     capability_name, agent_cap
                 )

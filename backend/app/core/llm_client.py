@@ -185,25 +185,32 @@ class LLMClient:
                 last_error = e
                 error_str = str(e).lower()
 
-                # Check if it's a rate limit error (429)
-                is_rate_limit = (
+                # Check if it's a retryable error (rate limit or transient server error)
+                is_retryable = (
                     "429" in error_str or
                     "rate" in error_str or
                     "resource_exhausted" in error_str or
-                    "quota" in error_str
+                    "quota" in error_str or
+                    "503" in error_str or
+                    "service unavailable" in error_str or
+                    "unavailable" in error_str or
+                    "502" in error_str or
+                    "bad gateway" in error_str or
+                    "504" in error_str or
+                    "timeout" in error_str
                 )
 
-                if is_rate_limit and attempt < self.max_retries:
+                if is_retryable and attempt < self.max_retries:
                     # Exponential backoff with jitter
                     delay = self.retry_base_delay * (2 ** attempt) + random.uniform(0, 1)
                     logger.warning(
-                        f"Rate limit hit (attempt {attempt + 1}/{self.max_retries + 1}), "
+                        f"Retryable error (attempt {attempt + 1}/{self.max_retries + 1}), "
                         f"retrying in {delay:.1f}s..."
                     )
                     await asyncio.sleep(delay)
                     continue
                 else:
-                    # Not a rate limit error or max retries reached
+                    # Not a retryable error or max retries reached
                     raise LLMError(f"LLM request failed: {e}", original_error=e) from e
 
         # Should not reach here, but just in case
@@ -274,19 +281,25 @@ class LLMClient:
                 last_error = e
                 error_str = str(e).lower()
 
-                # Check if it's a rate limit error (429)
-                is_rate_limit = (
+                # Check if it's a retryable error
+                is_retryable = (
                     "429" in error_str or
                     "rate" in error_str or
                     "resource_exhausted" in error_str or
-                    "quota" in error_str
+                    "quota" in error_str or
+                    "503" in error_str or
+                    "service unavailable" in error_str or
+                    "unavailable" in error_str or
+                    "502" in error_str or
+                    "bad gateway" in error_str or
+                    "504" in error_str or
+                    "timeout" in error_str
                 )
 
-                if is_rate_limit and attempt < self.max_retries:
-                    # Exponential backoff with jitter
+                if is_retryable and attempt < self.max_retries:
                     delay = self.retry_base_delay * (2 ** attempt) + random.uniform(0, 1)
                     logger.warning(
-                        f"Rate limit hit in structured call (attempt {attempt + 1}/{self.max_retries + 1}), "
+                        f"Retryable error in structured call (attempt {attempt + 1}/{self.max_retries + 1}), "
                         f"retrying in {delay:.1f}s..."
                     )
                     await asyncio.sleep(delay)
@@ -348,17 +361,24 @@ class LLMClient:
                 last_error = e
                 error_str = str(e).lower()
 
-                is_rate_limit = (
+                is_retryable = (
                     "429" in error_str or
                     "rate" in error_str or
                     "resource_exhausted" in error_str or
-                    "quota" in error_str
+                    "quota" in error_str or
+                    "503" in error_str or
+                    "service unavailable" in error_str or
+                    "unavailable" in error_str or
+                    "502" in error_str or
+                    "bad gateway" in error_str or
+                    "504" in error_str or
+                    "timeout" in error_str
                 )
 
-                if is_rate_limit and attempt < self.max_retries:
+                if is_retryable and attempt < self.max_retries:
                     delay = self.retry_base_delay * (2 ** attempt) + random.uniform(0, 1)
                     logger.warning(
-                        f"Rate limit hit in stream (attempt {attempt + 1}/{self.max_retries + 1}), "
+                        f"Retryable error in stream (attempt {attempt + 1}/{self.max_retries + 1}), "
                         f"retrying in {delay:.1f}s..."
                     )
                     await asyncio.sleep(delay)

@@ -43,7 +43,7 @@ class TopologyService:
             previous_state=None,
             new_state={
                 "name": agent.name,
-                "capabilities": agent.capabilities,
+                "capabilities": [],
                 "dependencies": agent.dependencies,
                 "is_active": agent.is_active,
                 "source": agent.source,
@@ -75,7 +75,7 @@ class TopologyService:
             previous_state=previous_state,
             new_state={
                 "name": agent.name,
-                "capabilities": agent.capabilities,
+                "capabilities": [],
                 "dependencies": agent.dependencies,
                 "is_active": agent.is_active,
                 "source": agent.source,

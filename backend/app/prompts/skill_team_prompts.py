@@ -102,9 +102,18 @@ Respond with a JSON object:
         }}
     ],
     "error_handling": "Description of error handling strategy",
-    "design_notes": "Important implementation notes"
+    "design_notes": "Important implementation notes",
+    "target_agent": {{
+        "agent_name": "name of the best-fit agent from the available agents list",
+        "rationale": "Why this agent is the best fit for this skill",
+        "produces_artifacts": ["list of artifact types this skill produces"],
+        "consumes_artifacts": ["list of artifact types this skill consumes"]
+    }}
 }}
 ```
+
+## Available Agents:
+{available_agents}
 
 ## Guidelines:
 - Design for robustness and error handling
@@ -113,6 +122,7 @@ Respond with a JSON object:
 - Consider resource constraints
 - Follow Python best practices
 - If previous attempts failed, consider alternative package choices and error handling
+- For target_agent: Choose the agent whose role best matches this capability. Consider the agent's existing skills and purpose.
 
 ## Capability to Design:
 {capability}
@@ -122,6 +132,22 @@ Respond with a JSON object:
 IMPLEMENTER_PROMPT = """You are a Python Implementation Specialist for autonomous skill development.
 
 Your role is to implement a Python skill based on the provided architecture design.
+The code will be executed in an isolated Docker sandbox with no internet access.
+
+## MANDATORY REQUIREMENTS (violation = automatic rejection):
+
+1. Your code MUST define exactly one top-level function: `def execute(input_data: dict) -> dict`
+2. This function MUST return a dict with key "success" (bool) and either "result" (on success) or "error" (on failure)
+3. All imports MUST be at the top of the file
+4. The code MUST be complete and self-contained — no external files, no placeholder comments
+
+## DO NOT:
+- Define a class instead of a function
+- Use `if __name__ == "__main__"` (the function is called directly)
+- Use `print()` for output (return data via the dict)
+- Leave TODO/FIXME/placeholder comments
+- Import modules that are not in the pip requirements
+- Use `async def execute` (must be synchronous)
 
 ## Architecture Design:
 {design}
@@ -133,19 +159,13 @@ Your role is to implement a Python skill based on the provided architecture desi
 {failure_context}
 
 ## Output Format:
-Provide ONLY the complete Python code. The code must:
-1. Include all necessary imports at the top
-2. Implement the function with the specified signature
-3. Handle all errors gracefully
-4. Return the specified output format
-5. Be complete and runnable
+Provide ONLY a single fenced Python code block. Nothing else — no explanation, no markdown outside the code block.
 
 ```python
-# Your implementation here
 import ...
 
 def execute(input_data: dict) -> dict:
-    '''
+    \"\"\"
     {capability}
 
     Args:
@@ -153,21 +173,18 @@ def execute(input_data: dict) -> dict:
 
     Returns:
         dict with 'success' bool and 'result' or 'error'
-    '''
+    \"\"\"
     try:
+        # Validate required inputs
+        ...
+
         # Implementation
         ...
+
         return {{"success": True, "result": ...}}
     except Exception as e:
         return {{"success": False, "error": str(e)}}
 ```
-
-## Guidelines:
-- Write clean, readable code
-- Add comments for complex logic
-- Use type hints where helpful
-- Handle edge cases
-- Validate inputs
 
 ## Capability to Implement:
 {capability}
@@ -189,23 +206,23 @@ Your role is to review Python code for quality, security, and correctness.
 ## Output Format:
 Respond with a JSON object:
 ```json
-{
+{{
     "approved": true/false,
     "overall_score": 0.0-1.0,
     "findings": [
-        {
+        {{
             "severity": "critical/warning/info",
             "category": "security/performance/correctness/style",
             "line_range": [start, end],
             "description": "What the issue is",
             "suggestion": "How to fix it"
-        }
+        }}
     ],
     "security_passed": true/false,
     "security_concerns": ["concern1", "concern2"],
     "improvement_suggestions": ["suggestion1", "suggestion2"],
     "refactoring_needed": true/false
-}
+}}
 ```
 
 ## Review Checklist:
@@ -289,8 +306,9 @@ def get_architect_prompt(
     capability: str,
     research_context: str,
     failure_context: str = "",
+    available_agents: list[dict] | None = None,
 ) -> str:
-    """Get architect prompt with research context and failure history."""
+    """Get architect prompt with research context, failure history, and available agents."""
     failure_section = ""
     if failure_context:
         failure_section = f"""## Previous Failures (AVOID THESE DESIGNS):
@@ -298,10 +316,18 @@ def get_architect_prompt(
 
 Based on the failures above, design with different error handling or alternative packages."""
 
+    agents_section = "No agent information available — target_agent can be omitted."
+    if available_agents:
+        agents_lines = []
+        for a in available_agents:
+            agents_lines.append(f"- **{a['name']}** (id: {a['id']}): {a.get('description', 'no description')}")
+        agents_section = "\n".join(agents_lines)
+
     return ARCHITECT_PROMPT.format(
         capability=capability,
         research_context=research_context,
         failure_context=failure_section,
+        available_agents=agents_section,
     )
 
 
@@ -343,4 +369,157 @@ def get_revision_prompt(
         code=code,
         findings=findings,
         required_changes=required_changes,
+    )
+
+
+PROPOSER_PROMPT = """You are a Planning-Skill Proposer for an autonomous multi-agent system.
+
+Your role is to design a **planning skill** — a set of reasoning instructions that will be
+injected into an agent's system prompt to improve its decision-making for a specific capability.
+
+Planning skills contain NO executable code. They are pure reasoning guidelines.
+
+## MANDATORY Process:
+1. **Brainstorm** at least 3 different approaches before choosing one (EvoSkill pattern)
+2. **Check existing skills** listed below to AVOID duplicates
+3. **Reference past failures** if provided — learn from what went wrong
+
+## Capability to address:
+{capability}
+
+## Existing Planning Skills (DO NOT duplicate):
+{existing_skills}
+
+## Failure History (learn from these):
+{failure_context}
+
+## Required Output Format (JSON):
+```json
+{{
+    "brainstorm": [
+        {{"approach": "...", "pros": "...", "cons": "..."}},
+        {{"approach": "...", "pros": "...", "cons": "..."}},
+        {{"approach": "...", "pros": "...", "cons": "..."}}
+    ],
+    "chosen_approach": "Which approach and why",
+    "name": "descriptive_snake_case_name",
+    "applicability": "1-2 sentences: WHEN should this skill be activated",
+    "instructions": "Detailed step-by-step reasoning guidelines (the core of the skill)",
+    "termination": "How to know when this reasoning is complete / when to stop"
+}}
+```
+
+IMPORTANT:
+- `instructions` is the most important field — be specific, actionable, and structured
+- `applicability` must be precise enough for automatic matching
+- `name` must be unique and descriptive
+- Do NOT repeat capabilities already covered by existing skills
+"""
+
+
+DEBUG_IMPORT_PROMPT = """The following Python code fails with an import error.
+
+## Error:
+{error_message}
+
+## Current Code:
+```python
+{code}
+```
+
+## Fix Instructions:
+The module `{missing_module}` is not available. You MUST:
+1. Replace the failing import with an alternative package or stdlib module
+2. Update all code that depends on the old import
+3. Keep the rest of the implementation intact
+{fix_hints}
+
+Return ONLY the complete fixed Python code (no explanations).
+"""
+
+DEBUG_STRUCTURE_PROMPT = """The following Python code has a structure error — it's missing the required `execute` function.
+
+## Error:
+{error_message}
+
+## Current Code:
+```python
+{code}
+```
+
+## Fix Instructions:
+Your code MUST define a top-level function with this EXACT signature:
+    def execute(input_data: dict) -> dict
+
+Wrap the existing logic inside this function. The function must:
+1. Accept `input_data: dict` as its only parameter
+2. Return a dict with at least a "success" key
+3. Keep all imports at the top level
+
+Return ONLY the complete fixed Python code (no explanations).
+"""
+
+DEBUG_LOGIC_PROMPT = """The following Python code fails with a runtime/logic error.
+
+## Error:
+{error_message}
+
+## Current Code:
+```python
+{code}
+```
+
+## Design Specification:
+{design_context}
+
+## Fix Instructions:
+Fix the specific error shown above. Keep the overall implementation approach intact —
+only change what is necessary to resolve this error. Do NOT simplify or remove features
+unless they directly cause the error.
+{fix_hints}
+
+Return ONLY the complete fixed Python code (no explanations).
+"""
+
+
+def get_debug_prompt(
+    error_type: str,
+    code: str,
+    error_message: str,
+    missing_module: str = "",
+    design_context: str = "",
+    fix_hints: str = "",
+) -> str:
+    """Get error-type-specific debug prompt."""
+    if error_type == "IMPORT_ERROR":
+        return DEBUG_IMPORT_PROMPT.format(
+            error_message=error_message,
+            code=code,
+            missing_module=missing_module or "unknown",
+            fix_hints=f"\nHints: {fix_hints}" if fix_hints else "",
+        )
+    elif error_type == "STRUCTURE_ERROR":
+        return DEBUG_STRUCTURE_PROMPT.format(
+            error_message=error_message,
+            code=code,
+        )
+    else:  # LOGIC_ERROR and everything else
+        return DEBUG_LOGIC_PROMPT.format(
+            error_message=error_message,
+            code=code,
+            design_context=design_context,
+            fix_hints=f"\nHints: {fix_hints}" if fix_hints else "",
+        )
+
+
+def get_proposer_prompt(
+    capability: str,
+    existing_skills: str = "None",
+    failure_context: str = "None",
+) -> str:
+    """Get proposer prompt for planning skill generation."""
+    return PROPOSER_PROMPT.format(
+        capability=capability,
+        existing_skills=existing_skills,
+        failure_context=failure_context,
     )

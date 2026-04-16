@@ -14,6 +14,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, ConfigDict
 
+from app.models.schemas.skill_build_schemas import SkillIntegrationPlan
+
 from app.models.sql.intervention_models import ChallengeStatus
 from app.models.schemas.analysis_schemas import CapabilityAssessment, CapabilityGap
 
@@ -215,6 +217,10 @@ class BuildResult(BaseModel):
     bound_to_agent_id: Optional[str] = Field(
         default=None,
         description="ID of agent whose capabilities were expanded to include this skill"
+    )
+    integration_plan: Optional[SkillIntegrationPlan] = Field(
+        default=None,
+        description="Architect's integration plan for skill placement"
     )
 
 

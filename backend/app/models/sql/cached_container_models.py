@@ -4,6 +4,7 @@ SQLAlchemy models for container image caching.
 Part of Phase 3: Container-Caching & Optimierung
 """
 
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -65,6 +66,11 @@ class CachedContainerImage(Base):
         """Check if the image is ready to use."""
         return self.status == "ready"
 
+    @staticmethod
+    def _normalize_pkg(pkg: str) -> str:
+        """Strip version specifiers and normalize: 'faster-whisper>=1.0.0' → 'faster-whisper'"""
+        return re.split(r'[><=!~;@\s]', pkg.strip())[0].lower().replace('_', '-')
+
     def matches_requirements(
         self,
         pip_requirements: list[str],
@@ -74,11 +80,12 @@ class CachedContainerImage(Base):
         Check if this image satisfies the given requirements.
 
         An image matches if it has ALL required packages installed.
+        Compares normalized package names (without version specifiers).
         """
-        pip_set = set(self.pip_packages or [])
+        pip_set = {self._normalize_pkg(p) for p in (self.pip_packages or [])}
         sys_set = set(self.system_packages or [])
 
-        required_pip = set(pip_requirements or [])
+        required_pip = {self._normalize_pkg(p) for p in (pip_requirements or [])}
         required_sys = set(system_packages or [])
 
         return required_pip.issubset(pip_set) and required_sys.issubset(sys_set)

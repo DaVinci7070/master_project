@@ -144,7 +144,9 @@ class SkillRepository:
         # Update allowed fields
         allowed_fields = {
             "name", "description", "code", "test_cases",
-            "skill_metadata", "is_active", "parent_id"
+            "skill_metadata", "is_active", "parent_id",
+            "skill_type", "applicability", "instructions",
+            "termination", "interface",
         }
 
         for key, value in skill_data.items():

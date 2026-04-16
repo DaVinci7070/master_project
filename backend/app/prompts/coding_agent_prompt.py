@@ -52,7 +52,7 @@ You MUST respond with valid JSON matching this schema:
 - Include comprehensive docstrings (module-level and function-level)
 - Use type hints for all function signatures
 - Handle edge cases gracefully
-- Follow existing codebase patterns if context provided
+- Follow existing context patterns if context provided
 - Keep implementations focused and minimal
 
 ## Important

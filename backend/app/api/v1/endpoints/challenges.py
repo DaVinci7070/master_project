@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, BackgroundTasks
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -1772,17 +1772,26 @@ Analyze the above transcribed content.
         except Exception as e:
             log.error(f"Autonomous skill building failed: {e}")
 
-            stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
-            result = await session.execute(stmt)
-            challenge = result.scalar_one_or_none()
+            # Session may be in a broken state — rollback before retrying
+            try:
+                await session.rollback()
+            except Exception:
+                pass
 
-            if challenge:
-                challenge.status = "build_failed"
-                challenge.build_plan_status = BuildPlanStatus.FAILED.value
-                failure_reasons = challenge.failure_reasons or []
-                failure_reasons.append(f"Autonomous build failed: {str(e)}")
-                challenge.failure_reasons = failure_reasons
-                await session.commit()
+            try:
+                stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
+                result = await session.execute(stmt)
+                challenge = result.scalar_one_or_none()
+
+                if challenge:
+                    challenge.status = "build_failed"
+                    challenge.build_plan_status = BuildPlanStatus.FAILED.value
+                    failure_reasons = challenge.failure_reasons or []
+                    failure_reasons.append(f"Autonomous build failed: {str(e)}")
+                    challenge.failure_reasons = failure_reasons
+                    await session.commit()
+            except Exception as recovery_err:
+                log.error(f"Failed to update challenge status after error: {recovery_err}")
 
 
 @router.post("/build-skill", response_model=SkillBuildResponse)
