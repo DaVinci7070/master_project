@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from typing import Optional
 from dataclasses import dataclass, field
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 
 from app.models.sql.skill_build_models import SkillBuildAttempt, PackageMapping
@@ -135,17 +134,17 @@ class FailureAnalyzer:
 
     def __init__(
         self,
-        db: AsyncSession,
+        session_factory,
         llm_client: Optional[LLMClient] = None,
     ):
         """
         Initialize the failure analyzer.
 
         Args:
-            db: Database session for persisting failure data
+            session_factory: Async session factory for DB access
             llm_client: Optional LLM for deeper analysis
         """
-        self.db = db
+        self.session_factory = session_factory
         self.llm = llm_client
 
     def classify_error(self, error_message: str, stderr: str = "") -> ErrorType:
@@ -280,12 +279,13 @@ class FailureAnalyzer:
             analysis.root_cause = f"Missing module: {missing_module}"
 
             # Check if we have a known mapping
-            result = await self.db.execute(
-                select(PackageMapping).where(
-                    PackageMapping.module_name == missing_module
+            async with self.session_factory() as db:
+                result = await db.execute(
+                    select(PackageMapping).where(
+                        PackageMapping.module_name == missing_module
+                    )
                 )
-            )
-            mapping = result.scalar_one_or_none()
+                mapping = result.scalar_one_or_none()
 
             if mapping:
                 # Use known mapping
@@ -461,43 +461,44 @@ class FailureAnalyzer:
     ) -> list[dict]:
         """Find similar past failures for learning."""
         # Search for failures with same capability and error type
-        result = await self.db.execute(
-            select(SkillBuildAttempt)
-            .where(
-                SkillBuildAttempt.capability.ilike(f"%{capability}%"),
-                SkillBuildAttempt.error_type == error_type.value,
-                SkillBuildAttempt.success == False,
-            )
-            .order_by(desc(SkillBuildAttempt.created_at))
-            .limit(limit)
-        )
-
-        failures = result.scalars().all()
-
-        similar = []
-        for failure in failures:
-            # Check if there was a later success for this capability
-            success_result = await self.db.execute(
+        async with self.session_factory() as db:
+            result = await db.execute(
                 select(SkillBuildAttempt)
                 .where(
-                    SkillBuildAttempt.capability == failure.capability,
-                    SkillBuildAttempt.success == True,
-                    SkillBuildAttempt.created_at > failure.created_at,
+                    SkillBuildAttempt.capability.ilike(f"%{capability}%"),
+                    SkillBuildAttempt.error_type == error_type.value,
+                    SkillBuildAttempt.success == False,
                 )
-                .limit(1)
+                .order_by(desc(SkillBuildAttempt.created_at))
+                .limit(limit)
             )
-            later_success = success_result.scalar_one_or_none()
 
-            similar.append({
-                "id": failure.id,
-                "error_message": failure.error_message[:200] if failure.error_message else "",
-                "pip_requirements": failure.pip_requirements or [],
-                "approach": failure.approach,
-                "later_success": later_success is not None,
-                "fix_approach": (
-                    later_success.approach if later_success else None
-                ),
-            })
+            failures = result.scalars().all()
+
+            similar = []
+            for failure in failures:
+                # Check if there was a later success for this capability
+                success_result = await db.execute(
+                    select(SkillBuildAttempt)
+                    .where(
+                        SkillBuildAttempt.capability == failure.capability,
+                        SkillBuildAttempt.success == True,
+                        SkillBuildAttempt.created_at > failure.created_at,
+                    )
+                    .limit(1)
+                )
+                later_success = success_result.scalar_one_or_none()
+
+                similar.append({
+                    "id": failure.id,
+                    "error_message": failure.error_message[:200] if failure.error_message else "",
+                    "pip_requirements": failure.pip_requirements or [],
+                    "approach": failure.approach,
+                    "later_success": later_success is not None,
+                    "fix_approach": (
+                        later_success.approach if later_success else None
+                    ),
+                })
 
         return similar
 
@@ -643,8 +644,9 @@ class FailureAnalyzer:
             related_attempt_ids=related_attempt_ids or [],
         )
 
-        self.db.add(attempt)
-        await self.db.commit()
+        async with self.session_factory() as db:
+            db.add(attempt)
+            await db.commit()
 
         log.info(
             f"Recorded build attempt: capability={capability}, "
@@ -663,17 +665,18 @@ class FailureAnalyzer:
 
         Returns recent failed attempts to help avoid repeating mistakes.
         """
-        result = await self.db.execute(
-            select(SkillBuildAttempt)
-            .where(
-                SkillBuildAttempt.capability.ilike(f"%{capability}%"),
-                SkillBuildAttempt.success == False,
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(SkillBuildAttempt)
+                .where(
+                    SkillBuildAttempt.capability.ilike(f"%{capability}%"),
+                    SkillBuildAttempt.success == False,
+                )
+                .order_by(desc(SkillBuildAttempt.created_at))
+                .limit(limit)
             )
-            .order_by(desc(SkillBuildAttempt.created_at))
-            .limit(limit)
-        )
 
-        return list(result.scalars().all())
+            return list(result.scalars().all())
 
     async def get_successful_approaches(
         self,
@@ -685,17 +688,18 @@ class FailureAnalyzer:
 
         Helps guide future attempts with proven approaches.
         """
-        result = await self.db.execute(
-            select(SkillBuildAttempt)
-            .where(
-                SkillBuildAttempt.capability.ilike(f"%{capability}%"),
-                SkillBuildAttempt.success == True,
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(SkillBuildAttempt)
+                .where(
+                    SkillBuildAttempt.capability.ilike(f"%{capability}%"),
+                    SkillBuildAttempt.success == True,
+                )
+                .order_by(desc(SkillBuildAttempt.created_at))
+                .limit(limit)
             )
-            .order_by(desc(SkillBuildAttempt.created_at))
-            .limit(limit)
-        )
 
-        return list(result.scalars().all())
+            return list(result.scalars().all())
 
     async def learn_from_success(
         self,
@@ -709,45 +713,46 @@ class FailureAnalyzer:
         Updates package mappings and research cache with successful data.
         """
         # Update package mapping confidence for used packages
-        for package in pip_requirements:
-            # Try to find which module this package provides
-            # This is a simplified approach - could be improved with actual inspection
-            module_name = package.replace("-", "_").lower()
+        async with self.session_factory() as db:
+            for package in pip_requirements:
+                # Try to find which module this package provides
+                # This is a simplified approach - could be improved with actual inspection
+                module_name = package.replace("-", "_").lower()
 
-            result = await self.db.execute(
-                select(PackageMapping).where(
-                    PackageMapping.package_name == package
+                result = await db.execute(
+                    select(PackageMapping).where(
+                        PackageMapping.package_name == package
+                    )
                 )
-            )
-            mapping = result.scalar_one_or_none()
+                mapping = result.scalar_one_or_none()
 
-            if mapping:
-                mapping.success_count += 1
-                mapping.confidence = min(1.0, mapping.confidence + 0.05)
-            else:
-                # Check if this module is imported in the code
-                import re
-                import_patterns = [
-                    rf"^import\s+{re.escape(module_name)}",
-                    rf"^from\s+{re.escape(module_name)}",
-                ]
+                if mapping:
+                    mapping.success_count += 1
+                    mapping.confidence = min(1.0, mapping.confidence + 0.05)
+                else:
+                    # Check if this module is imported in the code
+                    import re
+                    import_patterns = [
+                        rf"^import\s+{re.escape(module_name)}",
+                        rf"^from\s+{re.escape(module_name)}",
+                    ]
 
-                for pattern in import_patterns:
-                    if re.search(pattern, code, re.MULTILINE | re.IGNORECASE):
-                        # Create new mapping
-                        new_mapping = PackageMapping(
-                            id=str(uuid.uuid4()),
-                            module_name=module_name,
-                            package_name=package,
-                            confidence=0.7,
-                            source="learned",
-                            success_count=1,
-                        )
-                        self.db.add(new_mapping)
-                        log.info(f"Learned new package mapping: {module_name} -> {package}")
-                        break
+                    for pattern in import_patterns:
+                        if re.search(pattern, code, re.MULTILINE | re.IGNORECASE):
+                            # Create new mapping
+                            new_mapping = PackageMapping(
+                                id=str(uuid.uuid4()),
+                                module_name=module_name,
+                                package_name=package,
+                                confidence=0.7,
+                                source="learned",
+                                success_count=1,
+                            )
+                            db.add(new_mapping)
+                            log.info(f"Learned new package mapping: {module_name} -> {package}")
+                            break
 
-        await self.db.commit()
+            await db.commit()
 
     def format_failure_context(
         self,

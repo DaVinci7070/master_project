@@ -426,7 +426,7 @@ class AutonomousExecutorService:
 # Execute and print result as JSON
 if __name__ == "__main__":
     import json
-    _input = {args_json}
+    _input = json.loads({repr(args_json)})
     _result = {function_name}(_input)
     print(json.dumps(_result))
 '''

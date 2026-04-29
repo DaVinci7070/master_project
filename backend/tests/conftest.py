@@ -18,9 +18,28 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import StaticPool
 
 from app.models.sql.base import Base
+# Import SQL model modules so they register with Base.metadata before
+# create_all() runs in the test_engine fixture. Excludes modules that use
+# Postgres-only types (JSONB) incompatible with the SQLite test DB —
+# those tables are not needed by the current test suite.
+from app.models.sql import (  # noqa: F401
+    sql_models,
+    versioned_models,
+    telemetry_models,
+    analysis_models,
+    improvement_models,
+    ab_test_models,
+    artifact_schema_models,
+    skill_build_models,
+    agent_event_models,
+    shared_memory_models,
+    execution_models,
+    intervention_models,
+    topology_models,
+)
 from app.services.skill_executor import SkillExecutor
 
 
@@ -43,13 +62,13 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 @pytest_asyncio.fixture(scope="function")
 async def test_engine() -> AsyncGenerator[AsyncEngine, None]:
     """
-    Create a test database engine with NullPool.
+    Create a test database engine with StaticPool.
 
-    NullPool ensures each connection is closed immediately after use,
-    preventing connection reuse issues in tests. This is the recommended
-    approach per SQLAlchemy async documentation.
-
-    Uses SQLite in-memory database for fast, isolated tests.
+    SQLite ``:memory:`` databases are per-connection: each new connection
+    opens a fresh, empty DB. With ``NullPool`` this means tables created by
+    ``create_all()`` disappear before the next connection sees them.
+    ``StaticPool`` holds a single shared connection for the lifetime of the
+    engine, so all sessions observe the same in-memory DB.
     """
     # Use in-memory SQLite for tests
     # aiosqlite required for async SQLite
@@ -57,41 +76,55 @@ async def test_engine() -> AsyncGenerator[AsyncEngine, None]:
 
     engine = create_async_engine(
         database_url,
-        poolclass=NullPool,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
         echo=False,  # Set True for SQL debugging
     )
 
-    # Create all tables
+    # Create all tables except those using Postgres-only types (JSONB),
+    # which SQLite cannot compile. Those tables aren't needed by tests.
+    def _is_sqlite_compatible(table) -> bool:
+        for col in table.columns:
+            type_name = type(col.type).__name__
+            if type_name == "JSONB":
+                return False
+        return True
+
+    tables = [t for t in Base.metadata.tables.values() if _is_sqlite_compatible(t)]
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
 
     yield engine
 
     # Cleanup
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(lambda sync_conn: Base.metadata.drop_all(sync_conn, tables=tables))
 
     await engine.dispose()
 
 
 @pytest_asyncio.fixture(scope="function")
-async def test_session(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
+async def session_factory(test_engine: AsyncEngine):
+    """Session-Factory für Tests — gibt eine Factory zurück, keine einzelne Session."""
+    factory = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    return factory
+
+
+@pytest_asyncio.fixture(scope="function")
+async def test_session(session_factory) -> AsyncGenerator[AsyncSession, None]:
     """
     Create a test database session.
 
     Each test gets a fresh session that rolls back after the test,
     ensuring test isolation.
     """
-    async_session_factory = async_sessionmaker(
-        test_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
-    )
-
-    async with async_session_factory() as session:
+    async with session_factory() as session:
         yield session
-        # Rollback any uncommitted changes
         await session.rollback()
 
 

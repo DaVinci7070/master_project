@@ -169,8 +169,12 @@ class ImprovementOrchestrator:
                 improvement_attempt_id=improvement_attempt.id,
             )
         elif action.artifact_type == "agent":
-            log.warning("Agent improvements not yet supported (Phase 7)")
-            return None
+            # Agent improvements = prompt + schema modification
+            return await self._execute_prompt_improvement(
+                action=action,
+                finding=finding,
+                improvement_attempt_id=improvement_attempt.id,
+            )
         else:
             log.error(f"Unknown artifact type: {action.artifact_type}")
             return None

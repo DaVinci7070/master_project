@@ -12,6 +12,8 @@ import {
   Menu,
   X,
   History,
+  Sparkles,
+  FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,8 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/execution", label: "Execution", icon: Play },
   { href: "/history", label: "History", icon: History },
+  { href: "/evolution", label: "Evolution", icon: Sparkles },
+  { href: "/evaluation", label: "Evaluation", icon: FlaskConical },
   { href: "/topology", label: "Topology", icon: Network },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/skills", label: "Skills", icon: Wrench },

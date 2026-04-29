@@ -279,7 +279,7 @@ class GapDetector:
 
         try:
             result = await self._structured_llm_fn(
-                messages, GapDetectionResponse, temperature=0.2,
+                messages, GapDetectionResponse, temperature=0.0,
             )
             gaps = result.gaps
 

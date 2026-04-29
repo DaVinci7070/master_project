@@ -121,6 +121,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
 
         is_health_check = request.url.path in ["/health", "/health/"]
+        is_stream = request.url.path.endswith("/stream")
 
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
@@ -134,7 +135,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
              status_code = response.status_code
 
-             if not is_health_check:
+             if not is_health_check and not is_stream:
                  log.info("request_finished",
                           method=request.method,
                           path=request.url.path,
@@ -165,12 +166,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.storage = storage
         self.limit = settings.rate_limit_per_minute
 
+    # SSE / streaming endpoints are long-lived single connections —
+    # they should not be rate-limited per request.
+    _EXEMPT_PATTERNS = ("/stream", "/events/", "/events")
+
     async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # Skip rate limiting for SSE / streaming endpoints
+        if any(pat in path for pat in self._EXEMPT_PATTERNS):
+            return await call_next(request)
+
         user_id = self._get_user_id(request)
         if not user_id:
             user_id = request.client.host if request.client else "unknown"
 
-        path = request.url.path
         key = f"ratelimit:{user_id}:{path}"
 
         try:

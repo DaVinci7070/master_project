@@ -99,12 +99,25 @@ class FrontendTopologyResponse(BaseModel):
 
 
 class TopologyHistoryEntry(BaseModel):
-    """Historical topology change entry."""
+    """Historical topology change entry.
+
+    The ``previous_state`` / ``new_state`` fields carry the JSON snapshots
+    stored on TopologyChangeLog so the Evolution-UI can render a
+    side-by-side diff (Sprint 2 / F6).
+    """
     id: str
     timestamp: str
     change_type: str  # agent_added, agent_removed, dependency_changed, prompt_updated
     description: str
     affected_agents: list[str] = Field(default_factory=list)
+    entity_type: Optional[str] = None  # agent | skill | prompt
+    entity_id: Optional[str] = None
+    entity_name: Optional[str] = None
+    source: Optional[str] = None  # system | manual | migration
+    triggered_by: Optional[str] = None
+    change_details: Optional[dict] = None
+    previous_state: Optional[dict] = None
+    new_state: Optional[dict] = None
 
 
 class TopologyHistoryResponse(BaseModel):
@@ -369,7 +382,15 @@ async def get_topology_history(
             timestamp=change.created_at.isoformat() if change.created_at else "",
             change_type=change.change_type,
             description=description,
-            affected_agents=[change.entity_id] if change.entity_type == "agent" else []
+            affected_agents=[change.entity_id] if change.entity_type == "agent" else [],
+            entity_type=change.entity_type,
+            entity_id=change.entity_id,
+            entity_name=change.entity_name,
+            source=change.source,
+            triggered_by=change.triggered_by,
+            change_details=change.change_details,
+            previous_state=change.previous_state,
+            new_state=change.new_state,
         ))
 
     return TopologyHistoryResponse(

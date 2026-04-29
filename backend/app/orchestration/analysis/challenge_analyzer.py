@@ -172,7 +172,7 @@ class ChallengeAnalyzer:
             capability_types = {}
 
             result = await self._structured_llm_fn(
-                messages, CapabilityExtractionResponse, temperature=0.2,
+                messages, CapabilityExtractionResponse, temperature=0.0,
             )
             for cap in result.capabilities:
                 capability_names.append(cap.action)

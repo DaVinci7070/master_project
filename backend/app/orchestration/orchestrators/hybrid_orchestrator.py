@@ -69,7 +69,8 @@ class HybridOrchestrator:
         topology_loader: Optional[TopologyLoader] = None,
         shared_memory: Optional[SharedMemoryService] = None,
         context_manager: Optional[ContextBudgetManager] = None,
-        session_factory: Optional[SessionFactory] = None
+        session_factory: Optional[SessionFactory] = None,
+        embedding_fn: Optional[Any] = None,
     ):
         """
         Initialize hybrid orchestrator.
@@ -81,6 +82,7 @@ class HybridOrchestrator:
             shared_memory: Shared memory service (creates if not provided)
             context_manager: Context budget manager
             session_factory: Factory for creating new sessions (preferred over db)
+            embedding_fn: Async function(text) -> embedding vector for SharedMemory
         """
         self.db = db
         self.llm_client = llm_client
@@ -88,6 +90,7 @@ class HybridOrchestrator:
         self.shared_memory = shared_memory
         self.context_manager = context_manager or ContextBudgetManager()
         self._session_factory = session_factory
+        self._embedding_fn = embedding_fn
         self._db_lock = asyncio.Lock()  # Lock for serializing DB operations
 
         self._artifact_pool: Optional[ArtifactPool] = None
@@ -107,7 +110,7 @@ class HybridOrchestrator:
         """Initialize orchestrator components."""
         # Create topology loader if not provided
         if not self.topology_loader:
-            self.topology_loader = TopologyLoader(self.db)
+            self.topology_loader = TopologyLoader(self._session_factory)
             await self.topology_loader.load()
 
         # Create shared memory if not provided (optional - execution works without it)
@@ -124,7 +127,8 @@ class HybridOrchestrator:
                 self.shared_memory = SharedMemoryService(
                     db=self.db,
                     qdrant_adapter=qdrant_adapter,
-                    context_manager=self.context_manager
+                    context_manager=self.context_manager,
+                    embedding_fn=self._embedding_fn,
                 )
                 logger.info("Shared memory initialized with Qdrant")
             except Exception as e:
@@ -254,6 +258,18 @@ class HybridOrchestrator:
         unresolved = [f for f in self._failure_tracker.values() if not f.resolved]
         overall_success = len(unresolved) == 0
 
+        # Aggregate token usage across all agents and waves
+        total_tokens = 0
+        total_input = 0
+        total_output = 0
+        for wave_key, wave_results in results.items():
+            if isinstance(wave_results, dict):
+                for agent_result in wave_results.values():
+                    if isinstance(agent_result, dict):
+                        total_tokens += agent_result.get("tokens_total", 0) or 0
+                        total_input += agent_result.get("tokens_input", 0) or 0
+                        total_output += agent_result.get("tokens_output", 0) or 0
+
         result = {
             "success": overall_success,
             "execution_id": self._execution_id,
@@ -261,6 +277,9 @@ class HybridOrchestrator:
             "duration_ms": duration_ms,
             "waves_executed": len(waves),
             "agents_executed": sum(len(w) for w in waves),
+            "tokens_total": total_tokens,
+            "tokens_input": total_input,
+            "tokens_output": total_output,
             "failed_agents": [
                 {
                     "agent_id": f.agent_id,
@@ -292,6 +311,34 @@ class HybridOrchestrator:
             input_data=input_data,
         )
 
+        # Sprint 1: Autonomous Evolution Loop — fire-and-forget.
+        # Runs analyze -> prioritize -> decide -> improve in a background task
+        # with its own isolated DB session. Must never break the main execution.
+        _primary_agent_id = waves[0][0] if waves and waves[0] else "unknown"
+        try:
+            from app.core.config import settings as _settings
+            if _settings.autonomous_evolution_enabled and self._execution_id:
+                task = asyncio.create_task(
+                    _run_evolution_loop_safely(
+                        execution_id=self._execution_id,
+                        agent_id=_primary_agent_id,
+                        input_data=self._original_input or {},
+                        tokens_input=total_input,
+                        tokens_output=total_output,
+                        outcome="success" if overall_success else "failed",
+                        error_message=(
+                            "; ".join(f.error_message for f in unresolved)[:500]
+                            if unresolved else None
+                        ),
+                    )
+                )
+                task.add_done_callback(
+                    lambda t, eid=self._execution_id: _log_evolution_task_exception(t, eid)
+                )
+        except Exception as e:
+            # Scheduling itself failed — log and continue, never block return.
+            logger.warning(f"Failed to schedule evolution loop: {e}")
+
         return result
 
     async def _execute_wave(
@@ -316,7 +363,7 @@ class HybridOrchestrator:
                 continue
 
             # Check if dependencies are satisfied before dispatching
-            skip_reason = self._should_skip_agent(agent)
+            skip_reason = await self._should_skip_agent(agent, wave_number)
             if skip_reason:
                 logger.warning(f"Skipping {agent.name}: {skip_reason}")
                 await self._emit_agent_event(
@@ -368,12 +415,21 @@ class HybridOrchestrator:
                         "agent_id": agent_id,
                     }
                     wave_results[agent_name] = result_dict
+                    logger.warning(
+                        f"Wave {wave_number} agent '{agent_name}' raised exception: {result}"
+                    )
                 else:
                     if isinstance(result, dict):
                         result["agent_id"] = agent_id
                         result["agent_name"] = agent_name
                     wave_results[agent_name] = result
                     result_dict = result if isinstance(result, dict) else {}
+                    logger.info(
+                        f"Wave {wave_number} agent '{agent_name}' completed: "
+                        f"success={result_dict.get('success')}, "
+                        f"skipped={result_dict.get('skipped', False)}, "
+                        f"result_len={len(str(result_dict.get('result', '')))}"
+                    )
 
                 # Track failures
                 is_failure = (
@@ -478,8 +534,8 @@ class HybridOrchestrator:
                 return FailureType.LLM_TRANSIENT
         return FailureType.UNKNOWN
 
-    def _should_skip_agent(self, agent: AgentNode) -> Optional[str]:
-        """Check if agent should be skipped due to failed dependencies."""
+    async def _should_skip_agent(self, agent: AgentNode, wave_number: int = 1) -> Optional[str]:
+        """Check if agent should be skipped due to failed dependencies or missing artifacts."""
         for consumed_type in agent.consumes_artifacts:
             for record in self._failure_tracker.values():
                 if consumed_type in record.produces_artifacts and not record.resolved:
@@ -487,6 +543,11 @@ class HybridOrchestrator:
                         f"Artifact '{consumed_type}' unavailable: "
                         f"agent '{record.agent_name}' failed"
                     )
+            # Pool-Check only for waves > 1 (wave 1 artifacts don't exist yet)
+            if wave_number > 1:
+                artifacts = await self._artifact_pool.read([consumed_type])
+                if not artifacts:
+                    return f"Artifact '{consumed_type}' not found in pool"
         return None
 
     def _get_prompt_improver(self) -> Any:
@@ -498,7 +559,7 @@ class HybridOrchestrator:
                 response = await self.llm_client.chat(messages)
                 return response.content
 
-            self._prompt_improver = AgentPromptImprover(self.db, llm_fn=llm_wrapper)
+            self._prompt_improver = AgentPromptImprover(self._session_factory, llm_fn=llm_wrapper)
         return self._prompt_improver
 
     def _get_capability_builder(self) -> Any:
@@ -514,7 +575,7 @@ class HybridOrchestrator:
             developer_team = DeveloperTeamOrchestrator(
                 spawner=spawner, llm_client=self.llm_client, registry=registry,
             )
-            self._capability_builder = CapabilityBuilder(developer_team, self.db)
+            self._capability_builder = CapabilityBuilder(developer_team, self._session_factory)
         return self._capability_builder
 
     async def _repair_and_retry(
@@ -902,3 +963,69 @@ async def create_hybrid_orchestrator(
     orchestrator = HybridOrchestrator(db=db, llm_client=llm_client)
     await orchestrator.initialize()
     return orchestrator
+
+
+# --------------------------------------------------------------------------
+# Sprint 1: Autonomous Evolution Loop helpers (fire-and-forget background task)
+# --------------------------------------------------------------------------
+
+async def _run_evolution_loop_safely(
+    execution_id: str,
+    agent_id: str = "unknown",
+    input_data: Optional[dict] = None,
+    tokens_input: int = 0,
+    tokens_output: int = 0,
+    outcome: str = "success",
+    error_message: Optional[str] = None,
+) -> None:
+    """Run EvolutionLoopService with an isolated DB session.
+
+    Erstellt zuerst die fehlende ExecutionTelemetry-Row (Bridge zwischen
+    Execution-Tabelle und AnalysisPipeline), dann startet die Evolution-Loop.
+    """
+    from app.dependencies.dependencies import AsyncSessionLocal
+    from app.dependencies.evolution_loop import build_evolution_loop_service
+    from app.repositories.telemetry_repository import TelemetryRepository
+    from app.services.telemetry_service import TelemetryService
+
+    async with AsyncSessionLocal() as session:
+        # Telemetrie-Row erstellen, damit AnalysisPipeline Findings generiert
+        telemetry_repo = TelemetryRepository(session)
+        telemetry_svc = TelemetryService(telemetry_repo)
+        try:
+            telemetry = await telemetry_svc.start_execution(
+                agent_id=agent_id,
+                execution_id=execution_id,
+                input_data=input_data or {},
+                metadata={"source": "hybrid_orchestrator"},
+            )
+            await telemetry_svc.complete_execution(
+                telemetry_id=telemetry.id,
+                output_data={},
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                outcome=outcome,
+                error_message=error_message,
+            )
+            await session.commit()
+        except Exception as e:
+            logger.warning(f"Telemetrie-Bridge fehlgeschlagen: {e}")
+            await session.rollback()
+
+        # Evolution-Loop ausführen (findet jetzt die Telemetrie-Row)
+        service = build_evolution_loop_service(session)
+        await service.run_post_execution_evolution(execution_id)
+
+
+def _log_evolution_task_exception(task: asyncio.Task, execution_id: str) -> None:
+    """add_done_callback handler: explicit exception logging to prevent silent failures."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error(
+            "Evolution task failed for %s: %s",
+            execution_id,
+            exc,
+            exc_info=exc,
+        )

@@ -5,7 +5,7 @@ import re
 import uuid
 from typing import Optional, Callable, Awaitable
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select, update
 
 from app.models.schemas.analysis_schemas import CapabilityGap, GapType, GapSeverity
@@ -45,7 +45,7 @@ class CapabilityBuilder:
     def __init__(
         self,
         developer_team: DeveloperTeamOrchestrator,
-        db: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
         embedding_fn: Optional[Callable[[str], Awaitable[list[float]]]] = None,
         skill_team_config: Optional[SkillTeamConfig] = None,
         use_skill_team: Optional[bool] = None,
@@ -61,7 +61,7 @@ class CapabilityBuilder:
             use_skill_team: Whether to use skill team for MISSING_SKILL gaps
         """
         self.developer_team = developer_team
-        self.db = db
+        self.session_factory = session_factory
         self._get_embedding = embedding_fn
 
         # Skill Team configuration
@@ -142,7 +142,7 @@ class CapabilityBuilder:
         if self._skill_team is None:
             from app.services.skill_team_orchestrator import SkillTeamOrchestrator
             self._skill_team = SkillTeamOrchestrator(
-                db=self.db,
+                session_factory=self.session_factory,
                 config=self._skill_team_config,
             )
         return self._skill_team
@@ -151,7 +151,7 @@ class CapabilityBuilder:
         """Get or create the Autonomous Skill Builder."""
         if self._autonomous_builder is None:
             from app.services.autonomous_skill_builder import AutonomousSkillBuilder
-            self._autonomous_builder = AutonomousSkillBuilder(db=self.db)
+            self._autonomous_builder = AutonomousSkillBuilder(session_factory=self.session_factory)
         return self._autonomous_builder
 
     async def _build_skill(
@@ -295,7 +295,12 @@ class CapabilityBuilder:
                     f"duration={duration:.1f}s"
                 )
 
-                # Pass integration plan through — binding handled by injector
+                # Skill an passenden Agent binden (wie im Autonomous-Pfad)
+                expanded_agent_id = await self._expand_agent_capabilities(
+                    skill_id=result.skill_id,
+                    affected_capability=gap.affected_capability
+                )
+
                 return BuildResult(
                     success=True,
                     artifact_id=result.skill_id,
@@ -304,6 +309,7 @@ class CapabilityBuilder:
                     approach_used="skill_team",
                     duration_seconds=duration,
                     integration_plan=result.integration_plan,
+                    bound_to_agent_id=expanded_agent_id,
                 )
             else:
                 logger.warning(
@@ -390,9 +396,10 @@ class CapabilityBuilder:
                     },
                     is_active=True
                 )
-                self.db.add(prompt)
-                await self.db.commit()
-                await self.db.refresh(prompt)
+                async with self.session_factory() as db:
+                    db.add(prompt)
+                    await db.commit()
+                    await db.refresh(prompt)
 
                 duration = time.time() - start_time
                 logger.info(f"Built prompt: id={prompt.id[:8]}..., name={prompt_name}")
@@ -478,66 +485,67 @@ class CapabilityBuilder:
                 prompt_result = None
                 agent_config = None
 
-                for spawn_result in result.results:
-                    if spawn_result.file_path.endswith("_prompt.txt"):
-                        prompt_content = spawn_result.generated_code or ""
-                        prompt = Prompt(
+                async with self.session_factory() as db:
+                    for spawn_result in result.results:
+                        if spawn_result.file_path.endswith("_prompt.txt"):
+                            prompt_content = spawn_result.generated_code or ""
+                            prompt = Prompt(
+                                id=str(uuid.uuid4()),
+                                name=f"{agent_name}_prompt",
+                                content=prompt_content,
+                                prompt_metadata={
+                                    "built_by": "intervention_orchestrator",
+                                    "for_agent": agent_name,
+                                    "provisional": True
+                                },
+                                is_active=True
+                            )
+                            db.add(prompt)
+                            await db.flush()
+                            prompt_result = prompt
+                        elif spawn_result.file_path.endswith("_config.yaml"):
+                            agent_config = spawn_result.generated_code
+
+                    if prompt_result and agent_config:
+                        # Create agent
+                        agent = Agent(
                             id=str(uuid.uuid4()),
-                            name=f"{agent_name}_prompt",
-                            content=prompt_content,
-                            prompt_metadata={
+                            name=agent_name,
+                            prompt_id=prompt_result.id,
+                            capabilities=[gap.affected_capability],
+                            dependencies=[],
+                            io_schema={
+                                "input": {"type": "object"},
+                                "output": {"type": "object"}
+                            },
+                            source="system_generated",
+                            agent_metadata={
                                 "built_by": "intervention_orchestrator",
-                                "for_agent": agent_name,
-                                "provisional": True
+                                "gap_type": gap.gap_type.value,
+                                "approach": approach,
+                                "provisional": True,
+                                "config": agent_config
                             },
                             is_active=True
                         )
-                        self.db.add(prompt)
-                        await self.db.flush()
-                        prompt_result = prompt
-                    elif spawn_result.file_path.endswith("_config.yaml"):
-                        agent_config = spawn_result.generated_code
+                        db.add(agent)
+                        await db.commit()
+                        await db.refresh(agent)
 
-                if prompt_result and agent_config:
-                    # Create agent
-                    agent = Agent(
-                        id=str(uuid.uuid4()),
-                        name=agent_name,
-                        prompt_id=prompt_result.id,
-                        capabilities=[gap.affected_capability],
-                        dependencies=[],
-                        io_schema={
-                            "input": {"type": "object"},
-                            "output": {"type": "object"}
-                        },
-                        source="system_generated",
-                        agent_metadata={
-                            "built_by": "intervention_orchestrator",
-                            "gap_type": gap.gap_type.value,
-                            "approach": approach,
-                            "provisional": True,
-                            "config": agent_config
-                        },
-                        is_active=True
-                    )
-                    self.db.add(agent)
-                    await self.db.commit()
-                    await self.db.refresh(agent)
-
-                    # Log topology change
-                    from app.services.topology_service import TopologyService
-                    topology_service = TopologyService(self.db)
-                    await topology_service.log_agent_created(
-                        agent=agent,
-                        source="system",
-                        triggered_by=f"gap:{gap.gap_type.value}",
-                        details={
-                            "gap_severity": gap.severity.value,
-                            "affected_capability": gap.affected_capability,
-                            "approach": approach,
-                        }
-                    )
-                    await self.db.commit()
+                        # Log topology change
+                        from app.services.topology_service import TopologyService
+                        topology_service = TopologyService(db)
+                        await topology_service.log_agent_created(
+                            agent=agent,
+                            source="system",
+                            triggered_by=f"gap:{gap.gap_type.value}",
+                            details={
+                                "gap_severity": gap.severity.value,
+                                "affected_capability": gap.affected_capability,
+                                "approach": approach,
+                            }
+                        )
+                        await db.commit()
 
                     duration = time.time() - start_time
                     logger.info(f"Built agent: id={agent.id[:8]}..., name={agent_name}")
@@ -574,10 +582,11 @@ class CapabilityBuilder:
 
     async def _find_existing_skill(self, name: str) -> Optional[Skill]:
         """Find existing skill by name for deduplication."""
-        result = await self.db.execute(
-            select(Skill).where(Skill.name == name)
-        )
-        return result.scalar_one_or_none()
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(Skill).where(Skill.name == name)
+            )
+            return result.scalar_one_or_none()
 
     def _normalize_capability(self, name: str) -> str:
         """Normalize capability name for matching."""
@@ -591,9 +600,10 @@ class CapabilityBuilder:
         from sqlalchemy import select
         from app.models.sql.versioned_models import Skill
 
-        skills = (await self.db.execute(
-            select(Skill).where(Skill.is_active == True)
-        )).scalars().all()
+        async with self.session_factory() as db:
+            skills = (await db.execute(
+                select(Skill).where(Skill.is_active == True)
+            )).scalars().all()
 
         caps = []
         for skill in skills:
@@ -617,10 +627,11 @@ class CapabilityBuilder:
         Uses keyword overlap scoring (no embeddings needed for basic matching).
         Returns (agent, score) tuple.
         """
-        result = await self.db.execute(
-            select(Agent).where(Agent.is_active == True)
-        )
-        agents = result.scalars().all()
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(Agent).where(Agent.is_active == True)
+            )
+            agents = result.scalars().all()
 
         if not agents:
             return None, 0.0
@@ -716,16 +727,17 @@ class CapabilityBuilder:
                     capability=affected_capability,
                     binding_type="auto"
                 )
-                await self.db.commit()
                 return best_agent.id
 
         # Add capability to agent
-        new_caps = current_caps + [affected_capability]
-        await self.db.execute(
-            update(Agent)
-            .where(Agent.id == best_agent.id)
-            .values(capabilities=new_caps)
-        )
+        async with self.session_factory() as db:
+            new_caps = current_caps + [affected_capability]
+            await db.execute(
+                update(Agent)
+                .where(Agent.id == best_agent.id)
+                .values(capabilities=new_caps)
+            )
+            await db.commit()
 
         # Create skill binding
         await self._bind_skill_to_agent(
@@ -734,8 +746,6 @@ class CapabilityBuilder:
             capability=affected_capability,
             binding_type="auto"
         )
-
-        await self.db.commit()
 
         logger.info(
             f"EXPANDED agent '{best_agent.name}' with capability '{affected_capability}' "
@@ -767,36 +777,38 @@ class CapabilityBuilder:
             SkillBinding ID if created, None if already exists or error
         """
         try:
-            # Check if binding already exists
-            existing = await self.db.execute(
-                select(SkillBinding).where(
-                    SkillBinding.skill_id == skill_id,
-                    SkillBinding.agent_id == agent_id,
-                    SkillBinding.is_active == True
+            async with self.session_factory() as db:
+                # Check if binding already exists
+                existing = await db.execute(
+                    select(SkillBinding).where(
+                        SkillBinding.skill_id == skill_id,
+                        SkillBinding.agent_id == agent_id,
+                        SkillBinding.is_active == True
+                    )
                 )
-            )
-            if existing.scalar_one_or_none():
-                logger.debug(f"Skill binding already exists: skill={skill_id[:8]}, agent={agent_id[:8]}")
-                return None
+                if existing.scalar_one_or_none():
+                    logger.debug(f"Skill binding already exists: skill={skill_id[:8]}, agent={agent_id[:8]}")
+                    return None
 
-            # Create new binding
-            binding = SkillBinding(
-                skill_id=skill_id,
-                agent_id=agent_id,
-                capability=capability,
-                binding_type=binding_type,
-                priority=0,
-                is_active=True
-            )
-            self.db.add(binding)
-            await self.db.flush()
+                # Create new binding
+                binding = SkillBinding(
+                    skill_id=skill_id,
+                    agent_id=agent_id,
+                    capability=capability,
+                    binding_type=binding_type,
+                    priority=0,
+                    is_active=True
+                )
+                db.add(binding)
+                await db.flush()
 
-            logger.info(
-                f"Created skill binding: skill={skill_id[:8]}..., "
-                f"agent={agent_id[:8]}..., capability='{capability}'"
-            )
+                logger.info(
+                    f"Created skill binding: skill={skill_id[:8]}..., "
+                    f"agent={agent_id[:8]}..., capability='{capability}'"
+                )
 
-            return binding.id
+                await db.commit()
+                return binding.id
 
         except Exception as e:
             logger.error(f"Failed to create skill binding: {e}")
@@ -824,20 +836,20 @@ class CapabilityBuilder:
             agent_name = affected_capability.replace(" ", "_").lower()
             agent_name = f"specialist_{agent_name}"
 
-            # Check if agent with this name already exists
-            existing = await self.db.execute(
-                select(Agent).where(Agent.name == agent_name)
-            )
-            if existing.scalar_one_or_none():
-                logger.info(f"Specialist agent '{agent_name}' already exists")
-                # Return existing agent's ID after adding capability if needed
-                existing_agent = (await self.db.execute(
+            async with self.session_factory() as db:
+                # Check if agent with this name already exists
+                existing = await db.execute(
                     select(Agent).where(Agent.name == agent_name)
-                )).scalar_one()
-                return existing_agent.id
+                )
+                if existing.scalar_one_or_none():
+                    logger.info(f"Specialist agent '{agent_name}' already exists")
+                    existing_agent = (await db.execute(
+                        select(Agent).where(Agent.name == agent_name)
+                    )).scalar_one()
+                    return existing_agent.id
 
-            # Create minimal prompt for the specialist
-            prompt_content = f"""You are a specialist agent for: {affected_capability}
+                # Create minimal prompt for the specialist
+                prompt_content = f"""You are a specialist agent for: {affected_capability}
 
 Your role:
 - Execute tasks related to {affected_capability}
@@ -852,64 +864,64 @@ When processing a task:
 
 Always be precise and thorough in your {affected_capability} work."""
 
-            # Create prompt
-            prompt = Prompt(
-                id=str(uuid.uuid4()),
-                name=f"{agent_name}_prompt",
-                content=prompt_content,
-                prompt_metadata={
-                    "built_by": "capability_builder",
-                    "for_capability": affected_capability,
-                    "provisional": True,
-                    "auto_generated": True
-                },
-                is_active=True
-            )
-            self.db.add(prompt)
-            await self.db.flush()
-
-            # Create specialist agent
-            agent = Agent(
-                id=str(uuid.uuid4()),
-                name=agent_name,
-                prompt_id=prompt.id,
-                capabilities=[affected_capability],
-                dependencies=[],  # Specialist has no dependencies
-                io_schema={
-                    "input": {"type": "object", "description": f"Input for {affected_capability}"},
-                    "output": {"type": "object", "description": f"Output from {affected_capability}"}
-                },
-                source="system_generated",
-                agent_metadata={
-                    "built_by": "capability_builder",
-                    "source_skill_id": skill_id,
-                    "provisional": True,
-                    "auto_generated": True,
-                    "created_for_capability": affected_capability
-                },
-                is_active=True
-            )
-            self.db.add(agent)
-            await self.db.commit()
-            await self.db.refresh(agent)
-
-            # Log topology change
-            try:
-                from app.services.topology_service import TopologyService
-                topology_service = TopologyService(self.db)
-                await topology_service.log_agent_created(
-                    agent=agent,
-                    source="system",
-                    triggered_by=f"skill:{skill_id[:8]}",
-                    details={
-                        "reason": "no_suitable_agent_for_capability",
-                        "affected_capability": affected_capability,
+                # Create prompt
+                prompt = Prompt(
+                    id=str(uuid.uuid4()),
+                    name=f"{agent_name}_prompt",
+                    content=prompt_content,
+                    prompt_metadata={
+                        "built_by": "capability_builder",
+                        "for_capability": affected_capability,
+                        "provisional": True,
                         "auto_generated": True
-                    }
+                    },
+                    is_active=True
                 )
-                await self.db.commit()
-            except Exception as log_err:
-                logger.warning(f"Failed to log agent creation: {log_err}")
+                db.add(prompt)
+                await db.flush()
+
+                # Create specialist agent
+                agent = Agent(
+                    id=str(uuid.uuid4()),
+                    name=agent_name,
+                    prompt_id=prompt.id,
+                    capabilities=[affected_capability],
+                    dependencies=[],  # Specialist has no dependencies
+                    io_schema={
+                        "input": {"type": "object", "description": f"Input for {affected_capability}"},
+                        "output": {"type": "object", "description": f"Output from {affected_capability}"}
+                    },
+                    source="system_generated",
+                    agent_metadata={
+                        "built_by": "capability_builder",
+                        "source_skill_id": skill_id,
+                        "provisional": True,
+                        "auto_generated": True,
+                        "created_for_capability": affected_capability
+                    },
+                    is_active=True
+                )
+                db.add(agent)
+                await db.commit()
+                await db.refresh(agent)
+
+                # Log topology change
+                try:
+                    from app.services.topology_service import TopologyService
+                    topology_service = TopologyService(db)
+                    await topology_service.log_agent_created(
+                        agent=agent,
+                        source="system",
+                        triggered_by=f"skill:{skill_id[:8]}",
+                        details={
+                            "reason": "no_suitable_agent_for_capability",
+                            "affected_capability": affected_capability,
+                            "auto_generated": True
+                        }
+                    )
+                    await db.commit()
+                except Exception as log_err:
+                    logger.warning(f"Failed to log agent creation: {log_err}")
 
             # Create skill binding for the new agent
             await self._bind_skill_to_agent(
@@ -918,7 +930,6 @@ Always be precise and thorough in your {affected_capability} work."""
                 capability=affected_capability,
                 binding_type="auto"
             )
-            await self.db.commit()
 
             logger.info(
                 f"CREATED specialist agent '{agent_name}' for capability '{affected_capability}' "
@@ -967,26 +978,27 @@ Description: {gap.description}
         Per RESEARCH pitfall 4: Provisional capabilities not rolled back.
         """
         try:
-            if artifact_type == "skill":
-                from sqlalchemy import update
-                await self.db.execute(
-                    update(Skill)
-                    .where(Skill.id == artifact_id)
-                    .values(is_active=False)
-                )
-            elif artifact_type == "prompt":
-                await self.db.execute(
-                    update(Prompt)
-                    .where(Prompt.id == artifact_id)
-                    .values(is_active=False)
-                )
-            elif artifact_type == "agent":
-                await self.db.execute(
-                    update(Agent)
-                    .where(Agent.id == artifact_id)
-                    .values(is_active=False)
-                )
-            await self.db.commit()
+            async with self.session_factory() as db:
+                if artifact_type == "skill":
+                    from sqlalchemy import update
+                    await db.execute(
+                        update(Skill)
+                        .where(Skill.id == artifact_id)
+                        .values(is_active=False)
+                    )
+                elif artifact_type == "prompt":
+                    await db.execute(
+                        update(Prompt)
+                        .where(Prompt.id == artifact_id)
+                        .values(is_active=False)
+                    )
+                elif artifact_type == "agent":
+                    await db.execute(
+                        update(Agent)
+                        .where(Agent.id == artifact_id)
+                        .values(is_active=False)
+                    )
+                await db.commit()
             logger.info(f"Deactivated provisional {artifact_type}: {artifact_id[:8]}...")
             return True
         except Exception as e:

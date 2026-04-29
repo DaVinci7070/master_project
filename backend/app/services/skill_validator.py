@@ -25,8 +25,8 @@ class SkillValidator:
     compares scores to prevent regressions (new_score must be >= parent_score).
     """
 
-    def __init__(self, db: AsyncSession, sandbox: DynamicSandboxService):
-        self.db = db
+    def __init__(self, session_factory, sandbox: DynamicSandboxService):
+        self.session_factory = session_factory
         self.sandbox = sandbox
 
     async def validate_for_activation(
@@ -62,10 +62,11 @@ class SkillValidator:
 
         # 2. Parent comparison if applicable
         if skill.parent_id:
-            parent = await self.db.execute(
-                select(Skill).where(Skill.id == skill.parent_id)
-            )
-            parent_skill = parent.scalar_one_or_none()
+            async with self.session_factory() as db:
+                parent = await db.execute(
+                    select(Skill).where(Skill.id == skill.parent_id)
+                )
+                parent_skill = parent.scalar_one_or_none()
 
             if parent_skill and parent_skill.code:
                 comparison = await self._compare_with_parent(skill, parent_skill, new_result)

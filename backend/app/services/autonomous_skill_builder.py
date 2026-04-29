@@ -24,7 +24,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.llm_client import LLMClient
@@ -125,7 +124,7 @@ class AutonomousSkillBuilder:
 
     def __init__(
         self,
-        db: AsyncSession,
+        session_factory,
         llm_client: Optional[LLMClient] = None,
         sandbox: Optional[DynamicSandboxService] = None,
         failure_analyzer: Optional[FailureAnalyzer] = None,
@@ -147,16 +146,28 @@ class AutonomousSkillBuilder:
             enable_semantic_validation: Whether to perform semantic validation.
             semantic_threshold: Minimum similarity score for semantic validation.
         """
-        self.db = db
+        self.session_factory = session_factory
         self.llm = llm_client or LLMClient()
+        self._code_gen_llm: Optional[LLMClient] = None
         self.sandbox = sandbox or DynamicSandboxService()
-        self.failure_analyzer = failure_analyzer or FailureAnalyzer(db, self.llm)
-        self.package_resolver = package_resolver or PackageResolver(db)
+        self.failure_analyzer = failure_analyzer or FailureAnalyzer(session_factory, self.llm)
+        self.package_resolver = package_resolver
         self.semantic_validator = semantic_validator or SemanticValidator(
             self.llm, semantic_threshold
         )
         self.enable_semantic_validation = enable_semantic_validation
         self.semantic_threshold = semantic_threshold
+
+    def _get_code_gen_llm(self) -> LLMClient:
+        """LLM-Client für Code-Generierung (nutzt stärkeres Modell aus Config)."""
+        if self._code_gen_llm is None:
+            from app.core.config import settings
+            model = settings.skill_implementer_model
+            if model:
+                self._code_gen_llm = LLMClient(model=model)
+            else:
+                self._code_gen_llm = self.llm
+        return self._code_gen_llm
 
     async def build_skill(
         self,
@@ -550,7 +561,7 @@ For {capability}, the input_data might contain:
 
 Return ONLY the Python code, no explanations. The code must be complete and runnable."""
 
-        response = await self.llm.chat(
+        response = await self._get_code_gen_llm().chat(
             messages=[
                 {"role": "system", "content": "You are an expert Python developer. Write clean, working code."},
                 {"role": "user", "content": prompt},
@@ -713,7 +724,7 @@ Root cause: {analysis.root_cause if analysis else 'Unknown'}
 
 Fix the code to resolve this error. Return ONLY the fixed Python code, no explanations."""
 
-        response = await self.llm.chat(
+        response = await self._get_code_gen_llm().chat(
             messages=[
                 {"role": "system", "content": "You are an expert Python debugger. Fix the code."},
                 {"role": "user", "content": prompt},
@@ -858,41 +869,47 @@ if __name__ == "__main__":
             "affected_capability": draft.name.replace("skill_", "").replace("_", " "),
         }
 
-        # Check if skill already exists
-        existing = await self.db.execute(
-            select(Skill).where(Skill.name == draft.name)
-        )
-        existing_skill = existing.scalar_one_or_none()
+        async with self.session_factory() as db:
+            # Check if skill already exists
+            existing = await db.execute(
+                select(Skill).where(Skill.name == draft.name)
+            )
+            existing_skill = existing.scalar_one_or_none()
 
-        if existing_skill:
-            # Update existing skill
-            existing_skill.code = draft.code
-            existing_skill.description = draft.description
-            existing_skill.interface = draft.interface or existing_skill.interface
-            existing_skill.skill_metadata = metadata
-            existing_skill.is_active = True
-            await self.db.commit()
-            log.info(f"Updated existing skill: {existing_skill.id}")
-            return existing_skill
+            # applicability aus affected_capability ableiten (SoK C-Feld)
+            applicability = metadata.get("affected_capability", draft.name.replace("skill_", "").replace("_", " "))
 
-        # Create new skill
-        skill = Skill(
-            id=str(uuid.uuid4()),
-            name=draft.name,
-            description=draft.description,
-            code=draft.code,
-            test_cases=[],
-            interface=draft.interface,
-            skill_metadata=metadata,
-            is_active=True,
-        )
+            if existing_skill:
+                # Update existing skill
+                existing_skill.code = draft.code
+                existing_skill.description = draft.description
+                existing_skill.interface = draft.interface or existing_skill.interface
+                existing_skill.skill_metadata = metadata
+                existing_skill.applicability = applicability
+                existing_skill.is_active = True
+                await db.commit()
+                log.info(f"Updated existing skill: {existing_skill.id}")
+                return existing_skill
 
-        self.db.add(skill)
-        await self.db.commit()
-        await self.db.refresh(skill)
+            # Create new skill
+            skill = Skill(
+                id=str(uuid.uuid4()),
+                name=draft.name,
+                description=draft.description,
+                code=draft.code,
+                test_cases=[],
+                interface=draft.interface,
+                skill_metadata=metadata,
+                applicability=applicability,
+                is_active=True,
+            )
 
-        log.info(f"Created new skill: {skill.id}")
-        return skill
+            db.add(skill)
+            await db.commit()
+            await db.refresh(skill)
+
+            log.info(f"Created new skill: {skill.id}")
+            return skill
 
     async def _derive_interface_with_llm(self, code: str, capability: str) -> dict:
         """Use LLM + Instructor to derive accurate interface from generated code."""
@@ -1078,6 +1095,11 @@ Mark parameters as required if the code does not provide a default value (i.e. u
         recommended: list[str],
     ) -> list[str]:
         """Convert import names to pip package names using PackageResolver."""
+        # Lazy-init PackageResolver mit frischer Session
+        if self.package_resolver is None:
+            async with self.session_factory() as db:
+                self.package_resolver = PackageResolver(db)
+
         packages = []
 
         for imp in imports:

@@ -136,7 +136,7 @@ class FeasibilityJudge:
 
         try:
             parsed = await self._structured_llm_fn(
-                messages, FeasibilityLLMResponse, temperature=0.1,
+                messages, FeasibilityLLMResponse, temperature=0.0,
             )
             return FeasibilityResult(
                 required_capability=match.required_capability,
@@ -206,11 +206,11 @@ class FeasibilityJudge:
             from sqlalchemy import select
             from app.models.sql.skill_build_models import SkillBinding
 
-            db = self.topology.db
-            result = await db.execute(
-                select(SkillBinding).where(SkillBinding.agent_id == agent_id)
-            )
-            bindings = result.scalars().all()
+            async with self.topology.session_factory() as db:
+                result = await db.execute(
+                    select(SkillBinding).where(SkillBinding.agent_id == agent_id)
+                )
+                bindings = result.scalars().all()
 
             for binding in bindings:
                 if binding.skill_id not in all_skills:

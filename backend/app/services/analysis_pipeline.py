@@ -15,6 +15,7 @@ from app.core.llm_client import LLMClient
 from app.models.schemas.analysis_schemas import (
     AnalysisFindingCreate,
     AnalysisFindingResponse,
+    PriorityList,
 )
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.telemetry_repository import TelemetryRepository
@@ -77,7 +78,7 @@ class AnalysisPipeline:
         execution_id: str,
         input_content: Optional[str] = None,
         output_content: Optional[str] = None,
-    ) -> list[AnalysisFindingResponse]:
+    ) -> tuple[list[AnalysisFindingResponse], PriorityList]:
         """
         Run full analysis pipeline for an execution.
 
@@ -100,11 +101,17 @@ class AnalysisPipeline:
         """
         log.info(f"Starting analysis pipeline for execution_id={execution_id[:8]}...")
 
+        # Empty priority list used for early-return paths
+        empty_priorities = PriorityList(
+            priorities=[],
+            improvement_direction="no findings",
+        )
+
         # Step 1: Get telemetry for this execution
         telemetry = await self.telemetry.get_by_execution_id(execution_id)
         if not telemetry:
             log.warning(f"No telemetry found for execution {execution_id}")
-            return []
+            return [], empty_priorities
 
         log.info(
             f"Retrieved telemetry for agent={telemetry.agent_id[:8]}..., "
@@ -132,7 +139,7 @@ class AnalysisPipeline:
 
         if not analysis.findings:
             log.info("No findings generated - pipeline complete")
-            return []
+            return [], empty_priorities
 
         # Step 4: Store findings in database
         stored_findings = []
@@ -176,11 +183,13 @@ class AnalysisPipeline:
             f"findings={len(stored_findings)}"
         )
 
-        # Return findings as response schemas
-        return [
+        # Return findings as response schemas + the PriorityList for downstream
+        # consumers like the Evolution Loop (Sprint 1).
+        response = [
             AnalysisFindingResponse.model_validate(f)
             for f in stored_findings
         ]
+        return response, priorities
 
 
 async def run_analysis_pipeline(
@@ -241,6 +250,8 @@ async def run_analysis_pipeline(
                 finding_repository=finding_repo,
             )
 
+            # Tuple return; we discard it here — the existing callback flow
+            # only needs the side effects (DB writes of findings + priorities).
             await pipeline.run(execution_id, input_content, output_content)
 
         log.info(f"Background task: analysis complete for execution_id={execution_id[:8]}...")

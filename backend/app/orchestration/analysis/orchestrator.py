@@ -289,6 +289,7 @@ async def create_pre_execution_orchestrator(
     db: AsyncSession,
     embedding_fn: Optional[Callable[[str], Awaitable[list[float]]]] = None,
     structured_llm_fn: Optional[Callable] = None,
+    session_factory=None,
 ) -> PreExecutionOrchestrator:
     """
     Factory function to create pre-execution orchestrator.
@@ -310,7 +311,11 @@ async def create_pre_execution_orchestrator(
     await qdrant_adapter.ensure_collections()
 
     # Create services
-    topology_loader = TopologyLoader(db)
+    # session_factory-Fallback: AsyncSessionLocal importieren falls nicht übergeben
+    if session_factory is None:
+        from app.dependencies.dependencies import AsyncSessionLocal
+        session_factory = AsyncSessionLocal
+    topology_loader = TopologyLoader(session_factory)
     shared_memory = SharedMemoryService(
         db=db,
         qdrant_adapter=qdrant_adapter,

@@ -1,0 +1,424 @@
+suite: swe_bench_subset
+description: >
+  12 software-engineering report tasks as external anchor.
+  Adapted to our report-generation system (not raw SWE-bench patches).
+  3 tasks per level (L1-L4).
+tasks:
+  # ============================================================
+  # L1 — Standard SE tasks (3)
+  # ============================================================
+
+  - task_id: SE_L1_code_review_summary
+    level: L1
+    description: >
+      Erstelle eine Code-Review-Zusammenfassung aus folgendem Diff-Beschrieb:
+      Repository: payment-service, PR #347 von Entwickler Tran.
+      Aenderungen: 3 Dateien, +145/-23 Zeilen. Datei 1: payment_handler.py
+      — Neuer Retry-Mechanismus fuer fehlgeschlagene Transaktionen
+      (max 3 Retries, exponential Backoff 1s/2s/4s). Datei 2:
+      config.py — Neue Env-Var PAYMENT_RETRY_MAX (default 3).
+      Datei 3: test_payment_handler.py — 4 neue Tests (retry success,
+      retry exhausted, timeout handling, idempotency check). Review-
+      Anmerkungen: Code-Qualitaet gut, Tests vollstaendig. Bedenken:
+      Retry ohne Idempotency-Key koennte zu Doppelbuchungen fuehren.
+      Empfehlung: Idempotency-Key in Payment-Request einfuegen vor Merge.
+    ground_truth:
+      required_keywords:
+        - Code-Review
+        - payment-service
+        - Retry
+        - Tran
+        - Idempotency
+        - Backoff
+      required_sections:
+        - Aenderungsuebersicht
+        - Review-Ergebnis
+        - Empfehlung
+
+  - task_id: SE_L1_release_notes
+    level: L1
+    description: >
+      Erstelle Release Notes aus folgenden Commits: Version 2.5.0,
+      Release-Datum 14.04.2026. Features: 1) Neuer CSV-Export fuer
+      Berichte (Ticket PROJ-234, Entwickler Mueller). 2) Dark-Mode
+      Support im Dashboard (Ticket PROJ-256, Entwickler Kim).
+      Bugfixes: 1) Login-Timeout bei langsamer Verbindung behoben
+      (Ticket BUG-89, Entwickler Tran). 2) Sortierung in Tabelle
+      ignorierte Umlaute (Ticket BUG-91, Entwickler Schmidt).
+      Breaking Changes: Keine. Bekannte Probleme: Dashboard laedt
+      langsam bei >1000 Eintraegen (wird in 2.6.0 optimiert).
+    ground_truth:
+      required_keywords:
+        - Release
+        - CSV-Export
+        - Dark-Mode
+        - Login-Timeout
+        - Umlaute
+      required_sections:
+        - Features
+        - Bugfixes
+        - Breaking Changes
+        - Bekannte Probleme
+
+  - task_id: SE_L1_bug_report
+    level: L1
+    description: >
+      Erstelle einen strukturierten Bug-Report aus folgender Meldung:
+      Gemeldet von QA-Tester Frau Petrov am 12.04.2026.
+      System: Kundenportal v2.4.3. Browser: Chrome 124 auf Windows 11.
+      Schritte: 1) Login als Testuser qa_user_01. 2) Navigation zu
+      "Meine Bestellungen". 3) Klick auf "Details" bei Bestellung
+      #ORD-2026-4412. 4) Seite zeigt Fehlermeldung "500 Internal
+      Server Error". Erwartetes Verhalten: Bestelldetails werden
+      angezeigt. Tatsaechliches Verhalten: Server-Fehler. Reproduzierbar:
+      Ja, bei allen Bestellungen mit Status "teilweise geliefert".
+      Bestellungen mit Status "geliefert" oder "offen" funktionieren.
+      Vermutung: Null-Pointer bei optionalem Feld "partial_delivery_date".
+      Prioritaet: Hoch (betrifft ca. 15% aller Bestellungen).
+    ground_truth:
+      required_keywords:
+        - Bug
+        - Kundenportal
+        - Petrov
+        - 500
+        - Bestellungen
+        - Null-Pointer
+      required_sections:
+        - Umgebung
+        - Schritte
+        - Erwartetes Verhalten
+        - Tatsaechliches Verhalten
+        - Prioritaet
+
+  # ============================================================
+  # L2 — Extended SE tasks (3)
+  # ============================================================
+
+  - task_id: SE_L2_incident_postmortem
+    level: L2
+    description: >
+      Erstelle einen Post-Mortem-Bericht aus folgenden Logs und
+      Gespraechsnotizen: Datum 10.04.2026, System: E-Commerce Backend.
+      08:12 — ERROR level in Logs: "Connection pool exhausted, max=50".
+      08:15 — HTTP 503 Responses steigen von 0,1% auf 12%.
+      08:18 — Oncall-Engineer Park alerted via PagerDuty.
+      08:25 — Park: "Sehe massive Connection Leaks im Order-Service.
+      Jede DB-Query oeffnet Connection aber schliesst sie nicht im
+      Error-Path." 08:30 — Hotfix deployed: try/finally Block um
+      DB-Calls in order_service.py Zeile 147-189. 08:35 — Connection-
+      Pool erholt sich, 503-Rate sinkt auf 0%. 08:45 — All-clear.
+      Root Cause: Missing connection.close() in except-Block, eingefuehrt
+      in Commit abc123f (PR #312, gemergt 09.04 ohne ausreichendes
+      Review). Timeline gesamt: 33 Minuten. Impact: ca. 340 fehl-
+      geschlagene Bestellungen, geschaetzter Umsatzverlust 28.000 EUR.
+    ground_truth:
+      required_keywords:
+        - Post-Mortem
+        - Connection Pool
+        - Park
+        - Hotfix
+        - Order-Service
+        - Connection Leak
+        - Umsatzverlust
+      required_sections:
+        - Timeline
+        - Root Cause
+        - Impact
+        - Massnahmen
+
+  - task_id: SE_L2_api_documentation
+    level: L2
+    description: >
+      Erstelle eine API-Dokumentation aus folgender Implementierung:
+      Service: User-Management API v3. Endpoint 1: POST /api/v3/users
+      — Erstellt neuen User. Request Body: { "email": string (required),
+      "name": string (required), "role": enum ["admin", "user", "viewer"]
+      (default: "user"), "department_id": integer (optional) }.
+      Response 201: { "id": integer, "email": string, "created_at": ISO }.
+      Response 400: { "error": string, "details": array }. Response 409:
+      Email bereits registriert. Endpoint 2: GET /api/v3/users/{id} —
+      Liefert User-Details. Response 200: vollstaendiges User-Objekt
+      inkl. "last_login", "permissions" Array. Response 404: User
+      nicht gefunden. Authentication: Bearer Token (JWT), Header
+      "Authorization: Bearer <token>". Rate Limit: 100 Requests/Minute
+      pro API-Key. Pagination: Query-Params "page" (default 1) und
+      "per_page" (default 20, max 100).
+    ground_truth:
+      required_keywords:
+        - API
+        - User-Management
+        - POST
+        - GET
+        - Bearer Token
+        - Rate Limit
+        - Pagination
+      required_sections:
+        - Endpoints
+        - Request
+        - Response
+        - Authentication
+        - Rate Limiting
+
+  - task_id: SE_L2_technical_debt_assessment
+    level: L2
+    description: >
+      Erstelle eine Technical-Debt-Bewertung aus folgender Code-Analyse:
+      Repository: invoice-service, analysiert am 09.04.2026.
+      SonarQube-Report: 234 Code Smells (davon 12 Critical), 8 Bugs,
+      Test Coverage 47% (Ziel: 80%), Duplicated Lines 14%.
+      Architektur-Review: 3 zirkulaere Abhaengigkeiten zwischen Modulen
+      (invoice ↔ customer ↔ payment). 2 God-Classes mit >500 Zeilen
+      (InvoiceProcessor.java: 780 Zeilen, PaymentHandler.java: 520
+      Zeilen). Legacy-Framework: Spring Boot 2.7 (EOL seit 11/2023),
+      Migration auf 3.x geschaetzt 15 Personentage. Datenbank: 4
+      fehlende Indizes (identifiziert durch Slow-Query-Log, >500ms),
+      2 nicht-normalisierte Tabellen. Geschaetzter Gesamtaufwand
+      Bereinigung: 45 Personentage. Priorisierung: 1) Spring-Boot-
+      Update (Sicherheit), 2) Indizes (Performance), 3) God-Classes
+      (Wartbarkeit), 4) Test-Coverage erhoehen.
+    ground_truth:
+      required_keywords:
+        - Technical Debt
+        - invoice-service
+        - SonarQube
+        - Coverage
+        - Spring Boot
+        - God-Class
+        - Indizes
+      required_sections:
+        - Code-Qualitaet
+        - Architektur
+        - Datenbank
+        - Aufwandschaetzung
+        - Priorisierung
+
+  # ============================================================
+  # L3 — Complex SE tasks (3)
+  # ============================================================
+
+  - task_id: SE_L3_architecture_decision_record
+    level: L3
+    description: >
+      Erstelle ein Architecture Decision Record (ADR) aus folgender
+      Diskussion: ADR-017, Thema: Event-Sourcing fuer Order-Service.
+      Kontext: Order-Service verarbeitet 50.000 Orders/Tag, Audit-Trail
+      gesetzlich vorgeschrieben (HGB §257, Aufbewahrungsfrist 10 Jahre).
+      Aktuell: CRUD mit separater Audit-Tabelle, Performance-Probleme
+      bei historischen Abfragen. Option A: Event-Sourcing mit Apache
+      Kafka + Materialized Views. Pro: Vollstaendiger Audit-Trail
+      nativ, Replay-Faehigkeit, CQRS-Trennung. Contra: Komplexitaet,
+      Team-Erfahrung gering (2 von 8 Devs kennen ES), Eventual
+      Consistency. Schaetzung: 60 PT Umbau + 20 PT Schulung.
+      Option B: Temporal Tables (PostgreSQL) + Change Data Capture.
+      Pro: Einfacher, Team kennt PostgreSQL, Strong Consistency.
+      Contra: Kein Replay, CDC-Pipeline Maintenance. Schaetzung: 25 PT.
+      Entscheidung: Option B (Temporal Tables + CDC). Begruendung:
+      Audit-Anforderung erfuellt, deutlich geringerer Aufwand,
+      Team-Kompetenz vorhanden. Event-Sourcing als Zukunftsoption
+      fuer Phase 2 vorgemerkt.
+    ground_truth:
+      required_keywords:
+        - ADR
+        - Event-Sourcing
+        - Kafka
+        - Temporal Tables
+        - CDC
+        - HGB
+        - CQRS
+        - Order-Service
+      required_sections:
+        - Kontext
+        - Optionen
+        - Bewertung
+        - Entscheidung
+        - Begruendung
+
+  - task_id: SE_L3_performance_analysis
+    level: L3
+    description: >
+      Erstelle einen Performance-Analysebericht aus Load-Test-Ergebnissen:
+      System: Kundenportal v2.5. Tool: k6 Cloud. Testdatum: 08.04.2026.
+      Szenario: Ramping VUs 0→500→1000→500→0 ueber 60 Minuten.
+      Ergebnisse: Durchsatz: p50=145ms, p95=890ms, p99=2.4s (SLA: p95
+      <500ms — VERLETZT). Error-Rate: 0,8% bei 500 VUs, 4,2% bei
+      1000 VUs (503 Service Unavailable). Bottleneck-Analyse: 1) DB
+      Connection Pool (max=25, bei 1000 VUs erschoepft — CPU DB-Server
+      nur 40%, also nicht DB-Last sondern Pool-Limit). 2) Synchroner
+      PDF-Export blockiert Worker-Thread 3-8s (verhindert neue Requests).
+      3) N+1 Query in Order-List Endpoint (120 Queries statt 2 bei
+      50 Orders). Memory: stabil bei 2.1 GB (Limit 4 GB), kein Leak.
+      Empfehlungen: 1) Connection Pool auf 100 erhoehen (+DB-Server
+      vCPUs verdoppeln). 2) PDF-Export async in Background-Job auslagern.
+      3) Eager Loading fuer Order-List. Geschaetzte Verbesserung:
+      p95 < 300ms, Error-Rate < 0,1% bei 1000 VUs.
+    ground_truth:
+      required_keywords:
+        - Performance
+        - Load-Test
+        - Connection Pool
+        - p95
+        - N+1
+        - PDF-Export
+        - Bottleneck
+      required_sections:
+        - Testkonfiguration
+        - Ergebnisse
+        - Bottleneck-Analyse
+        - Empfehlungen
+
+  - task_id: SE_L3_migration_runbook
+    level: L3
+    description: >
+      Erstelle ein Migrations-Runbook aus folgender Planungsbesprechung:
+      Migration: PostgreSQL 14 → 16 fuer Produktions-Datenbank
+      (3.8 TB, 450 Tables, 12 Replikas). Maintenance-Window: Samstag
+      03.05.2026, 02:00-08:00 Uhr (6h). Team: DBA Ozdemir, SRE Park,
+      App-Lead Chen. Pre-Checks (Freitag 17:00): pg_upgrade --check
+      im Dry-Run, Backup verifizieren (WAL-Archiv + pg_basebackup),
+      Replikation stoppen und Lag pruefen (<1s). Schritt 1 (02:00):
+      Applikation in Maintenance-Mode, Connection-Pool drainen (max
+      5 Min). Schritt 2 (02:10): pg_upgrade --link ausfuehren (geschaetzt
+      45 Min fuer 3.8 TB mit Hardlinks). Schritt 3 (03:00): ANALYZE
+      auf allen Tabellen (geschaetzt 30 Min). Schritt 4 (03:30):
+      Replikas neu aufsetzen via pg_basebackup (parallel, 2h).
+      Schritt 5 (05:30): Smoke-Tests (10 kritische Queries, Response
+      < 200ms). Schritt 6 (05:45): Applikation aus Maintenance-Mode.
+      Rollback-Plan: Snapshot vor pg_upgrade, Restore geschaetzt 90 Min.
+      Rollback-Trigger: pg_upgrade Fehler ODER Smoke-Tests failed
+      ODER Response-Zeiten >500ms.
+    ground_truth:
+      required_keywords:
+        - Migration
+        - PostgreSQL
+        - pg_upgrade
+        - Rollback
+        - Replikas
+        - Maintenance
+        - Smoke-Test
+        - Backup
+      required_sections:
+        - Pre-Checks
+        - Migrationsschritte
+        - Zeitplan
+        - Rollback-Plan
+        - Verantwortlichkeiten
+
+  # ============================================================
+  # L4 — Unknown SE tasks (3)
+  # ============================================================
+
+  - task_id: SE_L4_security_audit_report
+    level: L4
+    description: >
+      Erstelle einen Security-Audit-Bericht aus Penetrationstest-Ergebnissen:
+      Scope: Kundenportal portal.firma.de + API api.firma.de.
+      Tester: CyberSec GmbH (Herr Kovic, OSCP-zertifiziert).
+      Zeitraum: 25.-29.03.2026. Methodik: OWASP Testing Guide v4.2.
+      Findings: CRITICAL — SQL-Injection in /api/v2/search?q= (Parameter
+      'q' ungefiltert an Raw-Query, Zugriff auf users-Tabelle moeglich).
+      CVSS 9.8. HIGH — Stored XSS in Profil-Feld "Bio" (JavaScript
+      wird bei Profilanzeige anderer User ausgefuehrt). CVSS 7.5.
+      HIGH — IDOR in /api/v2/invoices/{id} (jeder authentifizierte
+      User kann fremde Rechnungen abrufen durch ID-Enumeration).
+      CVSS 7.1. MEDIUM — Fehlende Rate-Limitation auf /api/v2/auth/login
+      (Brute-Force moeglich, 1000 Versuche/Minute ohne Sperre). CVSS 5.3.
+      LOW — Server-Header leakt Framework-Version (X-Powered-By:
+      Express 4.18.2). CVSS 3.1. Info: TLS 1.2 und 1.3, Cipher-Suite
+      OK, HSTS gesetzt. Zusammenfassung: 1 Critical, 2 High, 1 Medium,
+      1 Low. Empfehlung: Critical und High innerhalb 7 Tagen beheben,
+      Re-Test nach Behebung.
+    ground_truth:
+      required_keywords:
+        - Security-Audit
+        - Penetrationstest
+        - SQL-Injection
+        - XSS
+        - IDOR
+        - CVSS
+        - OWASP
+        - Kovic
+      required_sections:
+        - Scope
+        - Methodik
+        - Findings
+        - Bewertung
+        - Empfehlungen
+
+  - task_id: SE_L4_soc2_readiness
+    level: L4
+    description: >
+      Erstelle einen SOC-2-Readiness-Bericht: Firma CloudApp GmbH,
+      Assessment am 20.03.2026 durch Berater Herr Dr. Fischer (Big4).
+      Trust Service Criteria geprueft: Security (CC6): MFA implementiert
+      fuer alle Mitarbeiter (OK). Endpoint-Protection auf 95% der
+      Geraete (5% BYOD ohne MDM — GAP). Network-Segmentierung:
+      Produktion von Office getrennt (OK). Availability (A1): SLA 99,9%
+      dokumentiert, Monitoring mit PagerDuty (OK). DR-Plan vorhanden
+      ABER letzter Test > 12 Monate (GAP, jaehrlich erforderlich).
+      Confidentiality (C1): Verschluesselung at-rest (AES-256) und
+      in-transit (TLS 1.3) (OK). Datenloesch-Policy vorhanden aber
+      nicht automatisiert (GAP). Processing Integrity (PI1): Input-
+      Validierung vorhanden (OK). Reconciliation-Prozess fehlt fuer
+      Batch-Verarbeitung (GAP). Privacy: Datenschutzrichtlinie
+      veroeffentlicht (OK). Consent-Management nicht DSGVO-konform
+      (kein Opt-In fuer Analytics-Cookies) (GAP).
+      Gesamtergebnis: 5 Gaps identifiziert, geschaetzter Aufwand
+      bis Audit-Readiness: 3 Monate, Kosten 95.000 EUR.
+    ground_truth:
+      required_keywords:
+        - SOC-2
+        - Trust Service
+        - MFA
+        - Verschluesselung
+        - DR-Plan
+        - DSGVO
+        - Fischer
+        - Readiness
+      required_sections:
+        - Scope
+        - Security
+        - Availability
+        - Confidentiality
+        - Processing Integrity
+        - Privacy
+        - Gaps
+        - Empfehlungen
+
+  - task_id: SE_L4_capacity_forecast_model
+    level: L4
+    description: >
+      Erstelle einen Kapazitaetsprognose-Bericht aus folgenden Daten:
+      System: SaaS-Plattform DataHub. Aktuelle Nutzung (April 2026):
+      2.800 aktive Tenants, 145 TB Storage, 12.000 RPS Peak,
+      AWS-Kosten 78.000 EUR/Monat. Wachstum letzte 12 Monate: Tenants
+      +35%, Storage +52%, RPS +28%, Kosten +41%. Saisonalitaet:
+      Q4 Peak (+25% gegenueber Q2 Tief). Infrastruktur-Limits:
+      Aurora Cluster max 128 TB (aktuell 89% auf 145/162 TB Reserve),
+      EKS Cluster 200 Nodes max (aktuell 87 Nodes). Prognose 12 Monate
+      (linear + saisonal): Tenants 3.780, Storage 220 TB (Aurora Limit
+      UEBERSCHRITTEN in Monat 8), RPS 15.400, Kosten 110.000 EUR/Monat.
+      Handlungsoptionen: A) Aurora auf Limitless umstellen (keine
+      Storage-Grenze, +15% Kosten). B) Cold-Storage-Tier einfuehren
+      (Daten > 6 Monate auf S3, -30% Storage-Wachstum, Implementierung
+      60 PT). C) Tenant-Sharding auf 2 Cluster (Aufwand 120 PT,
+      ermoeglicht 2x Kapazitaet). Empfehlung: Kombination A+B (kurzfristig
+      Limitless, mittelfristig Cold-Storage). Geschaetzte Kosten
+      naechste 12 Monate mit Massnahmen: 1.180.000 EUR (ohne: 1.320.000).
+    ground_truth:
+      required_keywords:
+        - Kapazitaetsprognose
+        - DataHub
+        - Aurora
+        - Storage
+        - Tenants
+        - Cold-Storage
+        - Sharding
+        - Limitless
+      required_sections:
+        - Ist-Zustand
+        - Wachstumsanalyse
+        - Prognose
+        - Infrastruktur-Limits
+        - Handlungsoptionen
+        - Empfehlung
+        - Kosten

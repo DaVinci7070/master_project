@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sql.gap_plan_models import CapabilityGapPlan, GapPlanStatus, GapStatus
 from app.models.schemas.analysis_schemas import CapabilityGap, CapabilityAssessment
@@ -32,8 +31,8 @@ class GapPlanService:
     - Supporting retry cycles (max 3)
     """
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    def __init__(self, session_factory):
+        self.session_factory = session_factory
 
     async def create_plan(
         self,
@@ -93,9 +92,10 @@ class GapPlanService:
             initial_assessment=assessment.model_dump() if assessment else None,
         )
 
-        self.db.add(plan)
-        await self.db.commit()
-        await self.db.refresh(plan)
+        async with self.session_factory() as db:
+            db.add(plan)
+            await db.commit()
+            await db.refresh(plan)
 
         logger.info(
             f"Created gap plan: id={plan.id[:8]}..., "
@@ -107,10 +107,11 @@ class GapPlanService:
 
     async def get_plan(self, plan_id: str) -> Optional[CapabilityGapPlan]:
         """Get gap plan by ID."""
-        result = await self.db.execute(
-            select(CapabilityGapPlan).where(CapabilityGapPlan.id == plan_id)
-        )
-        return result.scalar_one_or_none()
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(CapabilityGapPlan).where(CapabilityGapPlan.id == plan_id)
+            )
+            return result.scalar_one_or_none()
 
     async def get_active_plan(self, challenge_id: str) -> Optional[CapabilityGapPlan]:
         """
@@ -118,49 +119,56 @@ class GapPlanService:
 
         Returns the most recent non-completed plan.
         """
-        result = await self.db.execute(
-            select(CapabilityGapPlan)
-            .where(
-                and_(
-                    CapabilityGapPlan.challenge_id == challenge_id,
-                    CapabilityGapPlan.status.in_([
-                        GapPlanStatus.PENDING.value,
-                        GapPlanStatus.IN_PROGRESS.value
-                    ])
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(CapabilityGapPlan)
+                .where(
+                    and_(
+                        CapabilityGapPlan.challenge_id == challenge_id,
+                        CapabilityGapPlan.status.in_([
+                            GapPlanStatus.PENDING.value,
+                            GapPlanStatus.IN_PROGRESS.value
+                        ])
+                    )
                 )
+                .order_by(CapabilityGapPlan.cycle_number.desc())
             )
-            .order_by(CapabilityGapPlan.cycle_number.desc())
-        )
-        return result.scalars().first()
+            return result.scalars().first()
 
     async def get_latest_plan(self, challenge_id: str) -> Optional[CapabilityGapPlan]:
         """Get the most recent plan for a challenge (any status)."""
-        result = await self.db.execute(
-            select(CapabilityGapPlan)
-            .where(CapabilityGapPlan.challenge_id == challenge_id)
-            .order_by(CapabilityGapPlan.created_at.desc())
-        )
-        return result.scalars().first()
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(CapabilityGapPlan)
+                .where(CapabilityGapPlan.challenge_id == challenge_id)
+                .order_by(CapabilityGapPlan.created_at.desc())
+            )
+            return result.scalars().first()
 
     async def get_plan_history(self, challenge_id: str) -> list[CapabilityGapPlan]:
         """Get all plans for a challenge (all cycles)."""
-        result = await self.db.execute(
-            select(CapabilityGapPlan)
-            .where(CapabilityGapPlan.challenge_id == challenge_id)
-            .order_by(CapabilityGapPlan.cycle_number.asc())
-        )
-        return list(result.scalars().all())
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(CapabilityGapPlan)
+                .where(CapabilityGapPlan.challenge_id == challenge_id)
+                .order_by(CapabilityGapPlan.cycle_number.asc())
+            )
+            return list(result.scalars().all())
 
     async def start_plan(self, plan_id: str) -> CapabilityGapPlan:
         """Mark plan as in_progress."""
-        plan = await self.get_plan(plan_id)
-        if not plan:
-            raise ValueError(f"Plan not found: {plan_id}")
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(CapabilityGapPlan).where(CapabilityGapPlan.id == plan_id)
+            )
+            plan = result.scalar_one_or_none()
+            if not plan:
+                raise ValueError(f"Plan not found: {plan_id}")
 
-        plan.status = GapPlanStatus.IN_PROGRESS.value
-        plan.updated_at = datetime.now(timezone.utc)
-        await self.db.commit()
-        await self.db.refresh(plan)
+            plan.status = GapPlanStatus.IN_PROGRESS.value
+            plan.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+            await db.refresh(plan)
 
         logger.info(f"Started gap plan: {plan_id[:8]}...")
         return plan
@@ -188,34 +196,38 @@ class GapPlanService:
         Returns:
             Updated plan
         """
-        plan = await self.get_plan(plan_id)
-        if not plan:
-            raise ValueError(f"Plan not found: {plan_id}")
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(CapabilityGapPlan).where(CapabilityGapPlan.id == plan_id)
+            )
+            plan = result.scalar_one_or_none()
+            if not plan:
+                raise ValueError(f"Plan not found: {plan_id}")
 
-        # Update the gap
-        updated = plan.update_gap_status(
-            gap_id=gap_id,
-            status=status,
-            artifact_id=artifact_id,
-            artifact_type=artifact_type,
-            error_message=error_message
-        )
+            # Update the gap
+            updated = plan.update_gap_status(
+                gap_id=gap_id,
+                status=status,
+                artifact_id=artifact_id,
+                artifact_type=artifact_type,
+                error_message=error_message
+            )
 
-        if not updated:
-            raise ValueError(f"Gap not found in plan: {gap_id}")
+            if not updated:
+                raise ValueError(f"Gap not found in plan: {gap_id}")
 
-        # If plan was pending, mark as in_progress
-        if plan.status == GapPlanStatus.PENDING.value:
-            plan.status = GapPlanStatus.IN_PROGRESS.value
+            # If plan was pending, mark as in_progress
+            if plan.status == GapPlanStatus.PENDING.value:
+                plan.status = GapPlanStatus.IN_PROGRESS.value
 
-        plan.updated_at = datetime.now(timezone.utc)
+            plan.updated_at = datetime.now(timezone.utc)
 
-        # Force SQLAlchemy to detect JSON change
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(plan, "gaps")
+            # Force SQLAlchemy to detect JSON change
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(plan, "gaps")
 
-        await self.db.commit()
-        await self.db.refresh(plan)
+            await db.commit()
+            await db.refresh(plan)
 
         logger.debug(
             f"Updated gap {gap_id[:8]}... status={status}, "
@@ -251,16 +263,20 @@ class GapPlanService:
         Returns:
             Updated plan
         """
-        plan = await self.get_plan(plan_id)
-        if not plan:
-            raise ValueError(f"Plan not found: {plan_id}")
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(CapabilityGapPlan).where(CapabilityGapPlan.id == plan_id)
+            )
+            plan = result.scalar_one_or_none()
+            if not plan:
+                raise ValueError(f"Plan not found: {plan_id}")
 
-        plan.status = status
-        plan.completed_at = datetime.now(timezone.utc)
-        plan.updated_at = datetime.now(timezone.utc)
+            plan.status = status
+            plan.completed_at = datetime.now(timezone.utc)
+            plan.updated_at = datetime.now(timezone.utc)
 
-        await self.db.commit()
-        await self.db.refresh(plan)
+            await db.commit()
+            await db.refresh(plan)
 
         logger.info(
             f"Completed gap plan: {plan_id[:8]}..., status={status}, "

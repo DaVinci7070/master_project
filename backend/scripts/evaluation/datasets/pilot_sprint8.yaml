@@ -1,0 +1,257 @@
+suite: pilot_sprint8
+description: >
+  10-task pilot subset for Sprint 8 end-to-end validation.
+  8x L1 (Standard) + 2x L2 (Extended).
+  Uses claim-based evaluation via LLM-as-Judge.
+tasks:
+  # ============================================================
+  # L1 — Standard (8 tasks)
+  # ============================================================
+
+  - task_id: L1_simple_daily_report
+    level: L1
+    description: >
+      Erstelle einen Tagesbericht aus folgendem Baustellenrundgang:
+      Datum 15.04.2026, Baustelle Musterstrasse 12, Berlin-Mitte.
+      Wetter sonnig, 18 Grad, leichter Wind. Anwesend: Polier Mueller,
+      5 Arbeiter Rohbau, 2 Arbeiter Elektro. Arbeiten: Betonage Decke
+      EG abgeschlossen um 14:30 Uhr, Bewehrung OG begonnen.
+      Materiallieferung: 12 m3 Beton C25/30 per LKW angeliefert,
+      komplett verbaut. Keine besonderen Vorkommnisse.
+    ground_truth:
+      required_claims:
+        - "Der Bericht bezieht sich auf die Baustelle Musterstrasse 12"
+        - "Polier Mueller wird als anwesend erwaehnt"
+        - "Betonage der Decke EG wird als abgeschlossen beschrieben"
+        - "Bewehrung OG wird als begonnen erwaehnt"
+        - "Betonsorte C25/30 wird genannt"
+        - "Das Datum 15.04.2026 ist enthalten"
+        - "Das Wetter wird als sonnig beschrieben"
+        - "Rohbau-Arbeiten werden erwaehnt"
+        - "Elektro-Arbeiten werden erwaehnt"
+        - "Eine Liefermenge von 12 m3 Beton wird genannt"
+
+  - task_id: L1_defect_list
+    level: L1
+    description: >
+      Erstelle eine Maengelliste aus folgendem Abnahmegespraech:
+      Objekt Wohnhaus Gartenweg 5, Abnahme am 10.04.2026 mit
+      Bauherr Schneider und Bauleiter Braun. Mangel 1: Riss in
+      Wohnzimmerdecke EG, ca. 30cm lang, Haarriss. Mangel 2:
+      Badezimmer OG Fliesen uneben, 3 Fliesen locker. Mangel 3:
+      Haustuer schliesst nicht buendig, Spalt links unten 5mm.
+      Frist zur Behebung: 4 Wochen ab Abnahme. Alle Maengel
+      fotografisch dokumentiert.
+    ground_truth:
+      required_claims:
+        - "Das Objekt am Gartenweg 5 wird genannt"
+        - "Bauherr Schneider wird erwaehnt"
+        - "Bauleiter Braun wird erwaehnt"
+        - "Ein Haarriss in der Wohnzimmerdecke wird beschrieben"
+        - "Lockere Fliesen im Badezimmer werden erwaehnt"
+        - "Problem mit der Haustuer wird beschrieben"
+        - "Das Abnahmedatum 10.04.2026 ist enthalten"
+        - "Eine Frist von 4 Wochen wird genannt"
+        - "Die Risslaenge von ca. 30cm wird erwaehnt"
+
+  - task_id: L1_safety_protocol
+    level: L1
+    description: >
+      Erstelle ein Sicherheitsprotokoll aus folgender Baustellenbegehung:
+      Baustelle Neubau Schule Am Stadtpark, 12.04.2026, Begehung durch
+      Sicherheitsingenieur Weber. Ergebnis: PSA vollstaendig bei allen
+      Arbeitern (Helm, Schuhe, Weste). Geruest Nordseite ordnungsgemaess
+      geprueft, Pruefplakette gueltig bis 06/2026. Baugrube Ost mit
+      Absperrung und Warnschildern gesichert. Erste-Hilfe-Kasten im
+      Baucontainer vollstaendig. Keine Beanstandungen.
+    ground_truth:
+      required_claims:
+        - "Die Baustelle Am Stadtpark wird genannt"
+        - "Sicherheitsingenieur Weber wird erwaehnt"
+        - "PSA-Kontrolle wird beschrieben"
+        - "Geruest an der Nordseite wird erwaehnt"
+        - "Pruefplakette gueltig bis 06/2026 wird genannt"
+        - "Absperrung der Baugrube wird beschrieben"
+        - "Das Datum 12.04.2026 ist enthalten"
+        - "Helmpflicht oder Helm wird erwaehnt"
+        - "Die Baugrube Ost wird erwaehnt"
+
+  - task_id: L1_material_delivery_log
+    level: L1
+    description: >
+      Erstelle ein Materiallieferungsprotokoll aus folgender Lieferung:
+      Baustelle Buerogebaeude Industriestrasse 44, 11.04.2026.
+      Lieferant: Baustoffhandel Schmidt GmbH. Lieferschein Nr. LS-2026-4411.
+      Geliefert: 200 Saecke Zement CEM II 32,5 R (je 25kg = 5.000 kg),
+      50 m3 Kies 0/16, 120 Stahlmatten Q335A (6x2,3m). Alle Mengen
+      vollstaendig laut Bestellung. Annahme durch Polier Hoffmann
+      um 08:15 Uhr. Lagerplatz: Nordseite Baufeld.
+    ground_truth:
+      required_claims:
+        - "Die Baustelle Industriestrasse 44 wird genannt"
+        - "Lieferant Schmidt GmbH wird erwaehnt"
+        - "Polier Hoffmann wird als Annehmer erwaehnt"
+        - "Lieferschein LS-2026-4411 wird genannt"
+        - "Stahlmatten werden erwaehnt"
+        - "Zement wird erwaehnt"
+        - "Das Datum 11.04.2026 ist enthalten"
+        - "Eine Gesamtmenge von 5000 kg oder 5 Tonnen Zement wird genannt"
+        - "Liefermenge von 50 m3 Kies wird erwaehnt"
+        - "Die Uhrzeit 08:15 wird genannt"
+
+  - task_id: L1_weather_delay_report
+    level: L1
+    description: >
+      Erstelle einen Verzoegerungsbericht wegen Wetterbedingungen:
+      Baustelle Parkhaus Messegelaende, 09.04.2026. Starkregen seit
+      06:00 Uhr, Niederschlag 35mm in 4 Stunden. Betonierarbeiten
+      Decke 2. OG mussten abgebrochen werden, da Frischbeton nicht
+      verarbeitbar. Kranarbeiten eingestellt wegen Windstaerke 7.
+      Erdarbeiten Tiefgarage ruhen wegen Wassereinbruch. Bauarbeiter
+      im Baucontainer. Voraussichtliche Wiederaufnahme morgen
+      10.04.2026 ab 07:00 bei Wetterbesserung.
+    ground_truth:
+      required_claims:
+        - "Baustelle am Messegelaende wird genannt"
+        - "Starkregen wird als Ursache beschrieben"
+        - "Betonierarbeiten mussten abgebrochen werden"
+        - "Kranarbeiten wurden eingestellt"
+        - "Wassereinbruch in der Tiefgarage wird erwaehnt"
+        - "Niederschlagsmenge von 35mm wird genannt"
+        - "Das Datum 09.04.2026 ist enthalten"
+        - "Die Tiefgarage wird erwaehnt"
+        - "Wiederaufnahme am 10.04.2026 wird erwaehnt"
+        - "Die Uhrzeit 07:00 wird genannt"
+
+  - task_id: L1_daily_workforce_report
+    level: L1
+    description: >
+      Erstelle einen Personalstaerkebericht fuer folgende Baustelle:
+      Neubau Mehrfamilienhaus Lindenallee 8, 14.04.2026. Anwesend:
+      Rohbau-Kolonne (Firma Bauer): 1 Polier, 6 Facharbeiter, 2 Helfer.
+      Elektro-Kolonne (Firma Volt): 1 Meister, 3 Gesellen.
+      Sanitaer (Firma Rohr): 2 Monteure. Krank gemeldet: 1 Facharbeiter
+      Rohbau (Maier, seit 12.04). Arbeitszeit: 07:00-16:30, Pause
+      12:00-12:30. Gesamtstunden: 9,5h x 15 Personen = 142,5 Stunden.
+    ground_truth:
+      required_claims:
+        - "Baustelle Lindenallee 8 wird genannt"
+        - "Firma Bauer fuer Rohbau wird erwaehnt"
+        - "Firma Volt fuer Elektro wird erwaehnt"
+        - "Firma Rohr fuer Sanitaer wird erwaehnt"
+        - "Mitarbeiter Maier als krank gemeldet wird erwaehnt"
+        - "Rohbau-Arbeiten werden beschrieben"
+        - "Das Datum 14.04.2026 ist enthalten"
+        - "Arbeitszeit ab 07:00 wird erwaehnt"
+        - "Gesamtstunden von 142,5 werden genannt"
+        - "Sanitaer-Arbeiten werden erwaehnt"
+
+  - task_id: L1_concrete_pour_protocol
+    level: L1
+    description: >
+      Erstelle ein Betonierprotokoll fuer folgenden Betoniervorgang:
+      Baustelle Brueckenbauwerk B42, 13.04.2026. Bauteil: Widerlager West.
+      Betonsorte: C30/37, XC4, XF3, WF. Betonmenge: 45 m3.
+      Lieferwerk: Transportbeton Rhein GmbH, Werk Koblenz.
+      Einbaubeginn: 07:30, Einbauende: 12:15. Frischbetontemperatur:
+      14-16 Grad C. Ausbreitmaass: a1=48cm, a2=50cm (Soll: 42-52cm).
+      Proben: 3 Wuerfelsaetze entnommen (Pruefstelle: IB Meyer).
+      Verdichtung: Innenruettler. Nachbehandlung: Abdeckung mit
+      PE-Folie, Bewässerung ab Tag 2.
+    ground_truth:
+      required_claims:
+        - "Bauteil Widerlager West wird genannt"
+        - "Betonsorte C30/37 wird erwaehnt"
+        - "Das Ausbreitmaass wird dokumentiert"
+        - "Verdichtung mit Innenruettler wird erwaehnt"
+        - "Pruefstelle IB Meyer wird genannt"
+        - "Nachbehandlung wird beschrieben"
+        - "Das Datum 13.04.2026 ist enthalten"
+        - "Betonmenge von 45 m3 wird genannt"
+        - "Einbaubeginn um 07:30 wird erwaehnt"
+        - "PE-Folie als Abdeckung wird erwaehnt"
+
+  - task_id: L1_site_handover_note
+    level: L1
+    description: >
+      Erstelle eine Baustellenuebergabenotiz fuer folgenden Vorgang:
+      Baustelle Kita Sonnenschein, Blumenweg 3, 08.04.2026.
+      Uebergabe von Bauleiter Krause (Urlaub ab 09.04) an Bauleiter
+      Richter. Aktueller Stand: Rohbau EG fertig, Dachstuhl in
+      Aufrichtung (ca. 60%). Offene Punkte: Lieferung Dachfenster
+      ausstehend (KW 16), Statikfreigabe Balkon noch offen (Buero
+      Ingmann). Kein offener Mangel. Schluesseluebergabe erfolgt.
+    ground_truth:
+      required_claims:
+        - "Kita Sonnenschein wird als Projekt genannt"
+        - "Bauleiter Krause wird erwaehnt"
+        - "Bauleiter Richter wird als Uebernehmender genannt"
+        - "Dachstuhl in Aufrichtung wird beschrieben"
+        - "Rohbau EG als fertig erwaehnt"
+        - "Buero Ingmann wird fuer Statikfreigabe genannt"
+        - "Das Datum 08.04.2026 ist enthalten"
+        - "Fertigstellungsgrad von ca. 60% wird erwaehnt"
+        - "KW 16 wird als Liefertermin genannt"
+        - "Blumenweg als Adresse wird erwaehnt"
+
+  # ============================================================
+  # L2 — Extended (2 tasks)
+  # ============================================================
+
+  - task_id: L2_combined_defect_safety
+    level: L2
+    description: >
+      Erstelle einen kombinierten Maengel- und Sicherheitsbericht aus
+      folgender Baubesprechung mit mehreren Teilnehmern:
+      Baustelle Industriepark Nord, 14.04.2026. Anwesend: Bauleiter
+      Schmidt, Sicherheitsingenieur Weber, Polier Huber, Vertreter
+      Nachunternehmer Elektro (Firma Licht GmbH).
+      Schmidt: "Also der Riss in der Stuetzwand Achse 3, den muessen
+      wir uns genauer anschauen, der ist jetzt ca. 2mm breit und 1,5m
+      lang." Weber: "Und bei der PSA-Kontrolle heute Morgen hab ich
+      zwei Leute ohne Helm erwischt, das geht so nicht." Huber: "Die
+      Absperrung an der Grube Ost fehlt wieder, ich hab das schon
+      dreimal gesagt." Schmidt: "Ausserdem ist das Geruest Nordseite
+      seit 3 Wochen nicht geprueft." Weber: "Ich klaer das mit dem
+      TUeV." Schmidt: "Den Riss lassen wir vom Statiker begutachten
+      bis zum 18.04. Absperrung wird heute noch nachgeruestet."
+    ground_truth:
+      required_claims:
+        - "Baustelle Industriepark Nord wird genannt"
+        - "Riss in der Stuetzwand wird beschrieben"
+        - "Fehlende Absperrung an der Grube wird erwaehnt"
+        - "Arbeiter ohne Helm werden als PSA-Verstoss erwaehnt"
+        - "Geruest Nordseite nicht geprueft wird erwaehnt"
+        - "Statiker soll den Riss begutachten"
+        - "Bauleiter Schmidt wird erwaehnt"
+        - "Sicherheitsingenieur Weber wird erwaehnt"
+        - "Polier Huber wird erwaehnt"
+        - "Frist bis 18.04 wird genannt"
+
+  - task_id: L2_daily_with_supplements
+    level: L2
+    description: >
+      Erstelle einen Tagesbericht mit Nachtragerfassung aus folgender
+      Baubesprechung: Baustelle Wohnanlage Sonnenhof, 13.04.2026.
+      Polier Wagner: "Wir haben heute beim Aushub Altlasten gefunden,
+      sieht nach oelkontaminiertem Boden aus, ca. 15 m3." Bauleiter
+      Meier: "OK das ist ein Nachtrag, schreib das auf. Was kostet
+      die Entsorgung?" Wagner: "Laut Entsorger Umwelt AG ca. 280 EUR
+      pro Tonne, bei geschaetzt 25 Tonnen sind das 7.000 EUR netto."
+      Meier: "Dazu kommt der Baggermehraufwand, ich schaetz 2 Tage
+      extra, das sind nochmal 3.200 EUR." Wagner: "Bewehrung Keller
+      laeuft planmaessig, 60% fertig. Und die Schalung Aufzugsschacht
+      steht, koennen morgen betonieren." Meier: "Wetter soll halten.
+      Nachtragsanmeldung schick ich heute noch an den AG."
+    ground_truth:
+      required_claims:
+        - "Baustelle Sonnenhof wird genannt"
+        - "Altlasten bzw. oelkontaminierter Boden wird beschrieben"
+        - "Ein Nachtrag wird erfasst oder erwaehnt"
+        - "Bewehrung Keller wird als laufend beschrieben"
+        - "Schalung Aufzugsschacht wird erwaehnt"
+        - "Polier Wagner wird erwaehnt"
+        - "Entsorgungskosten von ca. 7000 EUR werden genannt"
+        - "Baggermehraufwand von ca. 3200 EUR wird erwaehnt"
+        - "Fertigstellungsgrad von 60% wird genannt"
+        - "Bauleiter Meier wird erwaehnt"

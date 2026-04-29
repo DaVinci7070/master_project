@@ -33,11 +33,11 @@ class TaskType(str, Enum):
 # These can be overridden via environment variables
 DEFAULT_TASK_MODELS = {
     TaskType.RESEARCH: "gemini/gemini-2.0-flash",  # Fast for research
-    TaskType.ARCHITECTURE: "claude-3-5-sonnet-20241022",  # Strong for design
+    TaskType.ARCHITECTURE: "gemini/gemini-3-flash-preview",  # Strong for design
     TaskType.IMPLEMENTATION: "gemini/gemini-3-flash-preview",  # Strong for code generation
-    TaskType.REVIEW: "claude-3-5-sonnet-20241022",  # Strong for review
+    TaskType.REVIEW: "gemini/gemini-3-flash-preview",  # Strong for review
     TaskType.CODE_FIX: "gemini/gemini-2.0-flash",  # Fast for fixes
-    TaskType.SEMANTIC_VALIDATION: "claude-3-5-sonnet-20241022",  # Strong for validation
+    TaskType.SEMANTIC_VALIDATION: "gemini/gemini-3-flash-preview",  # Strong for validation
     TaskType.GENERAL: "gemini/gemini-2.0-flash",  # Default
 }
 

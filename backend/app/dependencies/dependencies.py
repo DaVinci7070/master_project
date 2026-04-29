@@ -1,7 +1,10 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Callable
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+
+# Session-Factory Typ: jede DB-Operation öffnet eigene kurzlebige Session
+SessionFactory = Callable[..., AsyncSession]
 
 from app.core.config import settings
 from app.services.template_service import TemplateService

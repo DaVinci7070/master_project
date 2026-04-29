@@ -11,6 +11,12 @@ import type {
   ChallengeExecutionResponse,
   BlockedChallenge,
   DashboardMetrics,
+  EvolutionHistoryResponse,
+  EvolutionStats,
+  EvolutionReport,
+  SkillVersionHistory,
+  PromptVersionHistory,
+  TopologyHistoryResponse,
 } from '@/types'
 
 const API_BASE = '/api/backend'
@@ -358,5 +364,132 @@ export async function fetchSharedMemory(
   executionId: string
 ): Promise<SharedMemoryResponse> {
   return fetchJson<SharedMemoryResponse>(`/shared-memory/execution/${executionId}`)
+}
+
+// ============================================================================
+// Evolution operations (Sprint 1 + 2 backend)
+// ============================================================================
+
+export async function fetchEvolutionHistory(
+  executionId?: string,
+  limit: number = 100
+): Promise<EvolutionHistoryResponse> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (executionId) params.set('execution_id', executionId)
+  return fetchJson<EvolutionHistoryResponse>(`/evolution/history?${params.toString()}`)
+}
+
+export async function fetchEvolutionStats(): Promise<EvolutionStats> {
+  return fetchJson<EvolutionStats>('/evolution/stats')
+}
+
+export async function triggerEvolutionLoop(
+  executionId: string
+): Promise<EvolutionReport> {
+  return fetchJson<EvolutionReport>(
+    `/evolution/executions/${executionId}/evolve`,
+    { method: 'POST' }
+  )
+}
+
+export async function fetchSkillVersionHistory(
+  skillId: string
+): Promise<SkillVersionHistory> {
+  return fetchJson<SkillVersionHistory>(`/skills/${skillId}/version-history`)
+}
+
+// Properly-typed wrapper for GET /prompts/{id}/versions (returns a wrapper object,
+// not a flat Prompt[] — the legacy fetchPromptVersions above mistypes it).
+export async function fetchPromptVersionHistory(
+  promptId: string
+): Promise<PromptVersionHistory> {
+  return fetchJson<PromptVersionHistory>(`/prompts/${promptId}/versions`)
+}
+
+// Topology change-history — Sprint-4 F9.
+export async function fetchTopologyHistory(
+  limit: number = 50,
+  offset: number = 0,
+  entityType?: string,
+  source?: string
+): Promise<TopologyHistoryResponse> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  })
+  if (entityType) params.set('entity_type', entityType)
+  if (source) params.set('source', source)
+  return fetchJson<TopologyHistoryResponse>(`/topology/history?${params.toString()}`)
+}
+
+// ============================================================================
+// Evaluation Dashboard operations (Sprint 8)
+// ============================================================================
+
+import type {
+  SuiteInfo,
+  SuiteDetailResponse,
+  SnapshotInfo,
+  ColdResetRequest,
+  ColdResetResponse,
+  WarmSaveResponse,
+  WarmRestoreResponse,
+  StartRunRequest,
+  StartRunResponse,
+  EvalRunSummary,
+  EvalRunDetail,
+  AblationModes,
+} from '@/types'
+
+export async function fetchSuites(): Promise<SuiteInfo[]> {
+  return fetchJson<SuiteInfo[]>('/evaluation/suites')
+}
+
+export async function fetchSuiteDetail(name: string): Promise<SuiteDetailResponse> {
+  return fetchJson<SuiteDetailResponse>(`/evaluation/suites/${name}`)
+}
+
+export async function fetchAblationModes(): Promise<AblationModes> {
+  return fetchJson<AblationModes>('/evaluation/ablation-modes')
+}
+
+export async function fetchSnapshots(): Promise<SnapshotInfo[]> {
+  return fetchJson<SnapshotInfo[]>('/evaluation/snapshots')
+}
+
+export async function triggerColdReset(opts: ColdResetRequest = {}): Promise<ColdResetResponse> {
+  return fetchJson<ColdResetResponse>('/evaluation/cold-reset', {
+    method: 'POST',
+    body: JSON.stringify(opts),
+  })
+}
+
+export async function saveWarmSnapshot(snapshotName: string): Promise<WarmSaveResponse> {
+  return fetchJson<WarmSaveResponse>('/evaluation/warm-snapshot/save', {
+    method: 'POST',
+    body: JSON.stringify({ snapshot_name: snapshotName }),
+  })
+}
+
+export async function restoreWarmSnapshot(snapshotName: string): Promise<WarmRestoreResponse> {
+  return fetchJson<WarmRestoreResponse>('/evaluation/warm-snapshot/restore', {
+    method: 'POST',
+    body: JSON.stringify({ snapshot_name: snapshotName }),
+  })
+}
+
+export async function startBenchmarkRun(config: StartRunRequest): Promise<StartRunResponse> {
+  return fetchJson<StartRunResponse>('/evaluation/runs', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  })
+}
+
+export async function fetchEvalRuns(): Promise<EvalRunSummary[]> {
+  return fetchJson<EvalRunSummary[]>('/evaluation/runs')
+}
+
+export async function fetchEvalRun(runId: string): Promise<EvalRunDetail> {
+  return fetchJson<EvalRunDetail>(`/evaluation/runs/${runId}`)
 }
 

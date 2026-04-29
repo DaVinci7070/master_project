@@ -17,7 +17,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.llm_client import LLMClient
@@ -77,7 +76,7 @@ class SkillTeamOrchestrator:
 
     def __init__(
         self,
-        db: AsyncSession,
+        session_factory,
         config: Optional[SkillTeamConfig] = None,
         llm_client: Optional[LLMClient] = None,
         sandbox: Optional[DynamicSandboxService] = None,
@@ -97,15 +96,15 @@ class SkillTeamOrchestrator:
             semantic_validator: Semantic validator
             failure_analyzer: Failure analyzer
         """
-        self.db = db
+        self.session_factory = session_factory
         self.config = config or SkillTeamConfig()
         self.llm = llm_client or LLMClient()
         self.sandbox = sandbox or DynamicSandboxService()
-        self.research_service = research_service or ResearchService(db, self.llm)
+        self.research_service = research_service
         self.semantic_validator = semantic_validator or SemanticValidator(
             self.llm, self.config.semantic_similarity_threshold
         )
-        self.failure_analyzer = failure_analyzer or FailureAnalyzer(db, self.llm)
+        self.failure_analyzer = failure_analyzer or FailureAnalyzer(session_factory, self.llm)
 
         # Role-specific LLM clients (can use different models)
         self._role_llms: dict[TeamRole, LLMClient] = {}
@@ -280,7 +279,7 @@ class SkillTeamOrchestrator:
             if existing_skill and existing_skill.code:
                 phase_start = time.time()
                 from app.services.skill_validator import SkillValidator
-                validator = SkillValidator(self.db, self.sandbox)
+                validator = SkillValidator(self.session_factory, self.sandbox)
 
                 # Build a temporary Skill-like object for the new code
                 candidate = Skill(
@@ -413,10 +412,11 @@ class SkillTeamOrchestrator:
                 )
 
             # 2. Load existing planning skills for dedup
-            result = await self.db.execute(
-                select(Skill).where(Skill.skill_type == "planning", Skill.is_active == True)
-            )
-            existing_skills = result.scalars().all()
+            async with self.session_factory() as db:
+                result = await db.execute(
+                    select(Skill).where(Skill.skill_type == "planning", Skill.is_active == True)
+                )
+                existing_skills = result.scalars().all()
             existing_str = "\n".join(
                 f"- {s.name}: {s.applicability or s.description or '(no description)'}"
                 for s in existing_skills
@@ -502,51 +502,52 @@ class SkillTeamOrchestrator:
         termination: str,
     ) -> Skill:
         """Persist a planning skill to database."""
-        # Dedup check
-        result = await self.db.execute(
-            select(Skill).where(Skill.name == name)
-        )
-        existing = result.scalar_one_or_none()
+        async with self.session_factory() as db:
+            # Dedup check
+            result = await db.execute(
+                select(Skill).where(Skill.name == name)
+            )
+            existing = result.scalar_one_or_none()
 
-        metadata = {
-            "auto_generated": True,
-            "team_built": True,
-            "build_path": "planning_proposer",
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "affected_capability": capability,
-        }
+            metadata = {
+                "auto_generated": True,
+                "team_built": True,
+                "build_path": "planning_proposer",
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "affected_capability": capability,
+            }
 
-        if existing:
-            existing.skill_type = "planning"
-            existing.applicability = applicability
-            existing.instructions = instructions
-            existing.termination = termination
-            existing.skill_metadata = metadata
-            existing.is_active = True
-            await self.db.commit()
-            log.info(f"Updated existing planning skill: {existing.id}")
-            return existing
+            if existing:
+                existing.skill_type = "planning"
+                existing.applicability = applicability
+                existing.instructions = instructions
+                existing.termination = termination
+                existing.skill_metadata = metadata
+                existing.is_active = True
+                await db.commit()
+                log.info(f"Updated existing planning skill: {existing.id}")
+                return existing
 
-        skill = Skill(
-            id=str(uuid.uuid4()),
-            name=name,
-            description=f"Planning skill for: {capability}",
-            skill_type="planning",
-            applicability=applicability,
-            instructions=instructions,
-            termination=termination,
-            code=None,
-            test_cases=[],
-            skill_metadata=metadata,
-            is_active=True,
-        )
+            skill = Skill(
+                id=str(uuid.uuid4()),
+                name=name,
+                description=f"Planning skill for: {capability}",
+                skill_type="planning",
+                applicability=applicability,
+                instructions=instructions,
+                termination=termination,
+                code=None,
+                test_cases=[],
+                skill_metadata=metadata,
+                is_active=True,
+            )
 
-        self.db.add(skill)
-        await self.db.commit()
-        await self.db.refresh(skill)
+            db.add(skill)
+            await db.commit()
+            await db.refresh(skill)
 
-        log.info(f"Created new planning skill: {skill.id}")
-        return skill
+            log.info(f"Created new planning skill: {skill.id}")
+            return skill
 
     async def _research_phase(
         self,
@@ -568,7 +569,15 @@ class SkillTeamOrchestrator:
         if failure_context:
             enhanced_hints["failure_context"] = failure_context
 
-        # Use research service
+        # Lazy-init research service mit frischer Session
+        if self.research_service is None:
+            async with self.session_factory() as db:
+                research_service = ResearchService(db, self.llm)
+                return await research_service.research_capability(
+                    capability=capability,
+                    hints=enhanced_hints,
+                )
+
         return await self.research_service.research_capability(
             capability=capability,
             hints=enhanced_hints,
@@ -696,10 +705,11 @@ class SkillTeamOrchestrator:
         """Load active agents from DB for integration planning."""
         try:
             from app.models.sql.versioned_models import Agent
-            result = await self.db.execute(
-                select(Agent).where(Agent.is_active == True)
-            )
-            agents = result.scalars().all()
+            async with self.session_factory() as db:
+                result = await db.execute(
+                    select(Agent).where(Agent.is_active == True)
+                )
+                agents = result.scalars().all()
             return [
                 {
                     "id": a.id,
@@ -1159,7 +1169,7 @@ if __name__ == "__main__":
 # Test wrapper
 if __name__ == "__main__":
     import json
-    test_input = {json.dumps(test_input)}
+    test_input = json.loads({repr(json.dumps(test_input))})
     print("Testing with input:", test_input)
 
     try:
@@ -1234,10 +1244,11 @@ if __name__ == "__main__":
     async def _find_existing_skill(self, capability: str) -> Optional[Skill]:
         """Find existing skill for a capability (for parent comparison)."""
         skill_name = f"skill_{capability.lower().replace(' ', '_').replace('-', '_')}"
-        result = await self.db.execute(
-            select(Skill).where(Skill.name == skill_name, Skill.is_active == True)
-        )
-        return result.scalar_one_or_none()
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(Skill).where(Skill.name == skill_name, Skill.is_active == True)
+            )
+            return result.scalar_one_or_none()
 
     async def _persist_skill(
         self,
@@ -1249,73 +1260,74 @@ if __name__ == "__main__":
         """Persist the skill to database."""
         skill_name = f"skill_{capability.lower().replace(' ', '_').replace('-', '_')}"
 
-        # Check for existing
-        result = await self.db.execute(
-            select(Skill).where(Skill.name == skill_name)
-        )
-        existing = result.scalar_one_or_none()
+        async with self.session_factory() as db:
+            # Check for existing
+            result = await db.execute(
+                select(Skill).where(Skill.name == skill_name)
+            )
+            existing = result.scalar_one_or_none()
 
-        metadata = {
-            "pip_requirements": design.pip_requirements,
-            "system_packages": design.system_requirements,
-            "auto_generated": True,
-            "team_built": True,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "affected_capability": capability,
-            "design_notes": design.design_notes,
-        }
+            metadata = {
+                "pip_requirements": design.pip_requirements,
+                "system_packages": design.system_requirements,
+                "auto_generated": True,
+                "team_built": True,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "affected_capability": capability,
+                "design_notes": design.design_notes,
+            }
 
-        # Build formal interface from architect's schema
-        interface = {
-            "input": design.input_schema,
-            "output": design.output_schema,
-        }
+            # Build formal interface from architect's schema
+            interface = {
+                "input": design.input_schema,
+                "output": design.output_schema,
+            }
 
-        if existing:
-            existing.code = code
-            existing.description = f"Auto-generated skill for: {capability}"
-            existing.skill_metadata = metadata
-            existing.interface = interface
-            existing.is_active = True
-            await self.db.commit()
-            log.info(f"Updated existing skill: {existing.id}")
+            if existing:
+                existing.code = code
+                existing.description = f"Auto-generated skill for: {capability}"
+                existing.skill_metadata = metadata
+                existing.interface = interface
+                existing.is_active = True
+                await db.commit()
+                log.info(f"Updated existing skill: {existing.id}")
 
-            # Also update directory if enabled
+                # Also update directory if enabled
+                if settings.skill_directory_enabled:
+                    await self._save_skill_directory(existing, code, design)
+
+                # Hot-reload into registry if enabled
+                if settings.hot_reload_enabled:
+                    await self._hot_reload_skill(existing)
+
+                return existing
+
+            skill = Skill(
+                id=str(uuid.uuid4()),
+                name=skill_name,
+                description=f"Auto-generated skill for: {capability}",
+                code=code,
+                test_cases=[tc.model_dump() for tc in design.test_cases],
+                interface=interface,
+                skill_metadata=metadata,
+                is_active=True,
+            )
+
+            db.add(skill)
+            await db.commit()
+            await db.refresh(skill)
+
+            log.info(f"Created new skill: {skill.id}")
+
+            # Also save as directory (SKILL.md format) if enabled
             if settings.skill_directory_enabled:
-                await self._save_skill_directory(existing, code, design)
+                await self._save_skill_directory(skill, code, design)
 
-            # Hot-reload into registry if enabled
+            # Hot-load into registry if enabled
             if settings.hot_reload_enabled:
-                await self._hot_reload_skill(existing)
+                await self._hot_reload_skill(skill)
 
-            return existing
-
-        skill = Skill(
-            id=str(uuid.uuid4()),
-            name=skill_name,
-            description=f"Auto-generated skill for: {capability}",
-            code=code,
-            test_cases=[tc.model_dump() for tc in design.test_cases],
-            interface=interface,
-            skill_metadata=metadata,
-            is_active=True,
-        )
-
-        self.db.add(skill)
-        await self.db.commit()
-        await self.db.refresh(skill)
-
-        log.info(f"Created new skill: {skill.id}")
-
-        # Also save as directory (SKILL.md format) if enabled
-        if settings.skill_directory_enabled:
-            await self._save_skill_directory(skill, code, design)
-
-        # Hot-load into registry if enabled
-        if settings.hot_reload_enabled:
-            await self._hot_reload_skill(skill)
-
-        return skill
+            return skill
 
     async def _save_skill_directory(
         self,

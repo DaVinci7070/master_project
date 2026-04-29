@@ -1,0 +1,11 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L1_simple_daily_report,L1,resolved,True,1.0,45054,11,141599,,,
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L1_defect_list,L1,resolved,True,1.0,48891,11,155652,,,
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L1_safety_protocol,L1,resolved,True,1.0,43929,11,150480,,,
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L1_material_delivery_log,L1,resolved,True,1.0,35955,11,113308,,,
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L1_weather_delay_report,L1,resolved,True,1.0,57043,11,104803,,,
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L1_daily_workforce_report,L1,resolved,True,1.0,47287,11,109131,,,
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L1_concrete_pour_protocol,L1,resolved,True,1.0,28480,11,80094,,,
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L1_site_handover_note,L1,resolved,True,1.0,42040,11,112032,,,
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L2_combined_defect_safety,L2,resolved,True,1.0,55907,11,116267,,,
+1149c8b7-6633-4798-9dce-824e03121fd3,pilot_sprint8,1,L2_daily_with_supplements,L2,failed,False,0.0,299166,11,91264,,,

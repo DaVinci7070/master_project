@@ -106,6 +106,44 @@ class TestHistoryResponse(BaseModel):
     pass_rate: float
 
 
+class SkillBuildAttemptSummary(BaseModel):
+    """SkillBuildAttempt summary — one build iteration for a skill version."""
+    id: str
+    attempt_number: int
+    capability: str
+    approach: Optional[str] = None
+    success: bool
+    error_type: Optional[str] = None
+    error_type_classified: Optional[str] = None
+    lesson_learned: Optional[str] = None
+    failure_analysis: Optional[dict] = None
+    code_snapshot: Optional[str] = None
+    created_at: str
+
+
+class SkillVersionEntry(BaseModel):
+    """One skill version in a lineage chain."""
+    id: str
+    name: str
+    version_index: int  # 1 = root, 2 = first child, …
+    parent_id: Optional[str] = None
+    description: Optional[str] = None
+    is_active: bool
+    created_at: str
+    build_attempts: list[SkillBuildAttemptSummary] = Field(default_factory=list)
+
+
+class SkillVersionHistoryResponse(BaseModel):
+    """Full lineage (root → requested) + build attempts per version.
+
+    Used by the Evolution-API (Sprint 2 / F6) so the frontend can show
+    skill evolution with lessons_learned and code-snapshot diffs.
+    """
+    skill_id: str
+    total_versions: int
+    lineage: list[SkillVersionEntry]
+
+
 def _compute_health_status(skill) -> str:
     """Compute health status from skill metadata."""
     metadata = skill.skill_metadata or {}
@@ -278,6 +316,96 @@ async def get_skill_tests(
         executions=executions,
         total_runs=total_runs,
         pass_rate=pass_rate,
+    )
+
+
+@router.get("/{skill_id}/version-history", response_model=SkillVersionHistoryResponse)
+async def get_skill_version_history(
+    skill_id: str,
+    session: AsyncSession = Depends(get_db_session),
+) -> SkillVersionHistoryResponse:
+    """
+    Get full version lineage for a skill, root → requested.
+
+    For each version in the chain, returns associated SkillBuildAttempts
+    (lesson_learned, failure_analysis, code snapshots) so callers can
+    render skill evolution with full build context.
+
+    Returns 404 if the skill does not exist.
+    """
+    from sqlalchemy import select
+    from app.models.sql.skill_build_models import SkillBuildAttempt
+
+    log.info(f"Getting version-history for skill: id={skill_id}")
+
+    repo = SkillRepository(session)
+    skill = await repo.get_by_id(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill not found: {skill_id}")
+
+    # Walk parent chain backward to root. Guard against accidental cycles.
+    chain: list = [skill]
+    seen: set[str] = {skill.id}
+    current = skill
+    while current.parent_id and current.parent_id not in seen:
+        parent = await repo.get_by_id(current.parent_id)
+        if parent is None:
+            break
+        chain.append(parent)
+        seen.add(parent.id)
+        current = parent
+
+    # chain is [requested, …, root]; reverse to get chronological (root → requested)
+    chain.reverse()
+
+    # Fetch all build attempts for all skills in the chain in a single query.
+    skill_ids = [s.id for s in chain]
+    attempts_stmt = (
+        select(SkillBuildAttempt)
+        .where(SkillBuildAttempt.skill_id.in_(skill_ids))
+        .order_by(SkillBuildAttempt.attempt_number.asc())
+    )
+    attempts_result = await session.execute(attempts_stmt)
+    attempts = list(attempts_result.scalars().all())
+
+    attempts_by_skill: dict[str, list] = {sid: [] for sid in skill_ids}
+    for a in attempts:
+        if a.skill_id in attempts_by_skill:
+            attempts_by_skill[a.skill_id].append(a)
+
+    lineage: list[SkillVersionEntry] = []
+    for index, s in enumerate(chain, start=1):
+        attempt_summaries = [
+            SkillBuildAttemptSummary(
+                id=a.id,
+                attempt_number=a.attempt_number,
+                capability=a.capability,
+                approach=a.approach,
+                success=a.success,
+                error_type=a.error_type,
+                error_type_classified=a.error_type_classified,
+                lesson_learned=a.lesson_learned,
+                failure_analysis=a.failure_analysis,
+                code_snapshot=a.code_snapshot,
+                created_at=a.created_at.isoformat() if a.created_at else "",
+            )
+            for a in attempts_by_skill.get(s.id, [])
+        ]
+        lineage.append(SkillVersionEntry(
+            id=s.id,
+            name=s.name,
+            version_index=index,
+            parent_id=s.parent_id,
+            description=s.description,
+            is_active=s.is_active,
+            created_at=s.created_at.isoformat() if s.created_at else "",
+            build_attempts=attempt_summaries,
+        ))
+
+    return SkillVersionHistoryResponse(
+        skill_id=skill_id,
+        total_versions=len(lineage),
+        lineage=lineage,
     )
 
 

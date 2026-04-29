@@ -120,13 +120,12 @@ class CapabilityMatcher:
         from sqlalchemy import select
         from app.models.sql.versioned_models import Skill
 
-        # Access db through topology loader
-        db = self.topology.db
-
-        result = await db.execute(
-            select(Skill).where(Skill.is_active == True)
-        )
-        skills = result.scalars().all()
+        # Session via topology loader's session_factory
+        async with self.topology.session_factory() as db:
+            result = await db.execute(
+                select(Skill).where(Skill.is_active == True)
+            )
+            skills = result.scalars().all()
 
         skill_capabilities: dict[str, list[str]] = {}
 
@@ -182,12 +181,11 @@ class CapabilityMatcher:
         from sqlalchemy import select
         from app.models.sql.versioned_models import Prompt
 
-        db = self.topology.db
-
-        result = await db.execute(
-            select(Prompt).where(Prompt.is_active == True)
-        )
-        prompts = result.scalars().all()
+        async with self.topology.session_factory() as db:
+            result = await db.execute(
+                select(Prompt).where(Prompt.is_active == True)
+            )
+            prompts = result.scalars().all()
 
         prompt_capabilities: dict[str, list[str]] = {}
 

@@ -25,12 +25,12 @@ class TestCapabilityPackageHints:
         assert "ffmpeg" in hints["apt"]
 
     def test_pdf_reading_hints(self):
-        hints = CAPABILITY_PACKAGE_HINTS.get("pdf file reading")
+        hints = CAPABILITY_PACKAGE_HINTS.get("pdf reading")
         assert hints is not None
         assert "pypdf" in hints["pip"]
 
     def test_image_ocr_hints(self):
-        hints = CAPABILITY_PACKAGE_HINTS.get("image ocr text extraction")
+        hints = CAPABILITY_PACKAGE_HINTS.get("image ocr")
         assert hints is not None
         assert "pytesseract" in hints["pip"]
         assert "tesseract-ocr" in hints["apt"]
@@ -43,7 +43,7 @@ class TestCodeExtraction:
     def builder(self):
         # Create builder with mocked dependencies
         mock_db = MagicMock()
-        return AutonomousSkillBuilder(db=mock_db)
+        return AutonomousSkillBuilder(session_factory=mock_db)
 
     def test_extract_code_from_markdown(self, builder):
         response = '''Here's the code:
@@ -105,7 +105,7 @@ class TestSkillDraftGeneration:
     @pytest.fixture
     def builder(self):
         mock_db = MagicMock()
-        return AutonomousSkillBuilder(db=mock_db)
+        return AutonomousSkillBuilder(session_factory=mock_db)
 
     def test_build_test_code(self, builder):
         draft = SkillDraft(
@@ -142,7 +142,7 @@ class TestIntegration:
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
         mock_db.refresh = AsyncMock()
-        return AutonomousSkillBuilder(db=mock_db)
+        return AutonomousSkillBuilder(session_factory=mock_db)
 
     async def test_research_with_known_capability(self, builder):
         """Test that research returns known package hints."""

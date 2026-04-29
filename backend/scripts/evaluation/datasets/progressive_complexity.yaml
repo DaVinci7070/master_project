@@ -1,0 +1,786 @@
+suite: progressive_complexity
+description: >
+  30 construction-domain tasks across 4 complexity levels (L1-L4).
+  Designed per EVALUATION_STRATEGY.md for Pass@1 measurement and ablation studies.
+  Uses claim-based evaluation (LLM-as-Judge) for semantic matching.
+tasks:
+  # ============================================================
+  # L1 — Standard (8 tasks): System can solve immediately
+  # Simple transcripts, single speaker, clear structure
+  # ============================================================
+
+  - task_id: L1_simple_daily_report
+    level: L1
+    description: >
+      Erstelle einen Tagesbericht aus folgendem Baustellenrundgang:
+      Datum 15.04.2026, Baustelle Musterstrasse 12, Berlin-Mitte.
+      Wetter sonnig, 18 Grad, leichter Wind. Anwesend: Polier Mueller,
+      5 Arbeiter Rohbau, 2 Arbeiter Elektro. Arbeiten: Betonage Decke
+      EG abgeschlossen um 14:30 Uhr, Bewehrung OG begonnen.
+      Materiallieferung: 12 m3 Beton C25/30 per LKW angeliefert,
+      komplett verbaut. Keine besonderen Vorkommnisse.
+    ground_truth:
+      required_claims:
+        - "Der Bericht bezieht sich auf die Baustelle Musterstrasse 12 in Berlin-Mitte"
+        - "Das Datum ist der 15.04.2026"
+        - "Das Wetter war sonnig bei 18 Grad mit leichtem Wind"
+        - "Polier Mueller war anwesend"
+        - "Es waren 5 Arbeiter Rohbau und 2 Arbeiter Elektro vor Ort"
+        - "Die Betonage der Decke EG wurde um 14:30 Uhr abgeschlossen"
+        - "Die Bewehrung OG wurde begonnen"
+        - "12 m3 Beton C25/30 wurden per LKW angeliefert und komplett verbaut"
+
+  - task_id: L1_defect_list
+    level: L1
+    description: >
+      Erstelle eine Maengelliste aus folgendem Abnahmegespraech:
+      Objekt Wohnhaus Gartenweg 5, Abnahme am 10.04.2026 mit
+      Bauherr Schneider und Bauleiter Braun. Mangel 1: Riss in
+      Wohnzimmerdecke EG, ca. 30cm lang, Haarriss. Mangel 2:
+      Badezimmer OG Fliesen uneben, 3 Fliesen locker. Mangel 3:
+      Haustuer schliesst nicht buendig, Spalt links unten 5mm.
+      Frist zur Behebung: 4 Wochen ab Abnahme. Alle Maengel
+      fotografisch dokumentiert.
+    ground_truth:
+      required_claims:
+        - "Das Objekt ist das Wohnhaus Gartenweg 5"
+        - "Die Abnahme fand am 10.04.2026 statt"
+        - "Bauherr Schneider und Bauleiter Braun waren beteiligt"
+        - "Ein Haarriss von ca. 30cm in der Wohnzimmerdecke EG wurde festgestellt"
+        - "Im Badezimmer OG sind 3 Fliesen locker"
+        - "Die Haustuer schliesst nicht buendig mit einem Spalt von 5mm links unten"
+        - "Die Frist zur Behebung betraegt 4 Wochen ab Abnahme"
+
+  - task_id: L1_safety_protocol
+    level: L1
+    description: >
+      Erstelle ein Sicherheitsprotokoll aus folgender Baustellenbegehung:
+      Baustelle Neubau Schule Am Stadtpark, 12.04.2026, Begehung durch
+      Sicherheitsingenieur Weber. Ergebnis: PSA vollstaendig bei allen
+      Arbeitern (Helm, Schuhe, Weste). Geruest Nordseite ordnungsgemaess
+      geprueft, Pruefplakette gueltig bis 06/2026. Baugrube Ost mit
+      Absperrung und Warnschildern gesichert. Erste-Hilfe-Kasten im
+      Baucontainer vollstaendig. Keine Beanstandungen.
+    ground_truth:
+      required_claims:
+        - "Die Begehung fand am 12.04.2026 auf der Baustelle Neubau Schule Am Stadtpark statt"
+        - "Sicherheitsingenieur Weber fuehrte die Begehung durch"
+        - "Die PSA war bei allen Arbeitern vollstaendig (Helm, Schuhe, Weste)"
+        - "Das Geruest Nordseite wurde ordnungsgemaess geprueft mit Pruefplakette gueltig bis 06/2026"
+        - "Die Baugrube Ost ist mit Absperrung und Warnschildern gesichert"
+        - "Der Erste-Hilfe-Kasten im Baucontainer ist vollstaendig"
+        - "Es gab keine Beanstandungen"
+
+  - task_id: L1_material_delivery_log
+    level: L1
+    description: >
+      Erstelle ein Materiallieferungsprotokoll aus folgender Lieferung:
+      Baustelle Buerogebaeude Industriestrasse 44, 11.04.2026.
+      Lieferant: Baustoffhandel Schmidt GmbH. Lieferschein Nr. LS-2026-4411.
+      Geliefert: 200 Saecke Zement CEM II 32,5 R (je 25kg = 5.000 kg),
+      50 m3 Kies 0/16, 120 Stahlmatten Q335A (6x2,3m). Alle Mengen
+      vollstaendig laut Bestellung. Annahme durch Polier Hoffmann
+      um 08:15 Uhr. Lagerplatz: Nordseite Baufeld.
+    ground_truth:
+      required_claims:
+        - "Die Lieferung ging an die Baustelle Buerogebaeude Industriestrasse 44"
+        - "Das Lieferdatum ist der 11.04.2026"
+        - "Der Lieferant ist Baustoffhandel Schmidt GmbH"
+        - "Der Lieferschein hat die Nummer LS-2026-4411"
+        - "Es wurden 200 Saecke Zement CEM II 32,5 R geliefert (5.000 kg)"
+        - "Es wurden 50 m3 Kies 0/16 geliefert"
+        - "Es wurden 120 Stahlmatten Q335A geliefert"
+        - "Polier Hoffmann nahm die Lieferung um 08:15 Uhr an"
+
+  - task_id: L1_weather_delay_report
+    level: L1
+    description: >
+      Erstelle einen Verzoegerungsbericht wegen Wetterbedingungen:
+      Baustelle Parkhaus Messegelaende, 09.04.2026. Starkregen seit
+      06:00 Uhr, Niederschlag 35mm in 4 Stunden. Betonierarbeiten
+      Decke 2. OG mussten abgebrochen werden, da Frischbeton nicht
+      verarbeitbar. Kranarbeiten eingestellt wegen Windstaerke 7.
+      Erdarbeiten Tiefgarage ruhen wegen Wassereinbruch. Bauarbeiter
+      im Baucontainer. Voraussichtliche Wiederaufnahme morgen
+      10.04.2026 ab 07:00 bei Wetterbesserung.
+    ground_truth:
+      required_claims:
+        - "Der Bericht betrifft die Baustelle Parkhaus Messegelaende am 09.04.2026"
+        - "Starkregen seit 06:00 Uhr mit 35mm Niederschlag in 4 Stunden"
+        - "Die Betonierarbeiten Decke 2. OG mussten abgebrochen werden"
+        - "Kranarbeiten wurden wegen Windstaerke 7 eingestellt"
+        - "Erdarbeiten Tiefgarage ruhen wegen Wassereinbruch"
+        - "Die Wiederaufnahme ist fuer den 10.04.2026 ab 07:00 Uhr geplant"
+
+  - task_id: L1_daily_workforce_report
+    level: L1
+    description: >
+      Erstelle einen Personalstaerkebericht fuer folgende Baustelle:
+      Neubau Mehrfamilienhaus Lindenallee 8, 14.04.2026. Anwesend:
+      Rohbau-Kolonne (Firma Bauer): 1 Polier, 6 Facharbeiter, 2 Helfer.
+      Elektro-Kolonne (Firma Volt): 1 Meister, 3 Gesellen.
+      Sanitaer (Firma Rohr): 2 Monteure. Krank gemeldet: 1 Facharbeiter
+      Rohbau (Maier, seit 12.04). Arbeitszeit: 07:00-16:30, Pause
+      12:00-12:30. Gesamtstunden: 9,5h x 15 Personen = 142,5 Stunden.
+    ground_truth:
+      required_claims:
+        - "Der Bericht bezieht sich auf Neubau Mehrfamilienhaus Lindenallee 8 am 14.04.2026"
+        - "Die Rohbau-Kolonne der Firma Bauer umfasst 1 Polier, 6 Facharbeiter und 2 Helfer"
+        - "Die Elektro-Kolonne der Firma Volt hat 1 Meister und 3 Gesellen"
+        - "Firma Rohr stellt 2 Monteure fuer Sanitaer"
+        - "Facharbeiter Maier ist seit 12.04 krank gemeldet"
+        - "Die Arbeitszeit war von 07:00 bis 16:30 mit Pause von 12:00 bis 12:30"
+        - "Die Gesamtstunden betragen 142,5 Stunden (9,5h x 15 Personen)"
+
+  - task_id: L1_concrete_pour_protocol
+    level: L1
+    description: >
+      Erstelle ein Betonierprotokoll fuer folgenden Betoniervorgang:
+      Baustelle Brueckenbauwerk B42, 13.04.2026. Bauteil: Widerlager West.
+      Betonsorte: C30/37, XC4, XF3, WF. Betonmenge: 45 m3.
+      Lieferwerk: Transportbeton Rhein GmbH, Werk Koblenz.
+      Einbaubeginn: 07:30, Einbauende: 12:15. Frischbetontemperatur:
+      14-16 Grad C. Ausbreitmaass: a1=48cm, a2=50cm (Soll: 42-52cm).
+      Proben: 3 Wuerfelsaetze entnommen (Pruefstelle: IB Meyer).
+      Verdichtung: Innenruettler. Nachbehandlung: Abdeckung mit
+      PE-Folie, Bewässerung ab Tag 2.
+    ground_truth:
+      required_claims:
+        - "Das Bauteil ist das Widerlager West am Brueckenbauwerk B42"
+        - "Die Betonsorte ist C30/37 mit Expositionsklassen XC4, XF3, WF"
+        - "Die Betonmenge betraegt 45 m3 vom Lieferwerk Transportbeton Rhein GmbH Koblenz"
+        - "Der Einbau erfolgte von 07:30 bis 12:15"
+        - "Die Frischbetontemperatur lag bei 14-16 Grad C"
+        - "Das Ausbreitmaass war a1=48cm und a2=50cm (Soll: 42-52cm)"
+        - "3 Wuerfelsaetze wurden entnommen, Pruefstelle IB Meyer"
+        - "Die Nachbehandlung erfolgte mit PE-Folie und Bewaesserung ab Tag 2"
+
+  - task_id: L1_site_handover_note
+    level: L1
+    description: >
+      Erstelle eine Baustellenuebergabenotiz fuer folgenden Vorgang:
+      Baustelle Kita Sonnenschein, Blumenweg 3, 08.04.2026.
+      Uebergabe von Bauleiter Krause (Urlaub ab 09.04) an Bauleiter
+      Richter. Aktueller Stand: Rohbau EG fertig, Dachstuhl in
+      Aufrichtung (ca. 60%). Offene Punkte: Lieferung Dachfenster
+      ausstehend (KW 16), Statikfreigabe Balkon noch offen (Buero
+      Ingmann). Kein offener Mangel. Schluesseluebergabe erfolgt.
+    ground_truth:
+      required_claims:
+        - "Die Uebergabe betrifft die Baustelle Kita Sonnenschein am Blumenweg 3"
+        - "Bauleiter Krause uebergibt an Bauleiter Richter wegen Urlaub ab 09.04"
+        - "Der Rohbau EG ist fertiggestellt"
+        - "Der Dachstuhl ist zu ca. 60% aufgerichtet"
+        - "Die Lieferung der Dachfenster steht noch aus (KW 16)"
+        - "Die Statikfreigabe Balkon vom Buero Ingmann ist noch offen"
+        - "Die Schluesseluebergabe ist erfolgt"
+
+  # ============================================================
+  # L2 — Extended (8 tasks): Light adaptation needed
+  # Multiple speakers, colloquial language, domain mixing
+  # ============================================================
+
+  - task_id: L2_combined_defect_safety
+    level: L2
+    description: >
+      Erstelle einen kombinierten Maengel- und Sicherheitsbericht aus
+      folgender Baubesprechung mit mehreren Teilnehmern:
+      Baustelle Industriepark Nord, 14.04.2026. Anwesend: Bauleiter
+      Schmidt, Sicherheitsingenieur Weber, Polier Huber, Vertreter
+      Nachunternehmer Elektro (Firma Licht GmbH).
+      Schmidt: "Also der Riss in der Stuetzwand Achse 3, den muessen
+      wir uns genauer anschauen, der ist jetzt ca. 2mm breit und 1,5m
+      lang." Weber: "Und bei der PSA-Kontrolle heute Morgen hab ich
+      zwei Leute ohne Helm erwischt, das geht so nicht." Huber: "Die
+      Absperrung an der Grube Ost fehlt wieder, ich hab das schon
+      dreimal gesagt." Schmidt: "Ausserdem ist das Geruest Nordseite
+      seit 3 Wochen nicht geprueft." Weber: "Ich klaer das mit dem
+      TUeV." Schmidt: "Den Riss lassen wir vom Statiker begutachten
+      bis zum 18.04. Absperrung wird heute noch nachgeruestet."
+    ground_truth:
+      required_claims:
+        - "Die Besprechung fand auf der Baustelle Industriepark Nord am 14.04.2026 statt"
+        - "Ein Riss in der Stuetzwand Achse 3 ist ca. 2mm breit und 1,5m lang"
+        - "Bei der PSA-Kontrolle wurden zwei Personen ohne Helm festgestellt"
+        - "Die Absperrung an der Grube Ost fehlt"
+        - "Das Geruest Nordseite ist seit 3 Wochen nicht geprueft"
+        - "Der Riss soll vom Statiker bis zum 18.04 begutachtet werden"
+        - "Die Absperrung wird heute noch nachgeruestet"
+
+  - task_id: L2_daily_with_supplements
+    level: L2
+    description: >
+      Erstelle einen Tagesbericht mit Nachtragerfassung aus folgender
+      Baubesprechung: Baustelle Wohnanlage Sonnenhof, 13.04.2026.
+      Polier Wagner: "Wir haben heute beim Aushub Altlasten gefunden,
+      sieht nach oelkontaminiertem Boden aus, ca. 15 m3." Bauleiter
+      Meier: "OK das ist ein Nachtrag, schreib das auf. Was kostet
+      die Entsorgung?" Wagner: "Laut Entsorger Umwelt AG ca. 280 EUR
+      pro Tonne, bei geschaetzt 25 Tonnen sind das 7.000 EUR netto."
+      Meier: "Dazu kommt der Baggermehraufwand, ich schaetz 2 Tage
+      extra, das sind nochmal 3.200 EUR." Wagner: "Bewehrung Keller
+      laeuft planmaessig, 60% fertig. Und die Schalung Aufzugsschacht
+      steht, koennen morgen betonieren." Meier: "Wetter soll halten.
+      Nachtragsanmeldung schick ich heute noch an den AG."
+    ground_truth:
+      required_claims:
+        - "Der Bericht betrifft die Baustelle Wohnanlage Sonnenhof am 13.04.2026"
+        - "Beim Aushub wurden Altlasten gefunden, ca. 15 m3 oelkontaminierter Boden"
+        - "Die Entsorgungskosten betragen ca. 280 EUR pro Tonne, geschaetzt 7.000 EUR netto"
+        - "Der Baggermehraufwand wird auf 2 Tage extra geschaetzt (3.200 EUR)"
+        - "Die Bewehrung Keller laeuft planmaessig und ist zu 60% fertig"
+        - "Die Schalung Aufzugsschacht steht und kann morgen betoniert werden"
+        - "Eine Nachtragsanmeldung wird an den Auftraggeber geschickt"
+
+  - task_id: L2_multi_trade_inspection
+    level: L2
+    description: >
+      Erstelle ein gewerkeuebergreifendes Inspektionsprotokoll:
+      Baustelle Buerogebaeude TechPark 7, 12.04.2026. Inspektion
+      durch Bauleiter Fischer mit den Gewerken Rohbau (Firma Stein),
+      Heizung (Firma Waerme), Elektro (Firma Strom), Trockenbau
+      (Firma Wand). Rohbau: Decke 3.OG ausgeschalt, Oberflaechenqualitaet
+      gut, 2 Kiesnester an Stuetze D4 muessen verpresst werden.
+      Heizung: Rohrleitungen EG verlegt, Druckpruefung 10 bar bestanden.
+      Elektro: Schlitze 1.OG gefraest, Leerrohre 70% eingebaut, Koordination
+      mit Trockenbau wegen Deckenabhaengung erforderlich. Trockenbau:
+      Staenderwerk 2.OG aufgestellt, Beplankung beginnt naechste Woche.
+      Problem: Heizungsrohre im 2.OG liegen teils im Trockenbau-Querschnitt.
+    ground_truth:
+      required_claims:
+        - "Die Inspektion fand am 12.04.2026 auf der Baustelle Buerogebaeude TechPark 7 statt"
+        - "Rohbau (Firma Stein): Decke 3.OG ausgeschalt, 2 Kiesnester an Stuetze D4 muessen verpresst werden"
+        - "Heizung (Firma Waerme): Rohrleitungen EG verlegt, Druckpruefung 10 bar bestanden"
+        - "Elektro (Firma Strom): Schlitze 1.OG gefraest, Leerrohre 70% eingebaut"
+        - "Trockenbau (Firma Wand): Staenderwerk 2.OG aufgestellt"
+        - "Koordinationsbedarf: Heizungsrohre im 2.OG liegen teils im Trockenbau-Querschnitt"
+        - "Koordination Elektro/Trockenbau wegen Deckenabhaengung erforderlich"
+
+  - task_id: L2_subcontractor_coordination
+    level: L2
+    description: >
+      Erstelle einen Nachunternehmer-Koordinationsbericht aus folgender
+      Baubesprechung: Baustelle Einkaufszentrum CityPlaza, 11.04.2026.
+      Teilnehmer: Generalunternehmer (GU) Projektleiter Dr. Lang,
+      Nachunternehmer (NU) Fassade (Alu-Tech GmbH, Herr Yilmaz),
+      NU Tiefbau (ErdBau AG, Frau Berger), NU Aufzuege (LiftPro, Herr Kim).
+      Dr. Lang: "Fassade haengt 2 Wochen hinter Plan. Was ist das Problem?"
+      Yilmaz: "Die Sonderfenster aus Polen kommen erst KW 18 statt KW 16."
+      Dr. Lang: "Dann zieht ihr die Standardelemente Suedseite vor."
+      Berger: "Tiefbau Parkplatz ist naechste Woche fertig, dann
+      koennte Fassade Nordseite vom Boden aus arbeiten." Kim: "Aufzugs-
+      schacht muss bis Ende April betonfertig sein, sonst verschieben
+      sich unsere Monteure." Dr. Lang: "Terminplan wird angepasst,
+      ich schicke allen die neue Version bis Freitag."
+    ground_truth:
+      required_claims:
+        - "Die Besprechung fand auf der Baustelle Einkaufszentrum CityPlaza am 11.04.2026 statt"
+        - "Die Fassade haengt 2 Wochen hinter dem Plan wegen verzoegerter Sonderfenster aus Polen"
+        - "Die Sonderfenster kommen erst KW 18 statt KW 16"
+        - "Standardelemente Suedseite sollen vorgezogen werden"
+        - "Tiefbau Parkplatz (ErdBau AG, Frau Berger) ist naechste Woche fertig"
+        - "Der Aufzugsschacht muss bis Ende April betonfertig sein (LiftPro, Herr Kim)"
+        - "Der Terminplan wird angepasst und bis Freitag verschickt"
+
+  - task_id: L2_weekly_progress_summary
+    level: L2
+    description: >
+      Erstelle eine woechentliche Fortschrittszusammenfassung:
+      Baustelle Seniorenresidenz Am Park, KW 15/2026 (07.-11.04).
+      Montag-Mittwoch: Bewehrung Decke 1.OG, 35 Tonnen Stahl verlegt.
+      Donnerstag: Betonage Decke 1.OG, 120 m3 C25/30. Freitag:
+      Ausschalarbeiten begonnen, Schalung 2.OG Waende vorbereitet.
+      Personal: Durchschnitt 18 Arbeiter/Tag. Wetter: Mo-Mi trocken,
+      Do Leichter Regen (kein Einfluss), Fr sonnig. Soll-Stand laut
+      Bauzeitenplan: Decke 1.OG KW 14 — tatsaechlich KW 15, also
+      1 Woche Rueckstand. Ursache: Materiallieferung Bewehrung verzoegert
+      in KW 14. Prognose: Aufholen durch Samstagsarbeit in KW 16/17.
+    ground_truth:
+      required_claims:
+        - "Der Bericht betrifft die Baustelle Seniorenresidenz Am Park fuer KW 15/2026"
+        - "Montag bis Mittwoch wurde die Bewehrung Decke 1.OG verlegt, 35 Tonnen Stahl"
+        - "Am Donnerstag erfolgte die Betonage Decke 1.OG mit 120 m3 C25/30"
+        - "Durchschnittlich waren 18 Arbeiter pro Tag im Einsatz"
+        - "Es besteht 1 Woche Rueckstand gegenueber dem Bauzeitenplan"
+        - "Die Ursache ist eine verzoegerte Materiallieferung Bewehrung in KW 14"
+        - "Der Rueckstand soll durch Samstagsarbeit in KW 16/17 aufgeholt werden"
+
+  - task_id: L2_quality_audit_report
+    level: L2
+    description: >
+      Erstelle einen Qualitaetsauditbericht aus folgender Pruefung:
+      Baustelle Hotelneubau Seeblick, 10.04.2026. Auditor: QM-Beauftragter
+      Lehmann. Geprueft: Betonqualitaet (Pruefzeugnisse 3 Lieferungen —
+      alle konform), Bewehrungsabnahme Decke EG (Bewehrungsplan Rev. C
+      vom 02.04 — Verlegung OK, Betondeckung min. 30mm eingehalten),
+      Abdichtung Kelleraussenwand (Bitumenbahn V60S5 — 2 Stellen mit
+      ungenuegender Nahtverschwiessung festgestellt, Laenge je ca. 50cm,
+      Nacharbeit erforderlich). Mauerwerk EG: Lotroechtigkeit geprueft,
+      Abweichung Wand B3 = 8mm auf 2,5m Hoehe (Toleranz 10mm — OK).
+      Gesamtbewertung: 2 kleine Abweichungen, keine schwerwiegenden Maengel.
+    ground_truth:
+      required_claims:
+        - "Das Audit fand am 10.04.2026 auf der Baustelle Hotelneubau Seeblick statt"
+        - "QM-Beauftragter Lehmann fuehrte das Audit durch"
+        - "Betonqualitaet: Pruefzeugnisse von 3 Lieferungen sind alle konform"
+        - "Bewehrungsabnahme Decke EG: Betondeckung min. 30mm eingehalten"
+        - "Abdichtung Kelleraussenwand: 2 Stellen mit ungenuegender Nahtverschwiessung (je ca. 50cm), Nacharbeit erforderlich"
+        - "Mauerwerk EG Wand B3: Abweichung 8mm auf 2,5m Hoehe (Toleranz 10mm, OK)"
+        - "Gesamtbewertung: 2 kleine Abweichungen, keine schwerwiegenden Maengel"
+
+  - task_id: L2_rework_documentation
+    level: L2
+    description: >
+      Erstelle eine Nacharbeitsdokumentation mit Kostenaufstellung:
+      Baustelle Lagergebaeude Ost, 09.04.2026. Mangel: Estrich im
+      Hallenbereich (ca. 450 m2) hat grossflaechige Risse, wurde als
+      nicht begehbar eingestuft. Ursache: Zu fruehes Belasten durch
+      Regallager-Montage (2 Tage nach Einbau statt vorgeschriebene
+      28 Tage). Nacharbeit: Kompletter Rueckbau Estrich (12 EUR/m2),
+      Neueinbau CT-C30-F5 (38 EUR/m2), Trocknungszeit 4 Wochen,
+      Regalmontage verschiebt sich um 6 Wochen. Kosten: Rueckbau
+      5.400 EUR, Neueinbau 17.100 EUR, Bauzeitzuschlag 8.500 EUR.
+      Gesamt: 31.000 EUR. Verschulden: NU Regalbau (Firma LogiMount)
+      — Rueckgriff wird geprueft.
+    ground_truth:
+      required_claims:
+        - "Der Mangel betrifft Estrich im Hallenbereich von ca. 450 m2 mit grossflaechigen Rissen"
+        - "Die Ursache war zu fruehes Belasten durch Regallager-Montage (2 Tage statt 28 Tage)"
+        - "Rueckbaukosten betragen 5.400 EUR (12 EUR/m2)"
+        - "Neueinbaukosten betragen 17.100 EUR (38 EUR/m2, CT-C30-F5)"
+        - "Der Bauzeitzuschlag belaeuft sich auf 8.500 EUR"
+        - "Die Gesamtkosten betragen 31.000 EUR"
+        - "Das Verschulden liegt bei Firma LogiMount (NU Regalbau), Rueckgriff wird geprueft"
+        - "Die Regalmontage verschiebt sich um 6 Wochen"
+
+  - task_id: L2_site_meeting_minutes
+    level: L2
+    description: >
+      Erstelle ein Baubesprechungsprotokoll aus folgendem Gespraech:
+      Baustelle Quartier Westend, 15.04.2026, Jour Fixe Nr. 22.
+      Teilnehmer: Architekt Schwarz, Bauleiter Jung, Statiker Prof.
+      Wendt, Fachplaner TGA Herr Adler. Schwarz: "Die Fassadenfarbe
+      RAL 7016 ist vom Bauherrn freigegeben." Jung: "Gut. Naechster
+      Punkt: Die Decke UG2 hat eine Durchbiegung von 15mm, Prof. Wendt?"
+      Wendt: "Im Rahmen, L/500 waere 16mm bei 8m Spannweite. Ich
+      schicke die Stellungnahme bis Montag." Adler: "Die Lueftungsanlage
+      braucht einen zusaetzlichen Deckenausbruch in Achse 7, 60x80cm.
+      Bitte Statikfreigabe einholen." Jung: "Termin naechste Sitzung
+      22.04 gleiche Uhrzeit. Bitte alle offenen Punkte bis dahin abarbeiten."
+    ground_truth:
+      required_claims:
+        - "Es handelt sich um Jour Fixe Nr. 22 auf der Baustelle Quartier Westend am 15.04.2026"
+        - "Teilnehmer: Architekt Schwarz, Bauleiter Jung, Statiker Prof. Wendt, Fachplaner TGA Herr Adler"
+        - "Die Fassadenfarbe RAL 7016 wurde vom Bauherrn freigegeben"
+        - "Die Decke UG2 hat eine Durchbiegung von 15mm (im Rahmen, L/500 waere 16mm bei 8m Spannweite)"
+        - "Prof. Wendt schickt die Stellungnahme bis Montag"
+        - "Ein zusaetzlicher Deckenausbruch in Achse 7 (60x80cm) fuer die Lueftungsanlage ist erforderlich"
+        - "Die naechste Sitzung findet am 22.04 statt"
+
+  # ============================================================
+  # L3 — Complex (7 tasks): Significant expansion needed
+  # Calculations, DIN references, new report types
+  # ============================================================
+
+  - task_id: L3_acceptance_protocol
+    level: L3
+    description: >
+      Erstelle ein Abnahmeprotokoll mit Maengelkatalog und Kostenberechnung:
+      Objekt: Mehrfamilienhaus Rosenweg 14, Abnahme am 08.04.2026.
+      Bauherr: Fam. Gruber, vertreten durch Sachverstaendigen Dipl.-Ing.
+      Naumann. Auftragnehmer: BauFit GmbH, Herr Ott.
+      Mangel 1: Balkon EG Gefaelle unzureichend (1,0% statt 2% nach
+      DIN 18195), Wasserrueckstau bei Starkregen. Schaetzkosten
+      Sanierung: 4.800 EUR. Mangel 2: Trittschalldaemmung Wohnung 3
+      OG nicht normgerecht (gemessener L'n,w = 56 dB, Anforderung
+      DIN 4109: max 53 dB). Schaetzkosten: 12.500 EUR. Mangel 3:
+      Heizkoerper Kueche Wohnung 1 zu klein dimensioniert (Waermeleistung
+      800W, Bedarf nach Heizlastberechnung 1.200W). Schaetzkosten: 950 EUR.
+      Mangel 4: Aufzugstuer EG schliesst nicht vollstaendig (Spalt 12mm,
+      max 6mm nach DIN EN 81-20). Schaetzkosten: 2.200 EUR.
+      Vorbehalt Restmaengel: 5% der Schlussrechnung (Bruttoschlussrechnung:
+      1.280.000 EUR, Einbehalt: 64.000 EUR). Gesamtschaetzkosten Maengel:
+      20.450 EUR. Abnahme erfolgt unter Vorbehalt der gelisteten Maengel.
+    ground_truth:
+      required_claims:
+        - "Das Objekt ist Mehrfamilienhaus Rosenweg 14, Abnahme am 08.04.2026"
+        - "Der Sachverstaendige ist Dipl.-Ing. Naumann, Auftragnehmer ist BauFit GmbH (Herr Ott)"
+        - "Mangel 1: Balkon EG Gefaelle 1,0% statt 2% nach DIN 18195, Schaetzkosten 4.800 EUR"
+        - "Mangel 2: Trittschalldaemmung nicht normgerecht (56 dB gemessen, max 53 dB nach DIN 4109), Kosten 12.500 EUR"
+        - "Mangel 3: Heizkoerper zu klein dimensioniert (800W statt 1.200W), Kosten 950 EUR"
+        - "Mangel 4: Aufzugstuer Spalt 12mm statt max 6mm nach DIN EN 81-20, Kosten 2.200 EUR"
+        - "Gesamtschaetzkosten der Maengel betragen 20.450 EUR"
+        - "Einbehalt von 5% der Schlussrechnung: 64.000 EUR (Brutto 1.280.000 EUR)"
+
+  - task_id: L3_progress_with_cost_comparison
+    level: L3
+    description: >
+      Erstelle einen Baufortschrittsbericht mit Soll/Ist-Kostenvergleich:
+      Baustelle Wohnanlage Sonnenhof, Berichtszeitraum KW 15/2026.
+      Rohbau: 85% fertig (Plan: 90%), Verzoegerung durch Lieferengpass
+      Bewehrungsstahl (Stahlpreis gestiegen um 18% seit Vertragsschluss).
+      Haustechnik: 40% (Plan: 35%), voraus wegen fruehzeitigem Beginn.
+      Kosten Rohbau bisher: 1.200.000 EUR (Budget: 1.350.000 EUR),
+      davon Mehrkosten Stahl: 85.000 EUR. Haustechnik bisher: 450.000 EUR
+      (Budget: 500.000 EUR). Nachtrag 1: Zusaetzliche Bodenplattensanierung
+      35.000 EUR (genehmigt). Nachtrag 2: Erhoehte Entsorgungskosten
+      kontaminierter Boden 22.000 EUR (in Pruefung). Gesamt bisher:
+      1.707.000 EUR, Gesamtbudget: 2.800.000 EUR. Prognose Endkosten:
+      2.920.000 EUR (+4,3% ueber Budget). Naechste Schritte: Bewehrung
+      OG 3 ab KW 16, Fenstereinbau ab KW 17.
+    ground_truth:
+      required_claims:
+        - "Rohbau ist zu 85% fertig (Plan: 90%), Verzoegerung durch Lieferengpass Bewehrungsstahl"
+        - "Der Stahlpreis ist um 18% seit Vertragsschluss gestiegen"
+        - "Haustechnik ist zu 40% fertig (Plan: 35%), voraus wegen fruehzeitigem Beginn"
+        - "Kosten Rohbau bisher 1.200.000 EUR (Budget 1.350.000 EUR), Mehrkosten Stahl 85.000 EUR"
+        - "Haustechnik bisher 450.000 EUR (Budget 500.000 EUR)"
+        - "Nachtrag 1: Bodenplattensanierung 35.000 EUR (genehmigt), Nachtrag 2: Entsorgung 22.000 EUR (in Pruefung)"
+        - "Gesamtkosten bisher 1.707.000 EUR, Prognose Endkosten 2.920.000 EUR (+4,3% ueber Budget)"
+
+  - task_id: L3_safety_incident_report
+    level: L3
+    description: >
+      Erstelle einen Sicherheitsbericht nach einem Arbeitsunfall:
+      Baustelle Verwaltungsgebaeude Finanzplatz, 07.04.2026, 10:45 Uhr.
+      Arbeiter Herr Kaya (Firma SubBau, Schaler) stuerzte beim Aufstieg
+      auf Geruest Suedseite aus ca. 2,8m Hoehe auf die Geruestlage
+      darunter. Ursache: Geruest-Aufstiegsleiter war nicht gegen
+      Verrutschen gesichert (Verstoss gegen DGUV Vorschrift 38, Abs. 7.3).
+      Verletzung: Prellung linker Unterarm und Huefte, keine Fraktur
+      (Erstversorgung durch Ersthelfer Polier Albrecht, Abtransport
+      Rettungswagen, Krankenhaus entlassen am selben Tag).
+      Sofortmassnahmen: Geruest gesperrt, Nachpruefung durch
+      Geruestbaufirma SafeScaffold angeordnet. Alle Geruestaufstiege
+      baustellenweit kontrolliert — 2 weitere ohne Sicherung gefunden
+      und sofort nachgeruestet. BG Bau informiert (Unfallanzeige
+      innerhalb 3 Tage, da Arbeitsunfaehigkeit > 3 Tage erwartet).
+      Referenz: DGUV Vorschrift 38, DGUV Regel 101-005, ArbStaettV §3.
+    ground_truth:
+      required_claims:
+        - "Der Unfall ereignete sich am 07.04.2026 um 10:45 Uhr auf der Baustelle Verwaltungsgebaeude Finanzplatz"
+        - "Herr Kaya (Firma SubBau, Schaler) stuerzte aus ca. 2,8m Hoehe"
+        - "Die Ursache war eine nicht gesicherte Geruest-Aufstiegsleiter (Verstoss gegen DGUV Vorschrift 38, Abs. 7.3)"
+        - "Verletzungen: Prellung linker Unterarm und Huefte, keine Fraktur"
+        - "Erstversorgung durch Ersthelfer Polier Albrecht, Abtransport per Rettungswagen"
+        - "Das Geruest wurde gesperrt, Nachpruefung durch SafeScaffold angeordnet"
+        - "2 weitere Geruestaufstiege ohne Sicherung gefunden und nachgeruestet"
+        - "BG Bau wurde informiert, Unfallanzeige innerhalb 3 Tage"
+
+  - task_id: L3_structural_assessment
+    level: L3
+    description: >
+      Erstelle eine Tragwerksbeurteilung aus folgender Sachverstaendigen-
+      begehung: Bestandsgebaeude Fabrikhalle Wernerstrasse 88, 06.04.2026.
+      Anlass: Geplante Nutzungsaenderung von Lager (Nutzlast 5 kN/m2)
+      zu Buero (Nutzlast 2 kN/m2) mit Einbau einer Zwischendecke.
+      Bestand: Stahlbetonrahmen Baujahr 1972, Stuetzenraster 6x8m.
+      Befund: Betonguete geschaetzt B25 (C20/25), Bewehrung BSt 420
+      (Stichproben mit Bewehrungssuchgeraet). Carbonatisierungstiefe:
+      18mm (Betondeckung 25mm — noch 7mm Restdeckung, Grenzwert nach
+      DIN EN 1992-1-1 nicht mehr dauerhaft). 3 Stuetzen im Bereich D
+      zeigen Abplatzungen und freiliegende Bewehrung mit leichter
+      Korrosion. Tragfaehigkeitsnachweis: rechnerisch ausreichend fuer
+      Bueronutzung. Empfehlung: Betonsanierung nach DIN EN 1504,
+      Korrosionsschutz Stuetzen Bereich D, statische Nachrechnung
+      Zwischendeckenauflager. Geschaetzte Sanierungskosten: 85.000 EUR.
+    ground_truth:
+      required_claims:
+        - "Das Objekt ist die Fabrikhalle Wernerstrasse 88, Baujahr 1972"
+        - "Der Anlass ist eine geplante Nutzungsaenderung von Lager zu Buero mit Einbau einer Zwischendecke"
+        - "Betonguete geschaetzt B25 (C20/25), Bewehrung BSt 420"
+        - "Die Carbonatisierungstiefe betraegt 18mm bei 25mm Betondeckung (7mm Restdeckung)"
+        - "3 Stuetzen im Bereich D zeigen Abplatzungen und freiliegende Bewehrung mit Korrosion"
+        - "Der Tragfaehigkeitsnachweis ist rechnerisch ausreichend fuer Bueronutzung"
+        - "Empfehlung: Betonsanierung nach DIN EN 1504, Geschaetzte Kosten 85.000 EUR"
+
+  - task_id: L3_environmental_compliance
+    level: L3
+    description: >
+      Erstelle einen Umweltschutzbericht mit Auflagenueberpruefung:
+      Baustelle Logistikzentrum A45-Sued, 05.04.2026. Baugenehmigung
+      enthalt 12 Umweltauflagen. Pruefung durch Umweltbeauftragten
+      Dr. Pfeifer. Auflage 1 (Laermschutz): Schallpegel an Grenze
+      zum Wohngebiet max 55 dB(A) tags — Messung ergab 52 dB(A), OK.
+      Auflage 5 (Grundwasser): Grundwassermonitoring Pegel GW-3 und
+      GW-7 monatlich — letzter Probenahme 01.04, pH 7.1, keine
+      Auffaelligkeiten. Auflage 8 (Artenschutz): Baufeldfreimachung nur
+      ausserhalb Brutzeit (01.03-30.09 verboten) — Rodung Baufeld Nord
+      fand am 28.02 statt, konform. Auflage 11 (Bodenschutz): Mutterboden
+      getrennt lagern — NICHT ERFUELLT, Mutterboden mit Aushub vermischt
+      auf Halde Ost. Sofortmassnahme: Trennung nachholen, Kosten ca.
+      8.500 EUR. Gesamtergebnis: 11 von 12 Auflagen erfuellt, 1 Verstoss.
+    ground_truth:
+      required_claims:
+        - "Die Pruefung fand am 05.04.2026 auf der Baustelle Logistikzentrum A45-Sued statt"
+        - "Die Pruefung wurde durch Umweltbeauftragten Dr. Pfeifer durchgefuehrt"
+        - "Laermschutz: Schallpegel 52 dB(A) gemessen, max 55 dB(A) erlaubt — erfuellt"
+        - "Grundwasser: Monitoring Pegel GW-3 und GW-7, pH 7.1, keine Auffaelligkeiten"
+        - "Artenschutz: Rodung am 28.02 vor der Brutzeit (01.03-30.09) — konform"
+        - "Bodenschutz: NICHT ERFUELLT — Mutterboden mit Aushub vermischt, Sofortmassnahme Trennung nachholen (8.500 EUR)"
+        - "Gesamtergebnis: 11 von 12 Auflagen erfuellt, 1 Verstoss"
+
+  - task_id: L3_schedule_variance_analysis
+    level: L3
+    description: >
+      Erstelle eine Terminplanabweichungsanalyse mit kritischem Pfad:
+      Baustelle Kongresszentrum Messestadt, Stichtag 04.04.2026.
+      Gesamtbauzeit laut Vertrag: 18 Monate (Start 01.10.2025, Ende
+      31.03.2027). Kritischer Pfad: Gruendung → Rohbau �� Fassade →
+      Innenausbau → TGA-Inbetriebnahme → Abnahme. Aktuelle Abweichungen
+      auf kritischem Pfad: Rohbau 3 Wochen Verzoegerung (Ursache:
+      Lieferprobleme Fertigteile), Fassade kann 1 Woche parallelisiert
+      werden (Puffer), Innenausbau bisher planmaessig. Neben-Pfade:
+      Aussenanlagen 2 Wochen voraus, Aufzugsmontage planmaessig.
+      Netto-Verzoegerung: 2 Wochen auf kritischem Pfad. Beschleunigungs-
+      massnahmen: Samstagsarbeit Rohbau (Mehrkosten 45.000 EUR),
+      Paralleles Arbeiten Fassade/Rohbau ab KW 18 (Mehrkosten 12.000 EUR).
+      Prognose: Fertigstellung 14.04.2027 statt 31.03.2027 (2 Wochen
+      Verzoegerung trotz Beschleunigung — Vertragsstrafe ab 01.04.2027:
+      0,3% pro Werktag = 15.000 EUR/Tag).
+    ground_truth:
+      required_claims:
+        - "Die Baustelle Kongresszentrum Messestadt hat eine Gesamtbauzeit von 18 Monaten (01.10.2025 bis 31.03.2027)"
+        - "Der kritische Pfad ist: Gruendung, Rohbau, Fassade, Innenausbau, TGA-Inbetriebnahme, Abnahme"
+        - "Der Rohbau hat 3 Wochen Verzoegerung durch Lieferprobleme Fertigteile"
+        - "Die Netto-Verzoegerung betraegt 2 Wochen auf dem kritischen Pfad"
+        - "Beschleunigungsmassnahmen: Samstagsarbeit Rohbau (45.000 EUR) und paralleles Arbeiten Fassade/Rohbau (12.000 EUR)"
+        - "Die Prognose ist Fertigstellung am 14.04.2027 statt 31.03.2027"
+        - "Die Vertragsstrafe betraegt 0,3% pro Werktag (15.000 EUR/Tag) ab 01.04.2027"
+
+  - task_id: L3_warranty_claim_report
+    level: L3
+    description: >
+      Erstelle ein Gewaehrleistungsmangelprotokoll mit Fristberechnung:
+      Objekt: Buerogebaeude Hafencity Tower, uebergeben am 15.06.2024.
+      Gewaehrleistungsfrist nach VOB/B §13: 4 Jahre fuer Bauwerk
+      (bis 15.06.2028), 2 Jahre fuer technische Anlagen (bis 15.06.2026).
+      Gemeldet am 03.04.2026: Mangel 1: Undichte Flachdachabdichtung
+      3.OG Suedseite, Wassereinbruch in Bueroraum 3.14 bei Starkregen.
+      Bauwerk-Mangel, Frist laeuft bis 15.06.2028 — fristgerecht.
+      Mangel 2: Klimaanlage Serverraum UG faellt regelmaessig aus,
+      Verdampfer-Einheit defekt. Technische Anlage, Frist laeuft bis
+      15.06.2026 — noch 73 Tage, DRINGEND. Mangel 3: Aufzug zeigt
+      Fehlercode E47, Tuerschliessung unzuverlaessig. Technische Anlage
+      — ebenfalls 73 Tage Restfrist. Auftragnehmer: Hafenbau AG,
+      Maengelruege per Einschreiben zugestellt am 04.04.2026 mit
+      Frist von 14 Tagen zur Stellungnahme.
+    ground_truth:
+      required_claims:
+        - "Das Objekt ist Buerogebaeude Hafencity Tower, uebergeben am 15.06.2024"
+        - "Gewaehrleistungsfrist nach VOB/B §13: 4 Jahre Bauwerk (bis 15.06.2028), 2 Jahre technische Anlagen (bis 15.06.2026)"
+        - "Mangel 1: Undichte Flachdachabdichtung 3.OG Suedseite mit Wassereinbruch, Bauwerk-Mangel, fristgerecht"
+        - "Mangel 2: Klimaanlage Serverraum UG defekt, technische Anlage, noch 73 Tage Restfrist, DRINGEND"
+        - "Mangel 3: Aufzug Fehlercode E47, Tuerschliessung unzuverlaessig, 73 Tage Restfrist"
+        - "Maengelruege per Einschreiben an Hafenbau AG zugestellt am 04.04.2026"
+        - "Frist zur Stellungnahme: 14 Tage"
+
+  # ============================================================
+  # L4 — Unknown (7 tasks): System never built for this
+  # Completely new report types, specialized vocabulary
+  # ============================================================
+
+  - task_id: L4_fire_safety_audit
+    level: L4
+    description: >
+      Erstelle einen Brandschutzauditbericht aus folgender Begehung:
+      Objekt: Einkaufszentrum GaleriaMall, Brandschutzbegehung am
+      02.04.2026 durch Brandschutzingenieur Dr. Hartmann (Sachverstaendiger
+      nach PruefVO). Bereich: Verkaufsflaeche UG bis 2.OG, Tiefgarage,
+      Technikzentrale. Pruefgrundlage: Brandschutzkonzept Rev. D vom
+      12.01.2024, BauO NRW, VDI 6019 (Ingenieurmethoden Brandschutz).
+      Feststellungen: 1) Brandschutzklappe BSK-47 in Lueftungskanal
+      Achse C/4-5 schliesst nicht vollstaendig (Spalt 3mm, max 0mm nach
+      Zulassung). 2) Fluchtweg Treppenhaus Nord: Feuerschutztueren T30
+      im 1.OG mit Keil festgestellt (Verstoss §35 BauO). 3) Sprinkler-
+      anlage: Pumpendruck bei 8,2 bar (Soll: min 9,0 bar nach VdS
+      CEA 4001). 4) Rauchmelder Tiefgarage Ebene -2: 4 von 24 Melder
+      zeigen Stoerung (Verschmutzung). 5) Brandschutzwand zwischen
+      Verkauf und Lager EG: Durchfuehrung mit Kabelbuendel nicht
+      abgeschottet (R90-Schott fehlt). Gesamtbewertung: 2 schwerwiegende
+      Maengel (BSK, Schott), 3 mittlere Maengel. Frist: schwerwiegend
+      sofort, mittel 4 Wochen.
+    ground_truth:
+      required_claims:
+        - "Das Audit betrifft das Einkaufszentrum GaleriaMall am 02.04.2026"
+        - "Brandschutzingenieur Dr. Hartmann fuehrte die Begehung durch"
+        - "Brandschutzklappe BSK-47 schliesst nicht vollstaendig (Spalt 3mm, max 0mm)"
+        - "Feuerschutztueren T30 im Treppenhaus Nord 1.OG wurden mit Keil festgestellt (Verstoss §35 BauO)"
+        - "Sprinkleranlage: Pumpendruck 8,2 bar statt min 9,0 bar (VdS CEA 4001)"
+        - "4 von 24 Rauchmeldern in Tiefgarage Ebene -2 zeigen Stoerung"
+        - "Brandschutzwand: R90-Schott fehlt bei Kabeldurchfuehrung"
+        - "Gesamtbewertung: 2 schwerwiegende und 3 mittlere Maengel"
+
+  - task_id: L4_energy_evaluation
+    level: L4
+    description: >
+      Erstelle eine Energiebewertung aus folgenden Messdaten:
+      Objekt: Buerogebaeude Klimahaus, Baujahr 2019, NGF 3.200 m2.
+      Energieausweis-Erneuerung faellig. Heizenergiekennwert gemessen
+      (Verbrauchsausweis, 3-Jahres-Mittel): 2022: 78 kWh/m2a, 2023:
+      72 kWh/m2a, 2024: 69 kWh/m2a. Stromkennwert: 2022: 42 kWh/m2a,
+      2023: 45 kWh/m2a, 2024: 48 kWh/m2a (Anstieg durch neues Rechenzentrum
+      im 1.OG seit 07/2023). Primaerenergiebedarf berechnet (Bedarfs-
+      ausweis nach GEG §82): 128 kWh/m2a. Anforderung GEG Referenz-
+      gebaeude: max 135 kWh/m2a — ERFUELLT. Waermepumpe (Sole/Wasser,
+      JAZ 4.2), PV-Anlage Dach 48 kWp (Eigenverbrauchsquote 62%).
+      U-Werte: Aussenwand 0.22 W/m2K, Dach 0.18, Fenster 0.9 (Dreifach).
+      Empfehlung: Server-Abwaerme fuer Heizungsunterstuetzung nutzen
+      (Einsparpotential 15 kWh/m2a Waerme). Effizienzklasse: B.
+    ground_truth:
+      required_claims:
+        - "Das Objekt ist Buerogebaeude Klimahaus, Baujahr 2019, NGF 3.200 m2"
+        - "Heizenergiekennwerte: 2022: 78, 2023: 72, 2024: 69 kWh/m2a (sinkend)"
+        - "Stromkennwerte: 2022: 42, 2023: 45, 2024: 48 kWh/m2a (steigend durch Rechenzentrum)"
+        - "Primaerenergiebedarf 128 kWh/m2a, GEG-Anforderung max 135 kWh/m2a — erfuellt"
+        - "Waermepumpe Sole/Wasser mit JAZ 4.2, PV-Anlage 48 kWp (62% Eigenverbrauch)"
+        - "U-Werte: Aussenwand 0.22, Dach 0.18, Fenster 0.9 W/m2K"
+        - "Empfehlung: Server-Abwaerme nutzen (Einsparpotential 15 kWh/m2a)"
+        - "Effizienzklasse B"
+
+  - task_id: L4_procurement_documentation
+    level: L4
+    description: >
+      Erstelle eine Vergabedokumentation aus folgendem Angebotsvergleich:
+      Projekt: Sanierung Grundschule Waldweg, oeffentlicher Auftraggeber.
+      Gewerk: Dachdecker- und Klempnerarbeiten (Los 3). Verfahren:
+      Oeffentliche Ausschreibung nach VOB/A §3. Submission: 01.04.2026,
+      12:00 Uhr. Eingegangene Angebote: 5 Bieter.
+      Bieter 1: DachProfi GmbH — 287.340 EUR brutto, alle Nachweise
+      vollstaendig, Referenzen 3 vergleichbare Schulen.
+      Bieter 2: Zimmerei Wald — 298.100 EUR, Eignungsnachweis
+      Haftpflicht fehlt (nachgefordert gem. §16a VOB/A, Frist 6 Tage).
+      Bieter 3: BedachungsCenter — 245.890 EUR, ABER Leistungsposition
+      12 (Dachrinnen Kupfer) mit Zink angeboten (Nebenangebot ohne
+      Kennzeichnung = Ausschluss gem. §16 Abs. 1 Nr. 1c VOB/A).
+      Bieter 4: Sued-Dach AG — 312.500 EUR, Angebot vollstaendig.
+      Bieter 5: Express-Bau — Angebot nach Submissionstermin eingegangen
+      (12:07 Uhr) = Ausschluss gem. §14a VOB/A.
+      Vergabevorschlag: Bieter 1 (DachProfi GmbH) als wirtschaftlichstes
+      Angebot. Wertung nach Einheitspreisspegel: keine Spekulations-
+      preise erkennbar. Vergabeakte abzuzeichnen durch Kaemmerer.
+    ground_truth:
+      required_claims:
+        - "Projekt Sanierung Grundschule Waldweg, oeffentliche Ausschreibung nach VOB/A §3"
+        - "Submission am 01.04.2026 um 12:00 Uhr, 5 Bieter"
+        - "Bieter 1 DachProfi GmbH: 287.340 EUR brutto, alle Nachweise vollstaendig"
+        - "Bieter 2 Zimmerei Wald: 298.100 EUR, Eignungsnachweis Haftpflicht fehlt (nachgefordert gem. §16a VOB/A)"
+        - "Bieter 3 BedachungsCenter: 245.890 EUR, Ausschluss wegen nicht gekennzeichnetem Nebenangebot (§16 Abs. 1 Nr. 1c VOB/A)"
+        - "Bieter 5 Express-Bau: Ausschluss wegen verspaetem Eingang (§14a VOB/A)"
+        - "Vergabevorschlag: DachProfi GmbH als wirtschaftlichstes Angebot"
+
+  - task_id: L4_noise_protection_assessment
+    level: L4
+    description: >
+      Erstelle eine Schallschutzbewertung fuer folgenden Neubau:
+      Objekt: Doppelhaushaelfte Ahornweg 22a/22b, Rohbaufertigstellung.
+      Messung nach DIN 4109 durch Akustikbuero SoundCheck am 03.04.2026.
+      Haustrennwand (Kalksandstein 24cm, 450 kg/m2):
+      Luftschalldaemmung R'w gemessen: 62 dB (Anforderung DIN 4109-1
+      Tab. 2 DHH: min 59 dB — ERFUELLT). Decke EG/OG (Stahlbeton 20cm):
+      Trittschallpegel L'n,w gemessen: 46 dB (Anforderung: max 46 dB —
+      GRENZWERTIG, 0 dB Reserve). Empfehlung: Trittschalldaemmung unter
+      Estrich von 30mm auf 40mm Mineralwolle erhoehen fuer erhoehten
+      Schallschutz (SSt III nach DIN 4109 Beiblatt 2: max 39 dB).
+      Fassade (WDVS 16cm auf KS 17,5cm): Schalldaemmung R'w,res = 48 dB
+      (Anforderung bei Laermpegelbreich IV: min 40 dB — ERFUELLT mit
+      8 dB Reserve). Installationsschall Wasserleitung: L_in = 27 dB(A)
+      (max 30 dB(A) — OK).
+    ground_truth:
+      required_claims:
+        - "Das Objekt ist Doppelhaushaelfte Ahornweg 22a/22b, Messung nach DIN 4109"
+        - "Haustrennwand: Luftschalldaemmung R'w = 62 dB (min 59 dB — erfuellt)"
+        - "Decke EG/OG: Trittschallpegel L'n,w = 46 dB (max 46 dB — grenzwertig, 0 dB Reserve)"
+        - "Empfehlung: Trittschalldaemmung von 30mm auf 40mm Mineralwolle erhoehen"
+        - "Fassade: R'w,res = 48 dB (min 40 dB — erfuellt mit 8 dB Reserve)"
+        - "Installationsschall Wasserleitung: L_in = 27 dB(A) (max 30 dB(A) — OK)"
+
+  - task_id: L4_facade_inspection_report
+    level: L4
+    description: >
+      Erstelle einen Fassadeninspektionsbericht mit Schadensbewertung:
+      Objekt: Wohnhochhaus Turmblick, 16 Stockwerke, Baujahr 1978,
+      WDVS-Sanierung 2005. Inspektion am 01.04.2026 per Seilzugangs-
+      technik durch Fassadenpruefer Mueller (FISAT Level 3).
+      Nordseite: Rissbildung im Putz in 8./9. OG, Rissbreite 0,3-1,2mm,
+      netzartig (typisch fuer Schwindrisse im Armierungsmoertel).
+      Feuchteschaden Sockelbereich 0-40cm, aufsteigende Feuchtigkeit.
+      Ostseite: 4 Befestigungsduebel WDVS sichtbar korrodiert (14.OG),
+      Daemmplatte locker. Algenbefall 3.-5. OG auf ca. 25 m2.
+      Suedseite: Anschluss Fensterbank/WDVS undicht bei 3 Fenstern
+      (7.OG), Feuchteeintrag in Daemmebene. Westseite: optisch unauffaellig.
+      Bewertung nach WTA-Merkblatt 2-13: Instandsetzungskategorie IC2
+      (umfangreiche Instandsetzung). Geschaetzte Kosten: Nordseite 45.000
+      EUR, Ost 28.000 EUR, Sued 12.000 EUR. Gesamt: 85.000 EUR.
+      Dringlichkeit: Ost (Duebel) SOFORT, Nord/Sued innerhalb 12 Monate.
+    ground_truth:
+      required_claims:
+        - "Das Objekt ist Wohnhochhaus Turmblick, 16 Stockwerke, Baujahr 1978, WDVS-Sanierung 2005"
+        - "Die Inspektion erfolgte per Seilzugangstechnik durch Fassadenpruefer Mueller (FISAT Level 3)"
+        - "Nordseite: Rissbildung im Putz 8./9. OG (0,3-1,2mm) und Feuchteschaden Sockelbereich"
+        - "Ostseite: 4 korrodierte Befestigungsduebel im 14.OG und Algenbefall 3.-5. OG (ca. 25 m2)"
+        - "Suedseite: Undichter Anschluss Fensterbank/WDVS bei 3 Fenstern im 7.OG"
+        - "Bewertung nach WTA-Merkblatt 2-13: Instandsetzungskategorie IC2"
+        - "Geschaetzte Kosten: Nordseite 45.000, Ost 28.000, Sued 12.000 EUR, Gesamt 85.000 EUR"
+        - "Dringlichkeit: Ost SOFORT, Nord/Sued innerhalb 12 Monate"
+
+  - task_id: L4_demolition_planning_report
+    level: L4
+    description: >
+      Erstelle einen Rueckbauplanungsbericht mit Schadstoffkataster:
+      Objekt: Ehem. Postgebaeude Bahnhofstrasse 1, Baujahr 1964,
+      5 Geschosse, ca. 4.200 m2 BGF. Geplanter Totalrueckbau fuer
+      Neubau. Schadstofferkundung am 28.03.2026 durch Gutachter
+      Dr. Gruen (DGUV-zertifiziert). Befunde: 1) Asbest: Asbestzement-
+      Fassadenplatten (chrysotil, geschaetzt 1.200 m2), Floorflexplatten
+      in 2 Treppenhaeusern (ca. 180 m2), Rohrisolierung Heizung UG
+      (Spritzasbest, ca. 45 lfm — Gefahrenstufe HOCH). 2) KMF:
+      Mineralwolledaemmung Dach und Fassade (Einbau vor 1996, alte
+      Mineralwolle = kuenstliche Mineralfaser TRGS 521). 3) PCB:
+      Dehnungsfugenabdichtung EG-3.OG, geschaetzt 120 lfm (Proben
+      ergaben 2.400 mg/kg — Sanierungsleitwert 300 mg/kg UEBERSCHRITTEN).
+      4) PAK: Teerpappe Flachdach ca. 850 m2.
+      Rueckbaukonzept: Selektiver Rueckbau in 4 Phasen. Phase 1:
+      Schadstoffsanierung (8 Wochen, Kosten 185.000 EUR). Phase 2:
+      Entkernung (3 Wochen, 45.000 EUR). Phase 3: Abbruch Tragwerk
+      (4 Wochen, 120.000 EUR). Phase 4: Kellerrueckbau und Verfuellung
+      (2 Wochen, 35.000 EUR). Gesamtkosten: 385.000 EUR.
+      Genehmigung: Abbruchantrag nach BauO, Anzeige nach GefStoffV §15a.
+    ground_truth:
+      required_claims:
+        - "Das Objekt ist das ehemalige Postgebaeude Bahnhofstrasse 1, Baujahr 1964, 5 Geschosse, 4.200 m2 BGF"
+        - "Schadstofferkundung durch Gutachter Dr. Gruen (DGUV-zertifiziert)"
+        - "Asbest: Fassadenplatten 1.200 m2, Floorflexplatten 180 m2, Spritzasbest Heizung UG 45 lfm (Gefahrenstufe HOCH)"
+        - "KMF: Mineralwolledaemmung Dach und Fassade (TRGS 521)"
+        - "PCB: Dehnungsfugenabdichtung 120 lfm, 2.400 mg/kg gemessen (Sanierungsleitwert 300 mg/kg ueberschritten)"
+        - "Selektiver Rueckbau in 4 Phasen: Schadstoffsanierung (185.000 EUR), Entkernung (45.000 EUR), Abbruch (120.000 EUR), Kellerrueckbau (35.000 EUR)"
+        - "Gesamtkosten 385.000 EUR"
+        - "Genehmigung: Abbruchantrag nach BauO, Anzeige nach GefStoffV §15a"
+
+  - task_id: L4_accessibility_audit
+    level: L4
+    description: >
+      Erstelle eine Barrierefreiheitspruefung nach DIN 18040 fuer
+      folgendes Objekt: Rathaus Neustadt, Sanierung 2025, Pruefung
+      am 30.03.2026 durch Sachverstaendige Dipl.-Ing. Vogel.
+      Pruefkriterien nach DIN 18040-1 (oeffentliche Gebaeude).
+      Eingang: Rampe vorhanden (Steigung 5,8% — max 6% nach DIN 18040-1
+      Abs. 4.3.7, KNAPP OK). Tuerbreite 95cm (min 90cm — OK).
+      Automatiktuer mit Taster in 85cm Hoehe (Soll: 85cm — OK).
+      Aufzug: Kabinengroesse 110x140cm (min 110x140 — GRENZWERTIG).
+      Bedienelemente 90-120cm Hoehe (OK). Sprachansage vorhanden (OK).
+      Sanitaer: Behinderten-WC EG: Bewegungsflaeche 155x155cm (min
+      150x150 — OK). Stuetzklappgriffe beidseitig (OK). ABER:
+      Notrufschnur endet bei 70cm ueber Boden (Soll: max 20cm nach
+      DIN 18040-1 Abs. 5.3.3 — NICHT ERFUELLT). Beschilderung:
+      Taktiles Leitsystem im Foyer fehlt (nach DIN 18040-1 Abs. 4.3.4
+      erforderlich). Ergebnis: 2 Maengel (Notruf, Leitsystem), Rest OK.
+    ground_truth:
+      required_claims:
+        - "Pruefung des Rathaus Neustadt am 30.03.2026 durch Sachverstaendige Dipl.-Ing. Vogel"
+        - "Pruefkriterien nach DIN 18040-1 fuer oeffentliche Gebaeude"
+        - "Rampe: Steigung 5,8% (max 6% nach DIN 18040-1 Abs. 4.3.7 — knapp erfuellt)"
+        - "Aufzug: Kabinengroesse 110x140cm (Minimum — grenzwertig)"
+        - "Notrufschnur endet bei 70cm statt max 20cm ueber Boden (DIN 18040-1 Abs. 5.3.3 — NICHT ERFUELLT)"
+        - "Taktiles Leitsystem im Foyer fehlt (DIN 18040-1 Abs. 4.3.4 erforderlich)"
+        - "Ergebnis: 2 Maengel (Notrufschnur und Leitsystem), Rest OK"

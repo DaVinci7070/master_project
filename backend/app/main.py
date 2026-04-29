@@ -41,6 +41,10 @@ async def init_db():
                 await _migrate_skill_columns(conn)
             if "skill_build_attempts" in existing_tables:
                 await _migrate_build_attempt_columns(conn)
+            # Auto-create new tables that don't exist yet
+            await conn.run_sync(
+                lambda sync_conn: Base.metadata.create_all(sync_conn, checkfirst=True)
+            )
         else:
             logger.info("Initializing database tables...")
             await conn.run_sync(Base.metadata.create_all)

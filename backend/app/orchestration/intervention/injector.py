@@ -4,7 +4,6 @@ import logging
 from typing import Literal, Optional
 
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sql.versioned_models import Skill, Prompt, Agent
 from app.models.sql.skill_build_models import SkillBinding
@@ -38,7 +37,7 @@ class CapabilityInjector:
     def __init__(
         self,
         topology_loader: TopologyLoader,
-        db: AsyncSession
+        session_factory,
     ):
         """
         Initialize capability injector.
@@ -48,7 +47,7 @@ class CapabilityInjector:
             db: Database session for verification
         """
         self.topology = topology_loader
-        self.db = db
+        self.session_factory = session_factory
 
     async def inject(
         self,
@@ -165,45 +164,46 @@ class CapabilityInjector:
         if not skill:
             return False, f"Skill {skill_id} not found in database"
 
-        # 2. Verify target agent exists and is active
-        agent_result = await self.db.execute(
-            select(Agent).where(Agent.id == plan.target_agent_id, Agent.is_active == True)
-        )
-        agent = agent_result.scalar_one_or_none()
-        if not agent:
-            logger.warning(
-                f"Target agent {plan.target_agent_id[:8]}... not found/inactive, "
-                "falling back to generic inject"
+        async with self.session_factory() as db:
+            # 2. Verify target agent exists and is active
+            agent_result = await db.execute(
+                select(Agent).where(Agent.id == plan.target_agent_id, Agent.is_active == True)
             )
-            return await self.inject(artifact_type="skill", artifact_id=skill_id)
+            agent = agent_result.scalar_one_or_none()
+            if not agent:
+                logger.warning(
+                    f"Target agent {plan.target_agent_id[:8]}... not found/inactive, "
+                    "falling back to generic inject"
+                )
+                return await self.inject(artifact_type="skill", artifact_id=skill_id)
 
-        # 3. Activate skill if inactive
-        if hasattr(skill, 'is_active') and not skill.is_active:
-            await self._activate_artifact("skill", skill_id)
+            # 3. Activate skill if inactive
+            if hasattr(skill, 'is_active') and not skill.is_active:
+                await self._activate_artifact("skill", skill_id)
 
-        # 4. Create skill binding
-        existing_binding = await self.db.execute(
-            select(SkillBinding).where(
-                SkillBinding.skill_id == skill_id,
-                SkillBinding.agent_id == plan.target_agent_id,
-                SkillBinding.is_active == True,
+            # 4. Create skill binding
+            existing_binding = await db.execute(
+                select(SkillBinding).where(
+                    SkillBinding.skill_id == skill_id,
+                    SkillBinding.agent_id == plan.target_agent_id,
+                    SkillBinding.is_active == True,
+                )
             )
-        )
-        if not existing_binding.scalar_one_or_none():
-            binding = SkillBinding(
-                skill_id=skill_id,
-                agent_id=plan.target_agent_id,
-                capability=capability,
-                binding_type="architect_plan",
-                is_active=True,
-            )
-            self.db.add(binding)
-            await self.db.commit()
-            logger.info(f"Created skill binding: skill={skill_id[:8]}... -> agent={plan.target_agent_id[:8]}...")
+            if not existing_binding.scalar_one_or_none():
+                binding = SkillBinding(
+                    skill_id=skill_id,
+                    agent_id=plan.target_agent_id,
+                    capability=capability,
+                    binding_type="architect_plan",
+                    is_active=True,
+                )
+                db.add(binding)
+                await db.commit()
+                logger.info(f"Created skill binding: skill={skill_id[:8]}... -> agent={plan.target_agent_id[:8]}...")
 
-        # 5. Apply dependency changes if specified
-        if plan.dependency_changes:
-            await self._apply_dependency_changes(plan.target_agent_id, plan.dependency_changes)
+            # 5. Apply dependency changes if specified
+            if plan.dependency_changes:
+                await self._apply_dependency_changes(plan.target_agent_id, plan.dependency_changes)
 
         # 6. Post-commit delay + topology reload
         await asyncio.sleep(self.POST_COMMIT_DELAY_MS / 1000)
@@ -237,29 +237,30 @@ class CapabilityInjector:
         changes: list[dict],
     ) -> None:
         """Apply DAG dependency changes from integration plan."""
-        agent_result = await self.db.execute(
-            select(Agent).where(Agent.id == agent_id)
-        )
-        agent = agent_result.scalar_one_or_none()
-        if not agent:
-            return
+        async with self.session_factory() as db:
+            agent_result = await db.execute(
+                select(Agent).where(Agent.id == agent_id)
+            )
+            agent = agent_result.scalar_one_or_none()
+            if not agent:
+                return
 
-        current_deps = list(agent.dependencies or [])
-        for change in changes:
-            action = change.get("action")
-            dep_id = change.get("agent_id")
-            if not dep_id:
-                continue
-            if action == "add" and dep_id not in current_deps:
-                current_deps.append(dep_id)
-            elif action == "remove" and dep_id in current_deps:
-                current_deps.remove(dep_id)
+            current_deps = list(agent.dependencies or [])
+            for change in changes:
+                action = change.get("action")
+                dep_id = change.get("agent_id")
+                if not dep_id:
+                    continue
+                if action == "add" and dep_id not in current_deps:
+                    current_deps.append(dep_id)
+                elif action == "remove" and dep_id in current_deps:
+                    current_deps.remove(dep_id)
 
-        await self.db.execute(
-            update(Agent).where(Agent.id == agent_id).values(dependencies=current_deps)
-        )
-        await self.db.commit()
-        logger.info(f"Updated dependencies for agent {agent_id[:8]}...: {current_deps}")
+            await db.execute(
+                update(Agent).where(Agent.id == agent_id).values(dependencies=current_deps)
+            )
+            await db.commit()
+            logger.info(f"Updated dependencies for agent {agent_id[:8]}...: {current_deps}")
 
     async def _verify_artifact_exists(
         self,
@@ -267,22 +268,23 @@ class CapabilityInjector:
         artifact_id: str
     ) -> Optional[Skill | Prompt | Agent]:
         """Verify artifact exists in database."""
-        if artifact_type == "skill":
-            result = await self.db.execute(
-                select(Skill).where(Skill.id == artifact_id)
-            )
-        elif artifact_type == "prompt":
-            result = await self.db.execute(
-                select(Prompt).where(Prompt.id == artifact_id)
-            )
-        elif artifact_type == "agent":
-            result = await self.db.execute(
-                select(Agent).where(Agent.id == artifact_id)
-            )
-        else:
-            return None
+        async with self.session_factory() as db:
+            if artifact_type == "skill":
+                result = await db.execute(
+                    select(Skill).where(Skill.id == artifact_id)
+                )
+            elif artifact_type == "prompt":
+                result = await db.execute(
+                    select(Prompt).where(Prompt.id == artifact_id)
+                )
+            elif artifact_type == "agent":
+                result = await db.execute(
+                    select(Agent).where(Agent.id == artifact_id)
+                )
+            else:
+                return None
 
-        return result.scalar_one_or_none()
+            return result.scalar_one_or_none()
 
     async def _activate_artifact(
         self,
@@ -290,19 +292,20 @@ class CapabilityInjector:
         artifact_id: str
     ) -> None:
         """Ensure artifact is marked as active."""
-        if artifact_type == "skill":
-            await self.db.execute(
-                update(Skill).where(Skill.id == artifact_id).values(is_active=True)
-            )
-        elif artifact_type == "prompt":
-            await self.db.execute(
-                update(Prompt).where(Prompt.id == artifact_id).values(is_active=True)
-            )
-        elif artifact_type == "agent":
-            await self.db.execute(
-                update(Agent).where(Agent.id == artifact_id).values(is_active=True)
-            )
-        await self.db.commit()
+        async with self.session_factory() as db:
+            if artifact_type == "skill":
+                await db.execute(
+                    update(Skill).where(Skill.id == artifact_id).values(is_active=True)
+                )
+            elif artifact_type == "prompt":
+                await db.execute(
+                    update(Prompt).where(Prompt.id == artifact_id).values(is_active=True)
+                )
+            elif artifact_type == "agent":
+                await db.execute(
+                    update(Agent).where(Agent.id == artifact_id).values(is_active=True)
+                )
+            await db.commit()
 
     async def _deactivate_artifact(
         self,
@@ -310,20 +313,21 @@ class CapabilityInjector:
         artifact_id: str
     ) -> None:
         """Deactivate artifact after failed injection."""
-        if artifact_type == "skill":
-            await self.db.execute(
-                update(Skill).where(Skill.id == artifact_id).values(is_active=False)
-            )
-        elif artifact_type == "prompt":
-            await self.db.execute(
-                update(Prompt).where(Prompt.id == artifact_id).values(is_active=False)
-            )
-        elif artifact_type == "agent":
-            await self.db.execute(
-                update(Agent).where(Agent.id == artifact_id).values(is_active=False)
-            )
-        await self.db.commit()
-        logger.info(f"Deactivated {artifact_type} {artifact_id[:8]}... after failed injection")
+        async with self.session_factory() as db:
+            if artifact_type == "skill":
+                await db.execute(
+                    update(Skill).where(Skill.id == artifact_id).values(is_active=False)
+                )
+            elif artifact_type == "prompt":
+                await db.execute(
+                    update(Prompt).where(Prompt.id == artifact_id).values(is_active=False)
+                )
+            elif artifact_type == "agent":
+                await db.execute(
+                    update(Agent).where(Agent.id == artifact_id).values(is_active=False)
+                )
+            await db.commit()
+            logger.info(f"Deactivated {artifact_type} {artifact_id[:8]}... after failed injection")
 
     async def _verify_capability_present(
         self,
@@ -394,30 +398,31 @@ class CapabilityInjector:
         """
         provisional = []
 
-        # Query skills with provisional metadata
-        skill_result = await self.db.execute(
-            select(Skill).where(Skill.is_active == True)
-        )
-        for skill in skill_result.scalars().all():
-            if skill.skill_metadata and skill.skill_metadata.get("provisional"):
-                provisional.append({
-                    "type": "skill",
-                    "id": skill.id,
-                    "name": skill.name,
-                    "created_at": str(skill.created_at) if hasattr(skill, 'created_at') else None
-                })
+        async with self.session_factory() as db:
+            # Query skills with provisional metadata
+            skill_result = await db.execute(
+                select(Skill).where(Skill.is_active == True)
+            )
+            for skill in skill_result.scalars().all():
+                if skill.skill_metadata and skill.skill_metadata.get("provisional"):
+                    provisional.append({
+                        "type": "skill",
+                        "id": skill.id,
+                        "name": skill.name,
+                        "created_at": str(skill.created_at) if hasattr(skill, 'created_at') else None
+                    })
 
-        # Query agents with provisional metadata
-        agent_result = await self.db.execute(
-            select(Agent).where(Agent.is_active == True)
-        )
-        for agent in agent_result.scalars().all():
-            if agent.agent_metadata and agent.agent_metadata.get("provisional"):
-                provisional.append({
-                    "type": "agent",
-                    "id": agent.id,
-                    "name": agent.name,
-                    "created_at": str(agent.created_at) if hasattr(agent, 'created_at') else None
-                })
+            # Query agents with provisional metadata
+            agent_result = await db.execute(
+                select(Agent).where(Agent.is_active == True)
+            )
+            for agent in agent_result.scalars().all():
+                if agent.agent_metadata and agent.agent_metadata.get("provisional"):
+                    provisional.append({
+                        "type": "agent",
+                        "id": agent.id,
+                        "name": agent.name,
+                        "created_at": str(agent.created_at) if hasattr(agent, 'created_at') else None
+                    })
 
         return provisional

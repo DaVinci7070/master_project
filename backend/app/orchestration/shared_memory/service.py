@@ -147,18 +147,24 @@ class SharedMemoryService:
         hypothesis_id: str,
         fact_id: str
     ) -> None:
-        """Add fact to hypothesis's contradicting_fact_ids."""
-        result = await self.db.execute(
-            select(Hypothesis).where(Hypothesis.id == hypothesis_id)
-        )
-        hypothesis = result.scalar_one_or_none()
+        """Add fact to hypothesis's contradicting_fact_ids.
 
-        if hypothesis:
-            contradicting_ids = list(hypothesis.contradicting_fact_ids or [])
-            if fact_id not in contradicting_ids:
-                contradicting_ids.append(fact_id)
-                hypothesis.contradicting_fact_ids = contradicting_ids
-                await self.db.commit()
+        Uses a dedicated session to avoid poisoning the main execution
+        session when called concurrently from parallel agents.
+        """
+        from app.dependencies.dependencies import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Hypothesis).where(Hypothesis.id == hypothesis_id)
+            )
+            hypothesis = result.scalar_one_or_none()
+
+            if hypothesis:
+                contradicting_ids = list(hypothesis.contradicting_fact_ids or [])
+                if fact_id not in contradicting_ids:
+                    contradicting_ids.append(fact_id)
+                    hypothesis.contradicting_fact_ids = contradicting_ids
+                    await session.commit()
 
     async def get_fact(self, fact_id: str) -> Optional[FactResponse]:
         """Get fact by ID from PostgreSQL."""
@@ -301,19 +307,23 @@ class SharedMemoryService:
             )
 
         # Get relations if requested (from PostgreSQL)
+        # Uses a dedicated session to avoid concurrent access to the main
+        # execution session when multiple agents build context in parallel.
         relations = []
         if query.include_relations and facts:
+            from app.dependencies.dependencies import AsyncSessionLocal
             fact_ids = [f["id"] for f in facts[:10]]
-            result = await self.db.execute(
-                select(Relation).where(
-                    (Relation.source_fact_id.in_(fact_ids)) |
-                    (Relation.target_fact_id.in_(fact_ids))
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(Relation).where(
+                        (Relation.source_fact_id.in_(fact_ids)) |
+                        (Relation.target_fact_id.in_(fact_ids))
+                    )
                 )
-            )
-            relations = [
-                RelationResponse.model_validate(r).model_dump()
-                for r in result.scalars().all()
-            ]
+                relations = [
+                    RelationResponse.model_validate(r).model_dump()
+                    for r in result.scalars().all()
+                ]
 
         # Apply context budget if max_tokens specified
         if max_tokens:

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     #   - Anthropic: "claude-3-5-sonnet-20241022"
     #   - vLLM: "hosted_vllm/model-name" (set llm_api_base)
     #   - Ollama: "ollama/llama3.2" (set llm_api_base)
-    llm_model: str = "gemini/gemini-3.1-flash-lite-preview"
+    llm_model: str = "gemini/gemini-3-flash-preview"
     llm_api_base: str | None = None
     llm_timeout: float = 120.0
 
@@ -51,9 +51,9 @@ class Settings(BaseSettings):
     # Skill Team settings
     skill_team_enabled: bool = True  # Enable team-based skill development
     skill_researcher_model: str | None = None  # Model for research (default: fast)
-    skill_architect_model: str | None = "claude-3-5-sonnet-20241022"  # Model for design
+    skill_architect_model: str | None = "gemini/gemini-3-flash-preview"  # Model for design
     skill_implementer_model: str | None = "gemini/gemini-3-flash-preview"  # Strong model for code generation
-    skill_reviewer_model: str | None = "claude-3-5-sonnet-20241022"  # Model for review
+    skill_reviewer_model: str | None = "gemini/gemini-3-flash-preview"  # Model for review
 
     # Semantic Validation settings
     semantic_validation_enabled: bool = True  # Enable semantic output validation
@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     intra_execution_self_healing_enabled: bool = True  # Enable self-healing during execution (on_unknown_tool -> build skill)
     self_healing_build_timeout: int = 180  # Max seconds for on-demand skill build
     self_healing_max_builds_per_execution: int = 3  # Max on-demand skill builds per execution
+
+    # Autonomous Evolution Loop (Sprint 1)
+    # When True, HybridOrchestrator schedules post-execution analyze -> prioritize
+    # -> decide -> improve chain as a fire-and-forget asyncio task.
+    # Critical feature flag for Ablation-Mode (Sprint 7 / Track 3).
+    autonomous_evolution_enabled: bool = True
+
+    # Ablation feature flags (Sprint 7)
+    shared_memory_enabled: bool = True     # Cross-run learning via SharedMemory
+    skill_reuse_enabled: bool = True       # Reuse previously built skills
 
     class Config:
         env_file = ".env"

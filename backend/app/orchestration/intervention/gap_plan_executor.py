@@ -9,7 +9,6 @@ Key difference from old approach:
 import logging
 from typing import Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.schemas.intervention_schemas import BuildResult
 from app.models.sql.gap_plan_models import GapStatus
@@ -39,7 +38,7 @@ class GapPlanExecutor:
         capability_builder: CapabilityBuilder,
         prompt_improver: AgentPromptImprover,
         injector: CapabilityInjector,
-        db: AsyncSession,
+        session_factory,
         failure_analyzer: Optional[FailureAnalyzer] = None,
     ):
         """
@@ -57,7 +56,7 @@ class GapPlanExecutor:
         self.builder = capability_builder
         self.prompt_improver = prompt_improver
         self.injector = injector
-        self.db = db
+        self.session_factory = session_factory
         self.failure_analyzer = failure_analyzer
 
     async def execute_plan(
@@ -154,18 +153,27 @@ class GapPlanExecutor:
 
                     # Feed success back to FailureAnalyzer
                     if self.failure_analyzer:
-                        await self.failure_analyzer.record_attempt(
-                            capability=affected_capability,
-                            code="",
-                            success=True,
-                            skill_id=result.artifact_id,
-                            strategy_id=getattr(result, '_strategy_id', None),
-                        )
-                        if result.artifact_type == "skill":
-                            await self.failure_analyzer.learn_from_success(
+                        try:
+                            await self.failure_analyzer.record_attempt(
                                 capability=affected_capability,
-                                pip_requirements=[],
                                 code="",
+                                success=True,
+                                skill_id=result.artifact_id,
+                                strategy_id=getattr(result, '_strategy_id', None),
+                            )
+                            if result.artifact_type == "skill":
+                                await self.failure_analyzer.learn_from_success(
+                                    capability=affected_capability,
+                                    pip_requirements=[],
+                                    code="",
+                                )
+                        except Exception as fa_err:
+                            # Session may be stale after topology reload in injector;
+                            # rollback so subsequent DB operations still work.
+                            async with self.session_factory() as db:
+                                await db.rollback()
+                            logger.warning(
+                                f"FailureAnalyzer record_attempt failed (non-fatal): {fa_err}"
                             )
 
                     logger.info(
@@ -186,22 +194,29 @@ class GapPlanExecutor:
                 failure_reason = result.failure_reason or "Unknown build failure"
 
                 if self.failure_analyzer:
-                    analysis = await self.failure_analyzer.analyze_failure(
-                        capability=affected_capability,
-                        code="",
-                        error_message=failure_reason,
-                    )
-                    await self.failure_analyzer.record_attempt(
-                        capability=affected_capability,
-                        code="",
-                        success=False,
-                        error_type=analysis.error_type,
-                        error_message=failure_reason,
-                        attempt_number=attempt_number,
-                        strategy_id=getattr(result, '_strategy_id', None),
-                        error_type_classified=analysis.error_type_classified,
-                        lesson_learned=analysis.lesson_learned,
-                    )
+                    try:
+                        analysis = await self.failure_analyzer.analyze_failure(
+                            capability=affected_capability,
+                            code="",
+                            error_message=failure_reason,
+                        )
+                        await self.failure_analyzer.record_attempt(
+                            capability=affected_capability,
+                            code="",
+                            success=False,
+                            error_type=analysis.error_type,
+                            error_message=failure_reason,
+                            attempt_number=attempt_number,
+                            strategy_id=getattr(result, '_strategy_id', None),
+                            error_type_classified=analysis.error_type_classified,
+                            lesson_learned=analysis.lesson_learned,
+                        )
+                    except Exception as fa_err:
+                        async with self.session_factory() as db:
+                            await db.rollback()
+                        logger.warning(
+                            f"FailureAnalyzer record_attempt failed (non-fatal): {fa_err}"
+                        )
 
                 await self.plan_service.update_gap_status(
                     plan_id=plan_id,

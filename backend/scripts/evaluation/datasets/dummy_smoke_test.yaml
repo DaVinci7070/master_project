@@ -1,0 +1,60 @@
+suite: dummy_smoke_test
+description: Minimal 3-task smoke test for harness validation
+tasks:
+  - task_id: L1_simple_daily_report
+    level: L1
+    description: >
+      Erstelle einen einfachen Tagesbericht aus folgendem Baustellenrundgang:
+      Datum 15.04.2026, Baustelle Musterstrasse 12. Wetter sonnig, 18 Grad.
+      Anwesend: Polier Mueller, 5 Arbeiter. Arbeiten: Betonage Decke EG
+      abgeschlossen, Bewehrung OG begonnen. Keine besonderen Vorkommnisse.
+    ground_truth:
+      required_claims:
+        - "Ein Tagesbericht wird erstellt"
+        - "Baustelle Musterstrasse 12 wird genannt"
+        - "Betonage wird erwaehnt"
+        - "Bewehrung wird erwaehnt"
+        - "Polier Mueller wird erwaehnt"
+        - "Wetterbedingungen werden beschrieben"
+        - "Das Datum ist enthalten"
+
+  - task_id: L2_defect_safety_combined
+    level: L2
+    description: >
+      Erstelle einen kombinierten Maengel- und Sicherheitsbericht aus
+      folgender Baubesprechung: Baustelle Industriepark Nord, 14.04.2026.
+      Teilnehmer: Bauleiter Schmidt, Sicherheitsingenieur Weber, Polier
+      Huber. Maengel: Riss in Stuetzwand Achse 3 (ca. 2mm breit, 1.5m
+      lang), fehlende Absperrung Grube Ost. Sicherheit: PSA-Kontrolle
+      ergab 2 Arbeiter ohne Helm, Geruest Nordseite nicht geprueft seit
+      3 Wochen. Massnahmen: Riss wird von Statiker begutachtet bis
+      18.04, Absperrung sofort nachruestung, Geruestpruefung beauftragt.
+    ground_truth:
+      required_claims:
+        - "Riss in der Stuetzwand wird beschrieben"
+        - "Fehlende Absperrung wird erwaehnt"
+        - "Statiker soll den Riss begutachten"
+        - "Sicherheitsaspekte werden behandelt"
+        - "Schmidt wird erwaehnt"
+        - "Weber wird erwaehnt"
+
+  - task_id: L3_progress_report_with_costs
+    level: L3
+    description: >
+      Erstelle einen Baufortschrittsbericht mit Kostenvergleich.
+      Baustelle: Wohnanlage Sonnenhof, Berichtszeitraum KW 15/2026.
+      Rohbau: 85% fertig (Plan: 90%), Verzoegerung durch Lieferengpass
+      Bewehrungsstahl. Haustechnik: 40% (Plan: 35%), voraus.
+      Kosten bisher: Rohbau 1.2 Mio EUR (Budget 1.35 Mio), Haustechnik
+      450k EUR (Budget 500k). Nachtrag: Zusaetzliche Bodenplattensanierung
+      35k EUR genehmigt. Naechste Schritte: Bewehrung OG 3 ab KW 16,
+      Fenstereinbau ab KW 17.
+    ground_truth:
+      required_claims:
+        - "Baustelle Sonnenhof wird genannt"
+        - "Rohbau-Fortschritt wird beschrieben"
+        - "Haustechnik-Fortschritt wird beschrieben"
+        - "Ein Nachtrag wird erwaehnt"
+        - "Bodenplattensanierung wird erwaehnt"
+        - "Budget oder Kostenvergleich wird dargestellt"
+        - "KW 16 als naechster Schritt wird erwaehnt"

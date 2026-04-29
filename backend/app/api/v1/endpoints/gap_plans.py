@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.dependencies import get_db_session
+from app.dependencies.dependencies import get_db_session, AsyncSessionLocal
 from app.services.gap_plan_service import GapPlanService
 from app.models.sql.gap_plan_models import GapPlanStatus, GapStatus
 
@@ -178,7 +178,7 @@ async def get_gap_plan(
     """
     log.info(f"Getting gap plan: {plan_id}")
 
-    service = GapPlanService(session)
+    service = GapPlanService(AsyncSessionLocal)
     plan = await service.get_plan(plan_id)
 
     if not plan:
@@ -201,7 +201,7 @@ async def get_current_gap_plan(
     """
     log.info(f"Getting current gap plan for challenge: {challenge_id}")
 
-    service = GapPlanService(session)
+    service = GapPlanService(AsyncSessionLocal)
 
     # Try to get active plan first
     plan = await service.get_active_plan(challenge_id)
@@ -231,7 +231,7 @@ async def get_gap_plan_history(
     """
     log.info(f"Getting gap plan history for challenge: {challenge_id}")
 
-    service = GapPlanService(session)
+    service = GapPlanService(AsyncSessionLocal)
     plans = await service.get_plan_history(challenge_id)
 
     return GapPlanHistoryResponse(
@@ -257,7 +257,7 @@ async def retry_gap(
     """
     log.info(f"Retrying gap: plan_id={plan_id}, gap_id={gap_id}, force={request.force}")
 
-    service = GapPlanService(session)
+    service = GapPlanService(AsyncSessionLocal)
     plan = await service.get_plan(plan_id)
 
     if not plan:
@@ -337,7 +337,7 @@ async def _rebuild_single_gap(
 
     async with AsyncSessionLocal() as session:
         try:
-            service = GapPlanService(session)
+            service = GapPlanService(AsyncSessionLocal)
 
             # Mark as building
             await service.update_gap_status(
@@ -378,7 +378,7 @@ async def _rebuild_single_gap(
                 async def llm_wrapper(messages):
                     return await llm_client.chat(messages)
 
-                improver = AgentPromptImprover(session, llm_fn=llm_wrapper)
+                improver = AgentPromptImprover(AsyncSessionLocal, llm_fn=llm_wrapper)
                 result = await improver.improve(
                     affected_capability=affected_capability,
                     gap_description=description,
@@ -386,7 +386,7 @@ async def _rebuild_single_gap(
                 )
             else:
                 # Use capability builder
-                builder = CapabilityBuilder(developer_team, session)
+                builder = CapabilityBuilder(developer_team, AsyncSessionLocal)
 
                 gap = CapabilityGap(
                     gap_type=GapType(gap_type) if gap_type in [e.value for e in GapType] else GapType.MISSING_SKILL,
@@ -404,9 +404,9 @@ async def _rebuild_single_gap(
 
             if result.success and result.artifact_id:
                 # Inject capability
-                topology_loader = TopologyLoader(session)
+                topology_loader = TopologyLoader(AsyncSessionLocal)
                 await topology_loader.load()
-                injector = CapabilityInjector(topology_loader, session)
+                injector = CapabilityInjector(topology_loader, AsyncSessionLocal)
 
                 inject_success, inject_msg = await injector.inject(
                     artifact_type=result.artifact_type,

@@ -13,16 +13,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
 from app.models.sql.intervention_models import BlockedChallenge
+from app.dependencies.dependencies import get_db_session
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_db_session():
-    """Mock database session."""
+    """Mock database session — autouse um DB-Verbindung zu verhindern."""
     session = AsyncMock(spec=AsyncSession)
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
-    session.execute = AsyncMock()
-    return session
+    # execute().scalar_one_or_none() für Lookups
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    mock_result.scalars.return_value.all.return_value = []
+    session.execute = AsyncMock(return_value=mock_result)
+
+    async def override_db():
+        yield session
+
+    app.dependency_overrides[get_db_session] = override_db
+    yield session
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture

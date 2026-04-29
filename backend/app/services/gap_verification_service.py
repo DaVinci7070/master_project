@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from typing import Optional, List, Tuple
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sql.versioned_models import Skill, Prompt, Agent
 from app.models.schemas.verification_schemas import (
@@ -39,9 +38,9 @@ class GapVerificationService:
     4. Return deterministic results
     """
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
-        self.plan_service = GapPlanService(db)
+    def __init__(self, session_factory):
+        self.session_factory = session_factory
+        self.plan_service = GapPlanService(session_factory)
 
     def _normalize_capability(self, name: str) -> str:
         """
@@ -76,26 +75,6 @@ class GapVerificationService:
 
         return intersection / union if union > 0 else 0.0
 
-    async def _get_agent_capabilities(self, agent) -> list[str]:
-        """Derive agent capabilities from assigned skills' applicability fields."""
-        from sqlalchemy import select
-        skills = (await self.db.execute(
-            select(Skill).where(Skill.is_active == True)
-        )).scalars().all()
-
-        caps = []
-        for skill in skills:
-            # Check if skill is assigned to this agent
-            meta = skill.skill_metadata or {}
-            target = meta.get("target_agent_id") or meta.get("assigned_agent")
-            if target and target != agent.id and target != agent.name:
-                continue
-            if skill.applicability:
-                caps.append(skill.applicability)
-            elif meta.get("affected_capability"):
-                caps.append(meta["affected_capability"])
-        return caps
-
     def _match_capability(
         self,
         required: str,
@@ -116,19 +95,36 @@ class GapVerificationService:
 
         # Contains match (one contains the other)
         if req_norm in avail_norm or avail_norm in req_norm:
-            # Score based on length ratio
             shorter = min(len(req_norm), len(avail_norm))
             longer = max(len(req_norm), len(avail_norm))
             score = shorter / longer if longer > 0 else 0
-            if score >= 0.6:  # At least 60% overlap
+            if score >= 0.6:
                 return True, "contains", score
 
         # Word overlap match
         overlap_score = self._calculate_word_overlap(required, available)
-        if overlap_score >= 0.5:  # At least 50% word overlap
+        if overlap_score >= 0.5:
             return True, "word_overlap", overlap_score
 
         return False, "none", 0.0
+
+    async def _get_agent_capabilities(self, agent, db) -> list[str]:
+        """Derive agent capabilities from assigned skills' applicability fields."""
+        skills = (await db.execute(
+            select(Skill).where(Skill.is_active == True)
+        )).scalars().all()
+
+        caps = []
+        for skill in skills:
+            meta = skill.skill_metadata or {}
+            target = meta.get("target_agent_id") or meta.get("assigned_agent")
+            if target and target != agent.id and target != agent.name:
+                continue
+            if skill.applicability:
+                caps.append(skill.applicability)
+            elif meta.get("affected_capability"):
+                caps.append(meta["affected_capability"])
+        return caps
 
     async def capability_exists(
         self,
@@ -149,122 +145,119 @@ class GapVerificationService:
         Returns:
             CapabilityExistsResult with provider details if found
         """
-        # Search Skills
-        result = await self.db.execute(
-            select(Skill).where(Skill.is_active == True)
-        )
-        skills = result.scalars().all()
-
-        for skill in skills:
-            # First check affected_capability in metadata
-            if skill.skill_metadata:
-                affected_cap = skill.skill_metadata.get("affected_capability")
-                if affected_cap:
-                    matches, match_type, score = self._match_capability(
-                        capability_name, affected_cap
-                    )
-                    if matches:
-                        logger.debug(
-                            f"Capability '{capability_name}' found in skill '{skill.name}' "
-                            f"(match_type={match_type}, score={score:.2f})"
-                        )
-                        return CapabilityExistsResult(
-                            capability_name=capability_name,
-                            exists=True,
-                            provider_id=skill.id,
-                            provider_type="skill",
-                            provider_name=skill.name,
-                            matched_capability=affected_cap,
-                            match_type=match_type,
-                            match_score=score,
-                        )
-
-            # Fallback: match by skill name (skill names are often derived from capabilities)
-            # e.g., "financial calculation" -> "skill_financial_calculation"
-            skill_name_normalized = skill.name.replace("skill_", "").replace("_", " ")
-            matches, match_type, score = self._match_capability(
-                capability_name, skill_name_normalized
+        async with self.session_factory() as db:
+            # Search Skills
+            result = await db.execute(
+                select(Skill).where(Skill.is_active == True)
             )
-            if matches and score >= 0.7:  # Higher threshold for name-based matching
-                logger.debug(
-                    f"Capability '{capability_name}' found by skill name '{skill.name}' "
-                    f"(match_type=name_{match_type}, score={score:.2f})"
-                )
-                return CapabilityExistsResult(
-                    capability_name=capability_name,
-                    exists=True,
-                    provider_id=skill.id,
-                    provider_type="skill",
-                    provider_name=skill.name,
-                    matched_capability=skill_name_normalized,
-                    match_type=f"name_{match_type}",
-                    match_score=score,
-                )
+            skills = result.scalars().all()
 
-        # Search Prompts
-        result = await self.db.execute(
-            select(Prompt).where(Prompt.is_active == True)
-        )
-        prompts = result.scalars().all()
-
-        for prompt in prompts:
-            if prompt.prompt_metadata:
-                affected_cap = prompt.prompt_metadata.get("affected_capability")
-                if affected_cap:
-                    matches, match_type, score = self._match_capability(
-                        capability_name, affected_cap
-                    )
-                    if matches:
-                        logger.debug(
-                            f"Capability '{capability_name}' found in prompt '{prompt.name}' "
-                            f"(match_type={match_type}, score={score:.2f})"
+            for skill in skills:
+                if skill.skill_metadata:
+                    affected_cap = skill.skill_metadata.get("affected_capability")
+                    if affected_cap:
+                        matches, match_type, score = self._match_capability(
+                            capability_name, affected_cap
                         )
-                        return CapabilityExistsResult(
-                            capability_name=capability_name,
-                            exists=True,
-                            provider_id=prompt.id,
-                            provider_type="prompt",
-                            provider_name=prompt.name,
-                            matched_capability=affected_cap,
-                            match_type=match_type,
-                            match_score=score,
-                        )
+                        if matches:
+                            logger.debug(
+                                f"Capability '{capability_name}' found in skill '{skill.name}' "
+                                f"(match_type={match_type}, score={score:.2f})"
+                            )
+                            return CapabilityExistsResult(
+                                capability_name=capability_name,
+                                exists=True,
+                                provider_id=skill.id,
+                                provider_type="skill",
+                                provider_name=skill.name,
+                                matched_capability=affected_cap,
+                                match_type=match_type,
+                                match_score=score,
+                            )
 
-        # Search Agents
-        result = await self.db.execute(
-            select(Agent).where(Agent.is_active == True)
-        )
-        agents = result.scalars().all()
-
-        for agent in agents:
-            # Derive capabilities from agent's assigned skills
-            agent_caps = await self._get_agent_capabilities(agent)
-            for agent_cap in agent_caps:
+                skill_name_normalized = skill.name.replace("skill_", "").replace("_", " ")
                 matches, match_type, score = self._match_capability(
-                    capability_name, agent_cap
+                    capability_name, skill_name_normalized
                 )
-                if matches:
+                if matches and score >= 0.7:
                     logger.debug(
-                        f"Capability '{capability_name}' found in agent '{agent.name}' "
-                        f"(match_type={match_type}, score={score:.2f})"
+                        f"Capability '{capability_name}' found by skill name '{skill.name}' "
+                        f"(match_type=name_{match_type}, score={score:.2f})"
                     )
                     return CapabilityExistsResult(
                         capability_name=capability_name,
                         exists=True,
-                        provider_id=agent.id,
-                        provider_type="agent",
-                        provider_name=agent.name,
-                        matched_capability=agent_cap,
-                        match_type=match_type,
+                        provider_id=skill.id,
+                        provider_type="skill",
+                        provider_name=skill.name,
+                        matched_capability=skill_name_normalized,
+                        match_type=f"name_{match_type}",
                         match_score=score,
                     )
 
-        # Not found
-        logger.debug(f"Capability '{capability_name}' not found in system")
-        return CapabilityExistsResult(
-            capability_name=capability_name,
-            exists=False,
-        )
+            # Search Prompts
+            result = await db.execute(
+                select(Prompt).where(Prompt.is_active == True)
+            )
+            prompts = result.scalars().all()
+
+            for prompt in prompts:
+                if prompt.prompt_metadata:
+                    affected_cap = prompt.prompt_metadata.get("affected_capability")
+                    if affected_cap:
+                        matches, match_type, score = self._match_capability(
+                            capability_name, affected_cap
+                        )
+                        if matches:
+                            logger.debug(
+                                f"Capability '{capability_name}' found in prompt '{prompt.name}' "
+                                f"(match_type={match_type}, score={score:.2f})"
+                            )
+                            return CapabilityExistsResult(
+                                capability_name=capability_name,
+                                exists=True,
+                                provider_id=prompt.id,
+                                provider_type="prompt",
+                                provider_name=prompt.name,
+                                matched_capability=affected_cap,
+                                match_type=match_type,
+                                match_score=score,
+                            )
+
+            # Search Agents
+            result = await db.execute(
+                select(Agent).where(Agent.is_active == True)
+            )
+            agents = result.scalars().all()
+
+            for agent in agents:
+                agent_caps = await self._get_agent_capabilities(agent, db)
+                for agent_cap in agent_caps:
+                    matches, match_type, score = self._match_capability(
+                        capability_name, agent_cap
+                    )
+                    if matches:
+                        logger.debug(
+                            f"Capability '{capability_name}' found in agent '{agent.name}' "
+                            f"(match_type={match_type}, score={score:.2f})"
+                        )
+                        return CapabilityExistsResult(
+                            capability_name=capability_name,
+                            exists=True,
+                            provider_id=agent.id,
+                            provider_type="agent",
+                            provider_name=agent.name,
+                            matched_capability=agent_cap,
+                            match_type=match_type,
+                            match_score=score,
+                        )
+
+            # Not found
+            logger.debug(f"Capability '{capability_name}' not found in system")
+            return CapabilityExistsResult(
+                capability_name=capability_name,
+                exists=False,
+            )
 
     async def verify_gap_closure(
         self,
@@ -291,7 +284,6 @@ class GapVerificationService:
                 verification_method="database_lookup",
             )
 
-        # Check if capability exists
         exists_result = await self.capability_exists(affected_capability)
 
         if exists_result.exists:

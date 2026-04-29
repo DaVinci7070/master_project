@@ -316,6 +316,80 @@ class LLMClient:
             original_error=last_error
         )
 
+    async def chat_structured_with_usage(
+        self,
+        messages: list[dict[str, str]],
+        response_model: Type[T],
+        temperature: float = 0.3,
+        max_tokens: int | None = None,
+        max_retries: int = 3,
+        **kwargs: Any,
+    ) -> tuple[T, dict[str, int]]:
+        """
+        Structured chat completion that also returns token usage.
+
+        Uses Instructor's create_with_completion() to get both the parsed
+        Pydantic model and the raw completion with usage data.
+
+        Returns:
+            Tuple of (response_model instance, usage dict).
+        """
+        last_error = None
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                response, completion = await self._instructor_client.chat.completions.create_with_completion(
+                    model=self.model,
+                    messages=messages,
+                    response_model=response_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    max_retries=max_retries,
+                    api_base=self.api_base,
+                    timeout=self.timeout,
+                    **kwargs,
+                )
+
+                usage = dict(completion.usage) if completion.usage else {}
+                return response, usage
+
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+
+                is_retryable = (
+                    "429" in error_str or
+                    "rate" in error_str or
+                    "resource_exhausted" in error_str or
+                    "quota" in error_str or
+                    "503" in error_str or
+                    "service unavailable" in error_str or
+                    "unavailable" in error_str or
+                    "502" in error_str or
+                    "bad gateway" in error_str or
+                    "504" in error_str or
+                    "timeout" in error_str
+                )
+
+                if is_retryable and attempt < self.max_retries:
+                    delay = self.retry_base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(
+                        f"Retryable error in structured+usage call (attempt {attempt + 1}/{self.max_retries + 1}), "
+                        f"retrying in {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    raise LLMError(
+                        f"Structured+usage LLM request failed: {e}",
+                        original_error=e
+                    ) from e
+
+        raise LLMError(
+            f"Structured+usage LLM request failed after {self.max_retries + 1} attempts: {last_error}",
+            original_error=last_error
+        )
+
     async def chat_stream(
         self,
         messages: list[dict[str, str]],

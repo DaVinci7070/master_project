@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.dependencies.dependencies import get_db_session
+from app.dependencies.dependencies import get_db_session, AsyncSessionLocal
 from app.models.sql.intervention_models import BlockedChallenge, UserSettings
 from app.models.schemas.analysis_schemas import (
     CapabilityAssessment,
@@ -248,6 +248,7 @@ class ChallengeResultsResponse(BaseModel):
     execution_results: Optional[dict] = None
     duration_ms: Optional[int] = None
     agents_executed: int = 0
+    tokens_total: Optional[int] = None
     completed_at: Optional[str] = None
 
 
@@ -361,7 +362,7 @@ async def analyze_challenge_direct(
     if route_decision == "developer_team" and assessment.gaps:
         # PRE-CHECK: Filter out gaps that are already satisfied by existing capabilities
         # This prevents rebuilding skills that already exist
-        verification_service = GapVerificationService(session)
+        verification_service = GapVerificationService(AsyncSessionLocal)
         remaining_gaps = []
 
         for gap in assessment.gaps:
@@ -647,7 +648,7 @@ Size: {len(content)} bytes
     await session.commit()
 
     # Check if system can handle this file type
-    verification_service = GapVerificationService(session)
+    verification_service = GapVerificationService(AsyncSessionLocal)
     gaps: list[CapabilityGap] = []
 
     # Capability needed based on file type
@@ -1102,7 +1103,7 @@ async def _run_challenge_execution(
     to avoid session lifecycle issues with background tasks.
     """
     from app.dependencies.dependencies import AsyncSessionLocal
-    from app.core.llm_client import LLMClient
+    from app.core.llm_client import LLMClient, create_embedding_fn
     from app.orchestration.orchestrators.hybrid_orchestrator import HybridOrchestrator
 
     log.info(f"Starting background execution: challenge_id={challenge_id}")
@@ -1111,7 +1112,8 @@ async def _run_challenge_execution(
         try:
             # Initialize orchestrator
             llm = LLMClient()
-            orchestrator = HybridOrchestrator(db=session, llm_client=llm)
+            embedding_fn = create_embedding_fn()
+            orchestrator = HybridOrchestrator(db=session, llm_client=llm, embedding_fn=embedding_fn, session_factory=AsyncSessionLocal)
             await orchestrator.initialize()
 
             # Execute via orchestrator
@@ -1232,6 +1234,7 @@ async def get_challenge_results(
         execution_results=execution_results,
         duration_ms=execution_results.get("duration_ms"),
         agents_executed=execution_results.get("agents_executed", 0),
+        tokens_total=execution_results.get("tokens_total"),
         completed_at=challenge.resolved_at.isoformat() if challenge.resolved_at else None,
     )
 
@@ -1411,7 +1414,7 @@ async def _run_capability_building(challenge_id: str) -> None:
 
             # Create intervention orchestrator with LLM and embedding support
             orchestrator = await create_intervention_orchestrator(
-                db=session,
+                session_factory=AsyncSessionLocal,
                 llm_fn=llm_fn,
                 embedding_fn=embedding_fn,
                 structured_llm_fn=structured_llm_fn,
@@ -1420,21 +1423,33 @@ async def _run_capability_building(challenge_id: str) -> None:
             # Process the challenge
             intervention_result = await orchestrator.process_blocked_challenge(challenge)
 
-            # Update based on result
+            # Update based on result — use status values the benchmark poller expects
+            built_ids = [
+                r.artifact_id for r in (intervention_result.built_capabilities or [])
+                if r.success and r.artifact_id
+            ]
             if intervention_result.route_decision == "execute":
                 challenge.build_plan_status = BuildPlanStatus.COMPLETED.value
-                challenge.status = "resolved"
-                challenge.resolved_at = datetime.now(timezone.utc)
+                challenge.status = "ready"
+                challenge.built_capability_ids = built_ids
                 log.info(f"Capability building successful: {challenge_id}")
+            elif built_ids:
+                challenge.build_plan_status = BuildPlanStatus.COMPLETED.value
+                challenge.status = "partially_ready"
+                challenge.built_capability_ids = built_ids
+                log.info(f"Capability building partial: {challenge_id}, built={len(built_ids)}")
             else:
                 challenge.build_plan_status = BuildPlanStatus.FAILED.value
-                challenge.status = "failed" if intervention_result.route_decision == "failed" else "queued"
-                log.warning(f"Capability building incomplete: {challenge_id}, decision={intervention_result.route_decision}")
+                challenge.status = "build_failed"
+                log.warning(f"Capability building failed: {challenge_id}, decision={intervention_result.route_decision}")
 
             await session.commit()
 
         except Exception as e:
             log.error(f"Capability building failed: challenge_id={challenge_id}, error={e}")
+
+            # Rollback the failed transaction before reusing the session
+            await session.rollback()
 
             # Update status to failed
             stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
@@ -1443,7 +1458,7 @@ async def _run_capability_building(challenge_id: str) -> None:
 
             if challenge:
                 challenge.build_plan_status = BuildPlanStatus.FAILED.value
-                challenge.status = "failed"
+                challenge.status = "build_failed"
                 failure_reasons = challenge.failure_reasons or []
                 failure_reasons.append(str(e))
                 challenge.failure_reasons = failure_reasons
@@ -1644,7 +1659,7 @@ async def _run_autonomous_skill_building(
             await session.commit()
 
             # Create skill builder
-            builder = AutonomousSkillBuilder(db=session)
+            builder = AutonomousSkillBuilder(session_factory=AsyncSessionLocal)
 
             built_skill_ids = []
             failed_capabilities = []

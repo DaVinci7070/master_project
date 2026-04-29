@@ -14,6 +14,8 @@ from app.api.v1.endpoints import (
     shared_memory,
     executions,
     gap_plans,
+    evolution,
+    evaluation,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -41,4 +43,10 @@ api_router.include_router(executions.router)
 
 # Gap Plan monitoring
 api_router.include_router(gap_plans.router)
+
+# Autonomous Evolution Loop (Sprint 1)
+api_router.include_router(evolution.router)
+
+# Evaluation Dashboard (Sprint 8)
+api_router.include_router(evaluation.router)
 

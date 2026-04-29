@@ -109,11 +109,12 @@ Your goal: Make the smallest change that addresses the finding while maintaining
 - Don't rewrite sections that are working correctly
 - Preserve the prompt's overall structure and voice
 
-**Schema preservation:**
-- Output format MUST remain identical
-- Do not add new required fields
-- Do not remove existing fields
-- Do not change field types or constraints
+**Schema evolution (when necessary):**
+- If the finding indicates that the output schema is missing important fields, you MAY propose schema changes
+- Set schema_impact to "added_fields" or "restructured" and include a schema_modification object
+- schema_modification should contain the updated output_schema (JSON Schema) and a rationale
+- Prefer adding optional fields over changing existing required fields
+- Only propose schema changes when the finding clearly requires structural changes to the output
 
 **Section awareness:**
 - Only modify sections relevant to the finding
@@ -131,14 +132,9 @@ Your goal: Make the smallest change that addresses the finding while maintaining
 - Surgical changes, not wholesale rewrites
 - Keep working sections unchanged
 
-**Don't change the output JSON schema:**
-- Field names must stay the same
-- Field types must stay the same
-- Required/optional status must stay the same
-
-**Don't add new required fields:**
-- This breaks existing integrations
-- Schema contracts are strict
+**Don't change existing required fields without strong justification:**
+- Renaming or removing existing fields breaks downstream agents
+- Adding new optional fields is safe and encouraged when needed
 
 **Don't remove existing sections:**
 - Unless explicitly allowed in preserve_sections
@@ -155,7 +151,8 @@ Return JSON with these fields:
 - **changes_made**: List of specific changes (e.g., ["Added explicit error handling in Guidelines", "Clarified field requirements in Output Format"])
 - **sections_modified**: Which sections were changed (e.g., ["Guidelines", "Output Format"])
 - **rationale**: Why these changes address the finding (connect changes to the identified issue)
-- **schema_impact**: How the output schema is affected (should always be "none" - if not, explain why)
+- **schema_impact**: How the output schema is affected ("none", "added_fields", or "restructured")
+- **schema_modification**: (optional) If schema_impact is not "none", include {"output_schema": {...}, "rationale": "..."}
 
 Example output structure:
 ```json

@@ -109,6 +109,19 @@ class GeneratedPrompt(BaseModel):
     )
 
 
+class SchemaModification(BaseModel):
+    """Schema changes proposed by prompt engineer when output structure needs updating."""
+    output_schema: Optional[dict] = Field(
+        None,
+        description="New output JSON Schema if fields need to be added/changed"
+    )
+    rationale: str = Field(
+        ...,
+        min_length=10,
+        description="Why schema change is needed"
+    )
+
+
 class PromptModification(BaseModel):
     """
     LLM output schema for prompt modification.
@@ -136,5 +149,9 @@ class PromptModification(BaseModel):
     )
     schema_impact: str = Field(
         ...,
-        description="How output schema is affected - should be 'none'"
+        description="How output schema is affected (none, added_fields, restructured)"
+    )
+    schema_modification: Optional[SchemaModification] = Field(
+        None,
+        description="Proposed schema changes if output structure needs updating"
     )

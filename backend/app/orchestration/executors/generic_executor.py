@@ -156,17 +156,28 @@ class GenericAgentExecutor:
             output = {"error": str(e), "success": False, "failure_type": "llm_error"}
 
         # 4.5 Graceful degradation: if agent says it can't handle the input, skip gracefully
-        output_str = json.dumps(output) if isinstance(output, dict) else str(output)
+        # Only check the 'result' field (the LLM's actual response), not the full output
+        # with artifacts/metadata that might contain false-positive matches.
+        check_str = ""
+        if isinstance(output, dict):
+            result_val = output.get("result", "")
+            check_str = result_val if isinstance(result_val, str) else ""
+        else:
+            check_str = str(output)
+
+        # Only match clear refusal language (not substrings in normal analysis)
         refusal_patterns = [
-            "cannot fulfill the request",
-            "not in the format",
-            "not relevant to my task",
-            "I am sorry, but I cannot",
+            "i cannot fulfill the request",
+            "i cannot fulfill this request",
+            "this input is not relevant to my task",
+            "i am sorry, but i cannot",
+            "i'm sorry, but i cannot",
+            "ich kann diese anfrage nicht bearbeiten",
         ]
-        if any(p.lower() in output_str.lower() for p in refusal_patterns):
+        if check_str and any(p in check_str.lower() for p in refusal_patterns):
             logger.warning(
                 f"Agent {agent.name} cannot process input — skipping gracefully. "
-                f"Response: {output_str[:200]}"
+                f"Response: {check_str[:200]}"
             )
             output = {
                 "skipped": True,
@@ -227,31 +238,44 @@ class GenericAgentExecutor:
 
         tool_call_count = 0
         tool_results_log: list[dict] = []
+        tokens_accumulated = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+        def _accumulate_tokens(usage: dict) -> None:
+            for key in tokens_accumulated:
+                tokens_accumulated[key] += usage.get(key, 0)
 
         while tool_call_count < MAX_TOOL_CALLS:
             # Call LLM with Instructor for structured, validated output
             try:
-                agent_response = await self.llm_client.chat_structured(
+                agent_response, usage = await self.llm_client.chat_structured_with_usage(
                     messages=messages,
                     response_model=AgentResponse,
                     temperature=agent.config.get("temperature", 0.2),
                     max_tokens=agent.config.get("max_tokens", 8192),
                     max_retries=2,
                 )
+                _accumulate_tokens(usage)
             except Exception as e:
                 # Fallback to raw text parsing if chat_structured fails
                 logger.warning(f"chat_structured failed, falling back to text parsing: {e}")
-                response = await self._call_llm_messages(messages, agent)
+                response, usage = await self._call_llm_messages(messages, agent)
+                _accumulate_tokens(usage)
                 agent_response = self.tool_detector.detect_from_text(response)
                 if agent_response is None:
-                    return self._parse_response(response, agent)
+                    parsed = self._parse_response(response, agent)
+                    if isinstance(parsed, dict):
+                        parsed.update({"tokens_total": tokens_accumulated["total_tokens"], "tokens_input": tokens_accumulated["prompt_tokens"], "tokens_output": tokens_accumulated["completion_tokens"]})
+                    return parsed
 
             if agent_response.is_final_answer():
                 logger.info(f"Agent {agent.name} returned final answer after {tool_call_count} tool calls")
                 return {
                     "result": agent_response.response or "",
                     "success": True,
-                    "tool_calls": tool_results_log
+                    "tool_calls": tool_results_log,
+                    "tokens_total": tokens_accumulated["total_tokens"],
+                    "tokens_input": tokens_accumulated["prompt_tokens"],
+                    "tokens_output": tokens_accumulated["completion_tokens"],
                 }
 
             if agent_response.is_tool_call():
@@ -299,6 +323,9 @@ class GenericAgentExecutor:
             "success": False,
             "failure_type": "tool_error",
             "tool_calls": tool_results_log,
+            "tokens_total": tokens_accumulated["total_tokens"],
+            "tokens_input": tokens_accumulated["prompt_tokens"],
+            "tokens_output": tokens_accumulated["completion_tokens"],
         }
 
     async def _execute_tool(
@@ -503,8 +530,12 @@ class GenericAgentExecutor:
         self,
         messages: list[dict[str, str]],
         agent: AgentNode
-    ) -> str:
-        """Call LLM with message history (for tool calling loop)."""
+    ) -> tuple[str, dict[str, int]]:
+        """Call LLM with message history (for tool calling loop).
+
+        Returns:
+            Tuple of (content, usage dict with token counts).
+        """
         temperature = agent.config.get("temperature", 0.2)
         max_tokens = agent.config.get("max_tokens", 8192)
 
@@ -514,7 +545,7 @@ class GenericAgentExecutor:
             max_tokens=max_tokens
         )
 
-        return response.content
+        return response.content, response.usage
 
     async def _self_heal_missing_tool(
         self,
@@ -639,6 +670,10 @@ class GenericAgentExecutor:
             Functional skills are offered as tools in the tool-calling loop.
             Planning skills are injected into the system prompt as reasoning guidelines.
         """
+        from app.core.config import settings as _settings
+        if not _settings.skill_reuse_enabled:
+            return [], []
+
         if not self.topology_loader or not agent.skill_ids:
             return [], []
 
@@ -724,13 +759,22 @@ class GenericAgentExecutor:
         # Get artifacts this agent consumes
         if agent.consumes_artifacts:
             artifacts = await self.artifact_pool.read(agent.consumes_artifacts)
+            if not artifacts:
+                logger.warning(
+                    f"Agent {agent.name} expected artifacts {agent.consumes_artifacts} "
+                    f"but none found in pool"
+                )
+            non_empty = [a for a in artifacts if a.payload and a.payload != {}]
+            if artifacts and not non_empty:
+                logger.warning(f"Agent {agent.name}: all consumed artifacts have empty payloads")
             context["artifacts"] = [
                 {"type": a.artifact_type, "payload": a.payload, "source": a.source_agent_id}
                 for a in artifacts
             ]
 
-        # Get shared memory context
-        if self.shared_memory:
+        # Get shared memory context (gated by ablation flag)
+        from app.core.config import settings as _settings
+        if self.shared_memory and _settings.shared_memory_enabled:
             try:
                 from app.models.schemas.shared_memory_schemas import SharedMemoryQuery
                 # Build query from artifacts content (task-relevant) instead of generic agent name
@@ -826,8 +870,12 @@ class GenericAgentExecutor:
         agent: AgentNode,
         skills: list[dict[str, Any]],
         planning_skills: Optional[list[dict[str, Any]]] = None
-    ) -> str:
-        """Call LLM with prompt and optional tools from skills."""
+    ) -> tuple[str, dict[str, int]]:
+        """Call LLM with prompt and optional tools from skills.
+
+        Returns:
+            Tuple of (content, usage dict with token counts).
+        """
         # Use agent config for LLM parameters if available
         temperature = agent.config.get("temperature", 0.2)
         max_tokens = agent.config.get("max_tokens", 8192)
@@ -868,7 +916,7 @@ class GenericAgentExecutor:
                 max_tokens=max_tokens
             )
 
-        return response.content
+        return response.content, response.usage
 
     def _parse_response(
         self,
@@ -900,11 +948,26 @@ class GenericAgentExecutor:
         Write output to session artifact pool.
 
         Per CONTEXT: Validate at write time.
+        Strips executor metadata (tokens, tool_calls, success) so downstream
+        agents receive only the meaningful content.
         """
+        # Extract meaningful content, stripping executor metadata
+        artifact_payload = self._extract_artifact_payload(output)
+
+        # Quality gate: reject empty/trivial artifacts
+        payload_text = json.dumps(artifact_payload)
+        if len(payload_text) < 20 or artifact_payload in ({}, {"text": ""}):
+            logger.warning(f"Agent {agent.name} produced empty artifact, skipping write")
+            raise ArtifactWriteError(
+                agent.agent_id,
+                agent.produces_artifacts[0] if agent.produces_artifacts else "unknown",
+                "Empty artifact payload",
+            )
+
         for artifact_type in agent.produces_artifacts:
             artifact = Artifact(
                 artifact_type=artifact_type,
-                payload=output,
+                payload=artifact_payload,
                 source_agent_id=agent.agent_id,
                 execution_id=execution_id
             )
@@ -913,6 +976,38 @@ class GenericAgentExecutor:
             except ValueError as e:
                 logger.error(f"Artifact validation failed: {e}")
                 raise ArtifactWriteError(agent.agent_id, artifact_type, str(e))
+
+    def _extract_artifact_payload(self, output: dict[str, Any]) -> dict[str, Any]:
+        """
+        Extract meaningful content from executor output for artifact storage.
+
+        Strips metadata keys (tokens_*, tool_calls, success, failure_type) so
+        downstream agents get clean data.  If 'result' is a JSON string, parse it.
+        """
+        _METADATA_KEYS = {
+            "success", "tool_calls", "tokens_total", "tokens_input",
+            "tokens_output", "failure_type", "agent_id", "agent_name",
+        }
+
+        # If output has a 'result' key, that's the meaningful content
+        result_val = output.get("result")
+        if result_val is not None:
+            # Try to parse JSON string into dict
+            if isinstance(result_val, str):
+                try:
+                    parsed = json.loads(result_val)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except (json.JSONDecodeError, ValueError):
+                    pass
+                # Return as text wrapper
+                return {"text": result_val}
+            elif isinstance(result_val, dict):
+                return result_val
+
+        # No 'result' key — strip metadata and return the rest
+        cleaned = {k: v for k, v in output.items() if k not in _METADATA_KEYS}
+        return cleaned if cleaned else output
 
     async def _write_to_shared_memory(
         self,
@@ -994,34 +1089,37 @@ class GenericAgentExecutor:
             # Get test cases if provided
             test_cases = output.get("test_cases", [])
 
-            # Check if skill with same name already exists
-            repo = SkillRepository(self.db)
-            existing = await repo.get_by_name(skill_name)
-            if existing:
-                logger.info(f"Skill '{skill_name}' already exists (id={existing.id}), skipping creation")
-                return
+            # Use a dedicated session to avoid poisoning the main execution
+            # session when called concurrently from parallel agents.
+            from app.dependencies.dependencies import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                repo = SkillRepository(session)
+                existing = await repo.get_by_name(skill_name)
+                if existing:
+                    logger.info(f"Skill '{skill_name}' already exists (id={existing.id}), skipping creation")
+                    return
 
-            # Create skill via service
-            service = SkillService(repository=repo)
-            skill_data = {
-                "name": skill_name,
-                "description": skill_description,
-                "code": code,
-                "test_cases": test_cases,
-                "is_active": False,  # Start inactive, activate after manual review or test pass
-                "skill_metadata": {
-                    "source": "auto_created",
-                    "execution_id": execution_id,
-                    "created_by": "tool_builder"
+                # Create skill via service
+                service = SkillService(repository=repo)
+                skill_data = {
+                    "name": skill_name,
+                    "description": skill_description,
+                    "code": code,
+                    "test_cases": test_cases,
+                    "is_active": False,  # Start inactive, activate after manual review or test pass
+                    "skill_metadata": {
+                        "source": "auto_created",
+                        "execution_id": execution_id,
+                        "created_by": "tool_builder"
+                    }
                 }
-            }
 
-            skill = await service.create(skill_data, validate=bool(test_cases))
-            logger.info(f"Auto-created skill '{skill_name}' (id={skill.id}, active={skill.is_active})")
+                skill = await service.create(skill_data, validate=bool(test_cases))
+                logger.info(f"Auto-created skill '{skill_name}' (id={skill.id}, active={skill.is_active})")
 
-            # Add skill ID to output for reference
-            output["created_skill_id"] = skill.id
-            output["created_skill_name"] = skill_name
+                # Add skill ID to output for reference
+                output["created_skill_id"] = skill.id
+                output["created_skill_name"] = skill_name
 
         except Exception as e:
             logger.error(f"Failed to auto-create skill: {e}")

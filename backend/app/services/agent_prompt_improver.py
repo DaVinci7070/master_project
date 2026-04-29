@@ -16,7 +16,7 @@ import uuid
 from typing import Optional, Callable, Awaitable
 
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.sql.versioned_models import Agent, Prompt
 from app.models.schemas.intervention_schemas import BuildResult
@@ -66,7 +66,7 @@ class AgentPromptImprover:
 
     def __init__(
         self,
-        db: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
         llm_fn: Optional[Callable[[list[dict]], Awaitable[str]]] = None
     ):
         """
@@ -76,7 +76,7 @@ class AgentPromptImprover:
             db: Database session
             llm_fn: Function to call LLM (messages -> response text)
         """
-        self.db = db
+        self.session_factory = session_factory
         self._call_llm = llm_fn
 
     async def improve(
@@ -156,24 +156,26 @@ class AgentPromptImprover:
                 },
                 is_active=True
             )
-            self.db.add(new_prompt)
 
-            # 5. Deactivate old prompt version
-            await self.db.execute(
-                update(Prompt)
-                .where(Prompt.id == current_prompt.id)
-                .values(is_active=False)
-            )
+            async with self.session_factory() as db:
+                db.add(new_prompt)
 
-            # 6. Update agent to use new prompt
-            await self.db.execute(
-                update(Agent)
-                .where(Agent.id == agent.id)
-                .values(prompt_id=new_prompt.id)
-            )
+                # 5. Deactivate old prompt version
+                await db.execute(
+                    update(Prompt)
+                    .where(Prompt.id == current_prompt.id)
+                    .values(is_active=False)
+                )
 
-            await self.db.commit()
-            await self.db.refresh(new_prompt)
+                # 6. Update agent to use new prompt
+                await db.execute(
+                    update(Agent)
+                    .where(Agent.id == agent.id)
+                    .values(prompt_id=new_prompt.id)
+                )
+
+                await db.commit()
+                await db.refresh(new_prompt)
 
             # 7. Log the change
             await self._log_prompt_improvement(
@@ -220,10 +222,10 @@ class AgentPromptImprover:
         normalized = normalized.replace('_', ' ').replace('-', ' ')
         return ' '.join(normalized.split())
 
-    async def _get_agent_capabilities(self, agent) -> list[str]:
+    async def _get_agent_capabilities(self, agent, db: AsyncSession) -> list[str]:
         """Derive agent capabilities from assigned skills' applicability fields."""
         from app.models.sql.versioned_models import Skill
-        skills = (await self.db.execute(
+        skills = (await db.execute(
             select(Skill).where(Skill.is_active == True)
         )).scalars().all()
 
@@ -248,67 +250,69 @@ class AgentPromptImprover:
 
         Uses word overlap scoring to find the best match.
         """
-        result = await self.db.execute(
-            select(Agent).where(Agent.is_active == True)
-        )
-        agents = result.scalars().all()
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(Agent).where(Agent.is_active == True)
+            )
+            agents = result.scalars().all()
 
-        if not agents:
-            return None
+            if not agents:
+                return None
 
-        cap_normalized = self._normalize_capability(affected_capability)
-        cap_words = set(cap_normalized.split())
+            cap_normalized = self._normalize_capability(affected_capability)
+            cap_words = set(cap_normalized.split())
 
-        best_agent = None
-        best_score = 0.0
+            best_agent = None
+            best_score = 0.0
 
-        for agent in agents:
-            agent_caps = await self._get_agent_capabilities(agent)
+            for agent in agents:
+                agent_caps = await self._get_agent_capabilities(agent, db)
 
-            for agent_cap in agent_caps:
-                agent_cap_normalized = self._normalize_capability(agent_cap)
-                agent_words = set(agent_cap_normalized.split())
+                for agent_cap in agent_caps:
+                    agent_cap_normalized = self._normalize_capability(agent_cap)
+                    agent_words = set(agent_cap_normalized.split())
 
-                # Calculate word overlap
-                if cap_words and agent_words:
-                    overlap = len(cap_words & agent_words)
-                    union = len(cap_words | agent_words)
-                    score = overlap / union if union > 0 else 0
+                    # Calculate word overlap
+                    if cap_words and agent_words:
+                        overlap = len(cap_words & agent_words)
+                        union = len(cap_words | agent_words)
+                        score = overlap / union if union > 0 else 0
 
-                    # Boost for containment
-                    if cap_normalized in agent_cap_normalized or agent_cap_normalized in cap_normalized:
-                        score = max(score, 0.7)
+                        # Boost for containment
+                        if cap_normalized in agent_cap_normalized or agent_cap_normalized in cap_normalized:
+                            score = max(score, 0.7)
 
-                    if score > best_score:
-                        best_score = score
+                        if score > best_score:
+                            best_score = score
+                            best_agent = agent
+
+                # Also check agent name
+                agent_name_words = set(self._normalize_capability(agent.name).split())
+                name_overlap = len(cap_words & agent_name_words)
+                if name_overlap > 0:
+                    name_score = 0.3 + (name_overlap * 0.1)
+                    if name_score > best_score:
+                        best_score = name_score
                         best_agent = agent
 
-            # Also check agent name
-            agent_name_words = set(self._normalize_capability(agent.name).split())
-            name_overlap = len(cap_words & agent_name_words)
-            if name_overlap > 0:
-                name_score = 0.3 + (name_overlap * 0.1)
-                if name_score > best_score:
-                    best_score = name_score
-                    best_agent = agent
+            if best_agent:
+                logger.debug(
+                    f"Found agent '{best_agent.name}' for capability '{affected_capability}' "
+                    f"(score={best_score:.2f})"
+                )
 
-        if best_agent:
-            logger.debug(
-                f"Found agent '{best_agent.name}' for capability '{affected_capability}' "
-                f"(score={best_score:.2f})"
-            )
-
-        return best_agent if best_score >= 0.2 else None
+            return best_agent if best_score >= 0.2 else None
 
     async def _get_agent_prompt(self, agent: Agent) -> Optional[Prompt]:
         """Get the agent's current prompt."""
         if not agent.prompt_id:
             return None
 
-        result = await self.db.execute(
-            select(Prompt).where(Prompt.id == agent.prompt_id)
-        )
-        return result.scalar_one_or_none()
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(Prompt).where(Prompt.id == agent.prompt_id)
+            )
+            return result.scalar_one_or_none()
 
     async def _generate_improved_prompt(
         self,
@@ -390,9 +394,10 @@ Output ONLY the prompt text."""}
             },
             is_active=True
         )
-        self.db.add(prompt)
-        await self.db.commit()
-        await self.db.refresh(prompt)
+        async with self.session_factory() as db:
+            db.add(prompt)
+            await db.commit()
+            await db.refresh(prompt)
 
         duration = time.time() - start_time
         logger.info(
@@ -452,17 +457,18 @@ Output ONLY the prompt text."""}
             },
             is_active=True
         )
-        self.db.add(prompt)
+        async with self.session_factory() as db:
+            db.add(prompt)
 
-        # Update agent with new prompt
-        await self.db.execute(
-            update(Agent)
-            .where(Agent.id == agent.id)
-            .values(prompt_id=prompt.id)
-        )
+            # Update agent with new prompt
+            await db.execute(
+                update(Agent)
+                .where(Agent.id == agent.id)
+                .values(prompt_id=prompt.id)
+            )
 
-        await self.db.commit()
-        await self.db.refresh(prompt)
+            await db.commit()
+            await db.refresh(prompt)
 
         duration = time.time() - start_time
         logger.info(
@@ -489,20 +495,21 @@ Output ONLY the prompt text."""}
         """Log prompt improvement in topology change log."""
         try:
             from app.services.topology_service import TopologyService
-            topology_service = TopologyService(self.db)
-            await topology_service.log_agent_updated(
-                agent=agent,
-                previous_state={
-                    "prompt_id": old_prompt_id,
-                },
-                source="system_generated",
-                triggered_by=f"weak_prompt:{affected_capability}",
-                details={
-                    "modification_type": "prompt_improved",
-                    "old_prompt_id": old_prompt_id,
-                    "new_prompt_id": new_prompt_id,
-                    "affected_capability": affected_capability,
-                }
-            )
+            async with self.session_factory() as db:
+                topology_service = TopologyService(db)
+                await topology_service.log_agent_updated(
+                    agent=agent,
+                    previous_state={
+                        "prompt_id": old_prompt_id,
+                    },
+                    source="system_generated",
+                    triggered_by=f"weak_prompt:{affected_capability}",
+                    details={
+                        "modification_type": "prompt_improved",
+                        "old_prompt_id": old_prompt_id,
+                        "new_prompt_id": new_prompt_id,
+                        "affected_capability": affected_capability,
+                    }
+                )
         except Exception as e:
             logger.warning(f"Failed to log prompt improvement: {e}")

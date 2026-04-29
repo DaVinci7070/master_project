@@ -64,30 +64,17 @@ class InterventionOrchestrator:
         pre_execution_orchestrator: PreExecutionOrchestrator,
         gap_plan_service: GapPlanService,
         gap_plan_executor: GapPlanExecutor,
-        db: AsyncSession,
+        session_factory,
         notify_fn: Optional[Callable[[dict], Awaitable[None]]] = None
     ):
-        """
-        Initialize intervention orchestrator.
-
-        Args:
-            queue_manager: BlockedChallengeQueue for challenge CRUD
-            capability_builder: CapabilityBuilder for gap closure
-            injector: CapabilityInjector for topology updates
-            pre_execution_orchestrator: PreExecutionOrchestrator for re-assessment
-            gap_plan_service: Service for gap plan CRUD
-            gap_plan_executor: Executor for gap plans
-            db: Database session
-            notify_fn: Optional async function to send user notifications
-        """
         self.queue = queue_manager
         self.builder = capability_builder
         self.injector = injector
         self.analyzer = pre_execution_orchestrator
         self.plan_service = gap_plan_service
         self.plan_executor = gap_plan_executor
-        self.verifier = GapVerificationService(db)  # NEW: Verification instead of re-analysis
-        self.db = db
+        self.verifier = GapVerificationService(session_factory)
+        self.session_factory = session_factory
         self._notify_fn = notify_fn
 
     async def process_blocked_challenge(
@@ -399,25 +386,26 @@ class InterventionOrchestrator:
         from sqlalchemy import select
         from app.models.sql.versioned_models import Skill, Prompt, Agent
 
-        result = await self.db.execute(
-            select(Skill).where(Skill.id == artifact_id)
-        )
-        if result.scalar_one_or_none():
-            return "skill"
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(Skill).where(Skill.id == artifact_id)
+            )
+            if result.scalar_one_or_none():
+                return "skill"
 
-        result = await self.db.execute(
-            select(Prompt).where(Prompt.id == artifact_id)
-        )
-        if result.scalar_one_or_none():
-            return "prompt"
+            result = await db.execute(
+                select(Prompt).where(Prompt.id == artifact_id)
+            )
+            if result.scalar_one_or_none():
+                return "prompt"
 
-        result = await self.db.execute(
-            select(Agent).where(Agent.id == artifact_id)
-        )
-        if result.scalar_one_or_none():
-            return "agent"
+            result = await db.execute(
+                select(Agent).where(Agent.id == artifact_id)
+            )
+            if result.scalar_one_or_none():
+                return "agent"
 
-        return None
+            return None
 
     async def _notify_user_resolved(
         self,
@@ -596,7 +584,7 @@ class InterventionOrchestrator:
 
 
 async def create_intervention_orchestrator(
-    db: AsyncSession,
+    session_factory=None,
     llm_fn: Optional[Callable[[list[dict], dict], Awaitable[str]]] = None,
     embedding_fn: Optional[Callable[[str], Awaitable[list[float]]]] = None,
     structured_llm_fn: Optional[Callable] = None,
@@ -605,13 +593,8 @@ async def create_intervention_orchestrator(
     """
     Factory function to create fully-wired InterventionOrchestrator.
 
-    Creates all dependencies (TopologyLoader, SharedMemory, DeveloperTeam, etc.)
-    and wires them together.
-
-    REFACTORED: Now includes GapPlanService, AgentPromptImprover, and GapPlanExecutor.
-
     Args:
-        db: Database session
+        session_factory: Session-Factory für DB-Zugriff (default: AsyncSessionLocal)
         llm_fn: Async LLM function
         embedding_fn: Async embedding function
         notify_fn: Async notification function
@@ -622,6 +605,7 @@ async def create_intervention_orchestrator(
     import os
 
     from app.core.llm_client import LLMClient
+    from app.dependencies.dependencies import AsyncSessionLocal
     from app.orchestration.topology.loader import TopologyLoader
     from app.orchestration.shared_memory.service import SharedMemoryService
     from app.orchestration.shared_memory.qdrant_adapter import SharedMemoryQdrantAdapter
@@ -630,29 +614,37 @@ async def create_intervention_orchestrator(
     from app.services.developer_team_orchestrator import DeveloperTeamOrchestrator
     from app.services.agent_spawner_service import AgentSpawnerService
     from app.services.runtime_agent_registry import RuntimeAgentRegistry
-    from qdrant_client import QdrantClient
 
-    # Create LLM client
+    if session_factory is None:
+        session_factory = AsyncSessionLocal
+
     llm_client = LLMClient()
 
-    # Create Qdrant adapter
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
-    qdrant_client = QdrantClient(url=qdrant_url)
-    qdrant_adapter = SharedMemoryQdrantAdapter(qdrant_client)
-    await qdrant_adapter.ensure_collections()
+    # Qdrant-Adapter (optional — SharedMemory nicht essentiell für Builds)
+    qdrant_adapter = None
+    shared_memory = None
+    try:
+        from qdrant_client import QdrantClient
+        qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+        qdrant_client = QdrantClient(url=qdrant_url)
+        qdrant_adapter = SharedMemoryQdrantAdapter(qdrant_client)
+        await qdrant_adapter.ensure_collections()
 
-    # Create services
-    topology_loader = TopologyLoader(db)
+        # SharedMemory bekommt eigene Session (TODO: auf Factory umbauen)
+        sm_db = session_factory()
+        shared_memory = SharedMemoryService(
+            db=sm_db,
+            qdrant_adapter=qdrant_adapter,
+            context_manager=ContextBudgetManager(),
+            embedding_fn=embedding_fn
+        )
+    except Exception as e:
+        logger.warning(f"Qdrant nicht erreichbar, SharedMemory deaktiviert: {e}")
+
+    topology_loader = TopologyLoader(session_factory)
     await topology_loader.load()
 
-    shared_memory = SharedMemoryService(
-        db=db,
-        qdrant_adapter=qdrant_adapter,
-        context_manager=ContextBudgetManager(),
-        embedding_fn=embedding_fn
-    )
-
-    # Create Developer Team components
+    # Developer Team
     registry = RuntimeAgentRegistry(max_concurrent_agents=5)
     spawner = AgentSpawnerService(registry, llm_client)
     developer_team = DeveloperTeamOrchestrator(
@@ -661,7 +653,7 @@ async def create_intervention_orchestrator(
         registry=registry
     )
 
-    # Create Pre-Execution Orchestrator
+    # Pre-Execution Orchestrator
     pre_execution = PreExecutionOrchestrator(
         topology_loader=topology_loader,
         shared_memory=shared_memory,
@@ -669,31 +661,28 @@ async def create_intervention_orchestrator(
         structured_llm_fn=structured_llm_fn,
     )
 
-    # Create Intervention components
-    queue_manager = BlockedChallengeQueue(db)
-    capability_builder = CapabilityBuilder(developer_team, db)
-    injector = CapabilityInjector(topology_loader, db)
+    # Intervention-Komponenten
+    queue_manager = BlockedChallengeQueue(session_factory)
+    capability_builder = CapabilityBuilder(developer_team, session_factory)
+    injector = CapabilityInjector(topology_loader, session_factory)
+    gap_plan_service = GapPlanService(session_factory)
 
-    # Create Gap Plan components (new)
-    gap_plan_service = GapPlanService(db)
-
-    # Create LLM wrapper for AgentPromptImprover
     async def llm_wrapper(messages: list[dict]) -> str:
         if llm_fn:
             return await llm_fn(messages, {})
         return ""
 
-    prompt_improver = AgentPromptImprover(db, llm_fn=llm_wrapper)
+    prompt_improver = AgentPromptImprover(session_factory, llm_fn=llm_wrapper)
 
     from app.services.failure_analyzer import FailureAnalyzer
-    failure_analyzer = FailureAnalyzer(db, llm_client)
+    failure_analyzer = FailureAnalyzer(session_factory, llm_client)
 
     gap_plan_executor = GapPlanExecutor(
         gap_plan_service=gap_plan_service,
         capability_builder=capability_builder,
         prompt_improver=prompt_improver,
         injector=injector,
-        db=db,
+        session_factory=session_factory,
         failure_analyzer=failure_analyzer,
     )
 
@@ -704,6 +693,6 @@ async def create_intervention_orchestrator(
         pre_execution_orchestrator=pre_execution,
         gap_plan_service=gap_plan_service,
         gap_plan_executor=gap_plan_executor,
-        db=db,
+        session_factory=session_factory,
         notify_fn=notify_fn
     )

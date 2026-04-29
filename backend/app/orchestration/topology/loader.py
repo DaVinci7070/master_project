@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select, update
 
 from app.orchestration.topology.models import Topology, AgentNode, ValidationResult
@@ -31,7 +31,7 @@ class TopologyLoader:
 
     def __init__(
         self,
-        db: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
         validator: Optional[TopologyValidator] = None,
         ab_test_service: Optional["ABTestService"] = None
     ):
@@ -43,8 +43,7 @@ class TopologyLoader:
             validator: Topology validator (creates default if not provided)
             ab_test_service: A/B test service for prompt swap validation (optional)
         """
-        self.db = db
-        self.repository = TopologyRepository(db)
+        self.session_factory = session_factory
         self.validator = validator or TopologyValidator()
         self.ab_test_service = ab_test_service
 
@@ -74,10 +73,19 @@ class TopologyLoader:
             logger.debug("Using cached topology")
             return self._cached_topology, self._cached_validation
 
+        return await self._load_from_db()
+
+    async def _load_from_db(self) -> tuple[Topology, ValidationResult]:
+        """Load topology using the given database session."""
+        async with self.session_factory() as db:
+            return await self._load_from_db_with_session(db)
+
+    async def _load_from_db_with_session(self, db: AsyncSession) -> tuple[Topology, ValidationResult]:
+        """Interne Ladelogik mit expliziter Session."""
         logger.info("Loading topology from database...")
 
-        # Load agents from database
-        agents_with_prompts = await self.repository.get_agents_with_prompts()
+        repo = TopologyRepository(db)
+        agents_with_prompts = await repo.get_agents_with_prompts()
 
         if not agents_with_prompts:
             logger.warning("No agents found in database")
@@ -96,7 +104,7 @@ class TopologyLoader:
         name_to_id = {agent.name: agent.id for agent, _ in agents_with_prompts}
 
         # Load skills and map by capability (applicability → metadata → name fallback)
-        capability_to_skills, skill_metadata_map = await self._map_skills_to_capabilities()
+        capability_to_skills, skill_metadata_map = await self._map_skills_to_capabilities(db=db)
 
         # Convert to AgentNode models
         agent_nodes = []
@@ -172,7 +180,7 @@ class TopologyLoader:
             }
 
             # Eager skill loading (per CONTEXT)
-            await self._load_skills(topology)
+            await self._load_skills(topology, db)
 
             logger.info(
                 f"Topology loaded: {len(agent_nodes)} agents, "
@@ -209,7 +217,7 @@ class TopologyLoader:
         normalized = ' '.join(normalized.split())
         return normalized
 
-    async def _map_skills_to_capabilities(self) -> tuple[dict[str, list[str]], dict[str, dict]]:
+    async def _map_skills_to_capabilities(self, db: AsyncSession) -> tuple[dict[str, list[str]], dict[str, dict]]:
         """
         Map active skills to capabilities for agent binding.
 
@@ -224,7 +232,7 @@ class TopologyLoader:
         capability_to_skills: dict[str, list[str]] = {}
         skill_metadata_map: dict[str, dict] = {}
 
-        result = await self.db.execute(
+        result = await db.execute(
             select(Skill).where(Skill.is_active == True)
         )
         skills = result.scalars().all()
@@ -268,7 +276,7 @@ class TopologyLoader:
 
         return capability_to_skills, skill_metadata_map
 
-    async def _load_skills(self, topology: Topology) -> None:
+    async def _load_skills(self, topology: Topology, db: AsyncSession) -> None:
         """
         Eagerly load all skills for topology agents.
 
@@ -279,7 +287,7 @@ class TopologyLoader:
             skill_ids.update(agent.skill_ids)
 
         if skill_ids:
-            result = await self.db.execute(
+            result = await db.execute(
                 select(Skill).where(Skill.id.in_(skill_ids))
             )
             skills = result.scalars().all()
@@ -347,69 +355,70 @@ class TopologyLoader:
         Returns:
             (success, message) - True if swap succeeded, False with reason if not
         """
-        # Verify new prompt exists
-        prompt_result = await self.db.execute(
-            select(Prompt).where(Prompt.id == new_prompt_id)
-        )
-        new_prompt = prompt_result.scalar_one_or_none()
-        if not new_prompt:
-            return False, f"Prompt {new_prompt_id} not found"
+        async with self.session_factory() as db:
+            # Verify new prompt exists
+            prompt_result = await db.execute(
+                select(Prompt).where(Prompt.id == new_prompt_id)
+            )
+            new_prompt = prompt_result.scalar_one_or_none()
+            if not new_prompt:
+                return False, f"Prompt {new_prompt_id} not found"
 
-        # Verify agent exists
-        agent_result = await self.db.execute(
-            select(Agent).where(Agent.id == agent_id)
-        )
-        agent = agent_result.scalar_one_or_none()
-        if not agent:
-            return False, f"Agent {agent_id} not found"
+            # Verify agent exists
+            agent_result = await db.execute(
+                select(Agent).where(Agent.id == agent_id)
+            )
+            agent = agent_result.scalar_one_or_none()
+            if not agent:
+                return False, f"Agent {agent_id} not found"
 
-        # Check A/B test validation (per CONTEXT: Prompt swap requires A/B test)
-        if self.ab_test_service:
-            if not ab_test_id:
-                return False, "A/B test ID required for prompt swap"
+            # Check A/B test validation (per CONTEXT: Prompt swap requires A/B test)
+            if self.ab_test_service:
+                if not ab_test_id:
+                    return False, "A/B test ID required for prompt swap"
 
-            # Verify A/B test completed successfully with improvement as winner
-            try:
-                ab_test = await self.ab_test_service.get_test(ab_test_id)
-                if not ab_test:
-                    return False, f"A/B test {ab_test_id} not found"
+                # Verify A/B test completed successfully with improvement as winner
+                try:
+                    ab_test = await self.ab_test_service.get_test(ab_test_id)
+                    if not ab_test:
+                        return False, f"A/B test {ab_test_id} not found"
 
-                if ab_test.status != "completed":
-                    return False, f"A/B test {ab_test_id} not completed (status: {ab_test.status})"
+                    if ab_test.status != "completed":
+                        return False, f"A/B test {ab_test_id} not completed (status: {ab_test.status})"
 
-                # is_significant == 1 means improvement won (per ABTest model)
-                if ab_test.is_significant != 1:
-                    return False, f"A/B test {ab_test_id} did not validate improvement (is_significant: {ab_test.is_significant})"
+                    # is_significant == 1 means improvement won (per ABTest model)
+                    if ab_test.is_significant != 1:
+                        return False, f"A/B test {ab_test_id} did not validate improvement (is_significant: {ab_test.is_significant})"
 
-                # Verify the test was for a prompt artifact
-                if ab_test.artifact_type != "prompt":
-                    return False, f"A/B test {ab_test_id} was not for a prompt (type: {ab_test.artifact_type})"
+                    # Verify the test was for a prompt artifact
+                    if ab_test.artifact_type != "prompt":
+                        return False, f"A/B test {ab_test_id} was not for a prompt (type: {ab_test.artifact_type})"
 
-            except Exception as e:
-                logger.error(f"Failed to verify A/B test: {e}")
-                return False, f"A/B test verification failed: {str(e)}"
-        else:
-            logger.warning("No A/B test service configured - allowing prompt swap without validation")
+                except Exception as e:
+                    logger.error(f"Failed to verify A/B test: {e}")
+                    return False, f"A/B test verification failed: {str(e)}"
+            else:
+                logger.warning("No A/B test service configured - allowing prompt swap without validation")
 
-        # Perform the swap
-        old_prompt_id = agent.prompt_id
-        await self.db.execute(
-            update(Agent)
-            .where(Agent.id == agent_id)
-            .values(prompt_id=new_prompt_id)
-        )
-        await self.db.commit()
+            # Perform the swap
+            old_prompt_id = agent.prompt_id
+            await db.execute(
+                update(Agent)
+                .where(Agent.id == agent_id)
+                .values(prompt_id=new_prompt_id)
+            )
+            await db.commit()
 
-        # Update tracking
-        self._current_prompt_ids[agent_id] = new_prompt_id
+            # Update tracking
+            self._current_prompt_ids[agent_id] = new_prompt_id
 
-        logger.info(
-            f"Prompt swapped for agent {agent_id}: "
-            f"{old_prompt_id} -> {new_prompt_id} "
-            f"(validated by A/B test {ab_test_id})"
-        )
+            logger.info(
+                f"Prompt swapped for agent {agent_id}: "
+                f"{old_prompt_id} -> {new_prompt_id} "
+                f"(validated by A/B test {ab_test_id})"
+            )
 
-        return True, f"Prompt swapped successfully for agent {agent_id}"
+            return True, f"Prompt swapped successfully for agent {agent_id}"
 
     async def check_prompt_update(self, agent_id: str, new_prompt_id: str) -> bool:
         """
@@ -422,24 +431,25 @@ class TopologyLoader:
         Returns:
             True if prompt exists and would be a change
         """
-        result = await self.db.execute(
-            select(Prompt).where(Prompt.id == new_prompt_id)
-        )
-        prompt = result.scalar_one_or_none()
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(Prompt).where(Prompt.id == new_prompt_id)
+            )
+            prompt = result.scalar_one_or_none()
 
-        if not prompt:
-            return False
+            if not prompt:
+                return False
 
-        # Check if it's actually different from current
-        current_prompt_id = self._current_prompt_ids.get(agent_id)
-        return current_prompt_id != new_prompt_id
+            # Check if it's actually different from current
+            current_prompt_id = self._current_prompt_ids.get(agent_id)
+            return current_prompt_id != new_prompt_id
 
 
 async def create_topology_loader(
-    db: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
     ab_test_service: Optional["ABTestService"] = None
 ) -> "TopologyLoader":
     """Factory function to create and initialize TopologyLoader."""
-    loader = TopologyLoader(db, ab_test_service=ab_test_service)
+    loader = TopologyLoader(session_factory, ab_test_service=ab_test_service)
     await loader.load()
     return loader

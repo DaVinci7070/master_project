@@ -370,20 +370,12 @@ class SkillExecutor:
             # If input_data is a dict, unpack as keyword arguments to match
             # function signatures like calculate_circle_areas(radii=[...])
             try:
-                if isinstance(input_data, dict):
-                    result = await asyncio.wait_for(
-                        asyncio.get_event_loop().run_in_executor(
-                            None, lambda: func(**input_data)
-                        ),
-                        timeout=self.timeout_seconds,
-                    )
-                else:
-                    result = await asyncio.wait_for(
-                        asyncio.get_event_loop().run_in_executor(
-                            None, lambda: func(input_data)
-                        ),
-                        timeout=self.timeout_seconds,
-                    )
+                result = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, lambda: func(input_data)
+                    ),
+                    timeout=self.timeout_seconds,
+                )
                 return ExecutionResult(
                     success=True,
                     output=result,
