@@ -67,3 +67,6 @@ cover/
 .planning/
 .conductor
 .claude/
+CLAUDE.md
+context/
+documentation/
