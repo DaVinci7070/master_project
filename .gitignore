@@ -70,3 +70,14 @@ cover/
 CLAUDE.md
 context/
 documentation/
+backend/results/
+backend/scripts/
+
+# Backend runtime logs
+backend/logs/
+
+# Generated evaluation data
+backend/scripts/evaluation/data/
+
+# Uploads directory (runtime)
+backend/uploads/

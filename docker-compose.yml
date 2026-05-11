@@ -150,4 +150,5 @@ volumes:
 
 networks:
   lumari-network:
+    name: lumari-network
     driver: bridge

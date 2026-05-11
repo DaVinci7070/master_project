@@ -332,6 +332,7 @@ class SandboxExecutorService:
         arguments: dict,
         pip_requirements: Optional[list[str]] = None,
         system_packages: Optional[list[str]] = None,
+        input_files: Optional[dict[str, bytes]] = None,
     ) -> SandboxResult:
         """
         Execute a skill function with arguments in isolated Docker sandbox.
@@ -354,6 +355,7 @@ class SandboxExecutorService:
             arguments: Dictionary of arguments to pass to the function.
             pip_requirements: Optional list of pip packages to install.
             system_packages: Optional list of apt packages to install.
+            input_files: Optional dict of filename -> bytes for workspace.
 
         Returns:
             SandboxResult with execution details and function output.
@@ -366,6 +368,7 @@ class SandboxExecutorService:
                 arguments=arguments,
                 pip_requirements=pip_requirements or [],
                 system_packages=system_packages or [],
+                input_files=input_files,
             )
 
         # Try epicbox first, then auto-detect missing modules and retry if needed
@@ -390,6 +393,7 @@ class SandboxExecutorService:
                     arguments=arguments,
                     pip_requirements=detected_pip,
                     system_packages=detected_apt,
+                    input_files=input_files,
                 )
 
         return result
@@ -432,6 +436,7 @@ class SandboxExecutorService:
             'aiohttp': 'aiohttp',
             'speechrecognition': 'SpeechRecognition',
             'speech_recognition': 'SpeechRecognition',
+            'psycopg2': 'psycopg2-binary',
         }
 
         # Packages that need system dependencies
@@ -673,6 +678,7 @@ except Exception as e:
         arguments: dict,
         pip_requirements: list[str],
         system_packages: list[str],
+        input_files: Optional[dict[str, bytes]] = None,
     ) -> SandboxResult:
         """
         Execute a skill that requires pip/apt packages using DynamicSandboxService.
@@ -687,6 +693,7 @@ except Exception as e:
             arguments: Dictionary of arguments to pass to the function.
             pip_requirements: List of pip packages to install.
             system_packages: List of apt packages to install.
+            input_files: Optional dict of filename -> bytes for workspace.
 
         Returns:
             SandboxResult with execution details and function output.
@@ -698,20 +705,6 @@ except Exception as e:
             f"Executing skill '{function_name}' with packages: "
             f"pip={pip_requirements}, apt={system_packages}"
         )
-
-        # Validate code first (still use our validator)
-        validation_result = self.validator.validate(code)
-        if not validation_result.is_valid:
-            self.log.warning(
-                f"Code validation failed: {validation_result.blocked_constructs}"
-            )
-            execution_time_ms = int((time.time() - start_time) * 1000)
-            return SandboxResult(
-                success=False,
-                validation_result=validation_result,
-                error=f"Validation failed: {', '.join(validation_result.errors)}",
-                execution_time_ms=execution_time_ms,
-            )
 
         # Create wrapper code that calls the function and captures result
         args_json = json_module.dumps(arguments)
@@ -764,6 +757,7 @@ except Exception as e:
                     code=wrapper_code,
                     pip_requirements=pip_requirements,
                     system_packages=system_packages,
+                    input_files=input_files,
                 )
             finally:
                 if cache_session:

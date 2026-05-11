@@ -21,7 +21,6 @@ from app.services.developer_team_orchestrator import DeveloperTeamOrchestrator
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.services.skill_team_orchestrator import SkillTeamOrchestrator
-    from app.services.autonomous_skill_builder import AutonomousSkillBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -48,29 +47,12 @@ class CapabilityBuilder:
         session_factory: async_sessionmaker[AsyncSession],
         embedding_fn: Optional[Callable[[str], Awaitable[list[float]]]] = None,
         skill_team_config: Optional[SkillTeamConfig] = None,
-        use_skill_team: Optional[bool] = None,
     ):
-        """
-        Initialize capability builder.
-
-        Args:
-            developer_team: DeveloperTeamOrchestrator for code generation
-            db: Database session for persisting built capabilities
-            embedding_fn: Function to generate embeddings for agent affinity scoring
-            skill_team_config: Configuration for skill team orchestrator
-            use_skill_team: Whether to use skill team for MISSING_SKILL gaps
-        """
         self.developer_team = developer_team
         self.session_factory = session_factory
         self._get_embedding = embedding_fn
-
-        # Skill Team configuration
         self._skill_team_config = skill_team_config or SkillTeamConfig()
-        self._use_skill_team = use_skill_team if use_skill_team is not None else (
-            os.getenv("SKILL_TEAM_ENABLED", "true").lower() == "true"
-        )
         self._skill_team: Optional["SkillTeamOrchestrator"] = None
-        self._autonomous_builder: Optional["AutonomousSkillBuilder"] = None
 
     async def build_for_gap(
         self,
@@ -122,8 +104,21 @@ class CapabilityBuilder:
             return await self._build_agent(
                 gap, challenge_text, approach.name, approach.constraints, previous_failures
             )
-        elif gap.gap_type in (GapType.TOPOLOGY_ISSUE, GapType.SCHEMA_MISMATCH):
-            # These may require agent modifications
+        elif gap.gap_type == GapType.TOPOLOGY_ISSUE:
+            return await self._build_agent(
+                gap, challenge_text, approach.name, approach.constraints, previous_failures
+            )
+        elif gap.gap_type == GapType.SCHEMA_MISMATCH:
+            # Schema-Probleme zuerst mit Skill lösen (DB-Verbindung, ETL etc.)
+            skill_result = await self._build_skill(
+                gap, challenge_text, approach.name, approach.constraints, previous_failures
+            )
+            if skill_result.success:
+                return skill_result
+            logger.warning(
+                f"Skill build for SCHEMA_MISMATCH failed, falling back to agent build: "
+                f"{skill_result.failure_reason}"
+            )
             return await self._build_agent(
                 gap, challenge_text, approach.name, approach.constraints, previous_failures
             )
@@ -147,12 +142,36 @@ class CapabilityBuilder:
             )
         return self._skill_team
 
-    def _get_autonomous_builder(self) -> "AutonomousSkillBuilder":
-        """Get or create the Autonomous Skill Builder."""
-        if self._autonomous_builder is None:
-            from app.services.autonomous_skill_builder import AutonomousSkillBuilder
-            self._autonomous_builder = AutonomousSkillBuilder(session_factory=self.session_factory)
-        return self._autonomous_builder
+    @staticmethod
+    def _extract_test_context(
+        challenge_text: str,
+        capability: str,
+    ) -> tuple[dict | None, dict[str, bytes] | None]:
+        """Leitet Test-Input und Dateien aus dem Challenge-Kontext ab."""
+        test_input = None
+        input_files = None
+
+        path_match = re.search(r'Storage Path: (.+)', challenge_text)
+        if path_match:
+            file_path = path_match.group(1).strip()
+            if os.path.isdir(file_path):
+                dir_name = os.path.basename(file_path.rstrip("/"))
+                test_input = {"file_path": f"/workspace/{dir_name}/"}
+                input_files = {}
+                for fname in os.listdir(file_path):
+                    fpath = os.path.join(file_path, fname)
+                    if os.path.isfile(fpath):
+                        with open(fpath, "rb") as f:
+                            input_files[f"{dir_name}/{fname}"] = f.read()
+                logger.info(f"Test-Verzeichnis extrahiert: {dir_name}/ ({len(input_files)} Dateien)")
+            elif os.path.isfile(file_path):
+                basename = os.path.basename(file_path)
+                test_input = {"file_path": f"/workspace/{basename}"}
+                with open(file_path, "rb") as f:
+                    input_files = {basename: f.read()}
+                logger.info(f"Test-Datei aus Challenge extrahiert: {basename}")
+
+        return test_input, input_files
 
     async def _build_skill(
         self,
@@ -162,16 +181,7 @@ class CapabilityBuilder:
         constraints: list[str],
         previous_failures: list[str]
     ) -> BuildResult:
-        """
-        Build a new skill using Skill Team or Autonomous Skill Builder.
-
-        Both paths test generated code in a sandbox before persisting.
-        Skills are only saved to DB after passing sandbox tests.
-
-        If SKILL_TEAM_ENABLED=true, uses the team-based orchestrator.
-        Otherwise, uses the Autonomous Skill Builder with iterative
-        sandbox testing (up to 10 attempts).
-        """
+        """Build a new skill using the Skill Team Orchestrator (Self-Healing v2)."""
         import time
         start_time = time.time()
 
@@ -179,95 +189,41 @@ class CapabilityBuilder:
         skill_name = f"skill_{gap.affected_capability.lower().replace(' ', '_').replace('-', '_')}"
         existing = await self._find_existing_skill(skill_name)
         if existing and existing.is_active:
-            logger.info(
-                f"Skill already exists for '{gap.affected_capability}': "
-                f"id={existing.id[:8]}..., name={existing.name} — skipping build"
-            )
-            # Ensure it's bound to an agent
-            bound_agent_id = await self._expand_agent_capabilities(
-                skill_id=existing.id,
-                affected_capability=gap.affected_capability,
-            )
-            return BuildResult(
-                success=True,
-                artifact_id=existing.id,
-                artifact_type="skill",
-                failure_reason=None,
-                approach_used="reuse_existing",
-                duration_seconds=time.time() - start_time,
-                bound_to_agent_id=bound_agent_id,
-            )
-
-        # Try Skill Team first if enabled
-        if self._use_skill_team:
-            logger.info(f"Using Skill Team for capability: {gap.affected_capability}")
-            return await self._build_skill_with_team(gap, start_time)
-
-        # Use Autonomous Skill Builder (with sandbox testing + retry loop)
-        logger.info(f"Using Autonomous Skill Builder for capability: {gap.affected_capability}")
-
-        try:
-            builder = self._get_autonomous_builder()
-            result = await builder.build_skill(
-                capability=gap.affected_capability,
-                hints={
-                    "description": gap.description,
-                    "challenge_context": challenge_text,
-                },
-            )
-
-            duration = time.time() - start_time
-
-            if result.success and result.skill_id:
+            # Warm-Skill Validation: Kann der existierende Skill noch ausführen?
+            validation_passed = await self._validate_existing_skill(existing)
+            if validation_passed:
                 logger.info(
-                    f"Built skill: id={result.skill_id[:8]}..., "
-                    f"iterations={result.iterations}, duration={duration:.1f}s"
+                    f"Warm-Skill '{existing.name}' validiert — wiederverwenden"
                 )
-
-                # Bind skill to an appropriate agent
-                expanded_agent_id = await self._expand_agent_capabilities(
-                    skill_id=result.skill_id,
-                    affected_capability=gap.affected_capability
+                bound_agent_id = await self._expand_agent_capabilities(
+                    skill_id=existing.id,
+                    affected_capability=gap.affected_capability,
                 )
-
                 return BuildResult(
                     success=True,
-                    artifact_id=result.skill_id,
+                    artifact_id=existing.id,
                     artifact_type="skill",
                     failure_reason=None,
-                    approach_used=approach,
-                    duration_seconds=duration,
-                    bound_to_agent_id=expanded_agent_id,
+                    approach_used="reuse_existing",
+                    duration_seconds=time.time() - start_time,
+                    bound_to_agent_id=bound_agent_id,
                 )
             else:
-                failure = result.final_error or "Skill build failed after all iterations"
                 logger.warning(
-                    f"Skill build failed after {result.iterations} iterations: {failure}"
+                    f"Warm-Skill '{existing.name}' Validation fehlgeschlagen — "
+                    f"deaktiviere und baue neu"
                 )
-                return BuildResult(
-                    success=False,
-                    artifact_id=None,
-                    artifact_type="skill",
-                    failure_reason=failure,
-                    approach_used=approach,
-                    duration_seconds=duration,
-                )
+                await self.deactivate_provisional("skill", existing.id)
 
-        except Exception as e:
-            logger.error(f"Skill build exception: {e}", exc_info=True)
-            return BuildResult(
-                success=False,
-                artifact_id=None,
-                artifact_type="skill",
-                failure_reason=str(e),
-                approach_used=approach,
-                duration_seconds=time.time() - start_time,
-            )
+        # Skill Team ist der einzige Build-Pfad im Interventions-System
+        logger.info(f"Using Skill Team for capability: {gap.affected_capability}")
+        return await self._build_skill_with_team(gap, start_time, challenge_text)
 
     async def _build_skill_with_team(
         self,
         gap: CapabilityGap,
         start_time: float,
+        challenge_text: str = "",
     ) -> BuildResult:
         """
         Build a skill using the Skill Team Orchestrator.
@@ -283,8 +239,19 @@ class CapabilityBuilder:
         try:
             skill_team = self.get_skill_team()
 
+            # Test-Input und Dateien aus dem Challenge-Kontext ableiten
+            test_input, input_files = self._extract_test_context(
+                challenge_text, gap.affected_capability
+            )
+
             result = await skill_team.develop_skill(
                 capability=gap.affected_capability,
+                test_input=test_input,
+                input_files=input_files,
+                hints={
+                    "description": gap.description,
+                    "challenge_context": challenge_text[:500] if challenge_text else "",
+                },
             )
 
             duration = time.time() - start_time
@@ -587,6 +554,35 @@ class CapabilityBuilder:
                 select(Skill).where(Skill.name == name)
             )
             return result.scalar_one_or_none()
+
+    async def _validate_existing_skill(self, skill: Skill) -> bool:
+        """Smoke-Test ob ein existierender Skill noch funktioniert (Imports + execute callable)."""
+        try:
+            metadata = skill.skill_metadata or {}
+            pip_reqs = metadata.get("pip_requirements", [])
+            system_pkgs = metadata.get("system_packages", [])
+
+            test_code = f"""{skill.code}
+
+if __name__ == "__main__":
+    import inspect
+    if not callable(execute):
+        exit(1)
+    sig = inspect.signature(execute)
+    print(f"OK: execute{{sig}}")
+    exit(0)
+"""
+            from app.services.dynamic_sandbox_service import DynamicSandboxService
+            sandbox = DynamicSandboxService()
+            result = await sandbox.execute(
+                code=test_code,
+                pip_requirements=pip_reqs,
+                system_packages=system_pkgs,
+            )
+            return result.success
+        except Exception as e:
+            logger.warning(f"Skill validation error: {e}")
+            return False
 
     def _normalize_capability(self, name: str) -> str:
         """Normalize capability name for matching."""

@@ -501,12 +501,13 @@ LÖSUNG: Semantische Konsistenzprüfung
 - Vergleich: Dynamisches System vs. statisches Baseline-Team
 
 ### RQ2: Effizienz
-> **Wie entwickelt sich die Blueprint Reuse Rate über die Zeit, und korreliert höhere Wiederverwendung mit reduzierten Token-Kosten und geringerer Latenz?**
+> **Reduziert die Wiederverwendung autonom generierter Blueprints den Ressourcenverbrauch bei nachfolgenden Aufgaben gleichen Typs?**
 
 **Messung:**
-- Blueprint Reuse Rate (% der Tasks, die existierende Blueprints nutzen)
-- Token-Verbrauch pro Task über Zeit
-- Latenz (Ausführungszeit) über Zeit
+- Build-Skip-Rate (% der Tasks die existierende Skills wiederverwenden statt neu zu bauen)
+- Token-Verbrauch pro Task (mit vs. ohne vorhandene Blueprints)
+- Latenz-Reduktion durch Blueprint-Reuse (Build-Phase entfällt)
+- Effekt optimierter Memory-Injection auf Token-Overhead
 
 ### RQ3: Sicherheit
 > **Kann ein semantischer Gatekeeper-Mechanismus gefährliche Diskrepanzen in autogenerierten Agenten-Tools zuverlässig erkennen und verhindern?**

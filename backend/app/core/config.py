@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from pydantic_settings import BaseSettings
 
 
@@ -49,7 +51,6 @@ class Settings(BaseSettings):
     control_agent_pattern_threshold: int = 3  # Times info-level must repeat to escalate
 
     # Skill Team settings
-    skill_team_enabled: bool = True  # Enable team-based skill development
     skill_researcher_model: str | None = None  # Model for research (default: fast)
     skill_architect_model: str | None = "gemini/gemini-3-flash-preview"  # Model for design
     skill_implementer_model: str | None = "gemini/gemini-3-flash-preview"  # Strong model for code generation
@@ -76,8 +77,13 @@ class Settings(BaseSettings):
 
     # Self-Healing settings (Sprint 4)
     intra_execution_self_healing_enabled: bool = True  # Enable self-healing during execution (on_unknown_tool -> build skill)
-    self_healing_build_timeout: int = 180  # Max seconds for on-demand skill build
+    self_healing_build_timeout: int = 600  # Max seconds for on-demand skill build (10min, komplexe Skills brauchen 200-400s)
     self_healing_max_builds_per_execution: int = 3  # Max on-demand skill builds per execution
+
+    # Capability-Building Hard-Timeout (Phase 0 / V2-Plan)
+    # Backend-seitiges Sicherheitsnetz für _run_capability_building.
+    # 15min gibt dem 5-Phasen SkillTeam-Build genug Raum für komplexe Skills.
+    build_total_timeout: int = 900
 
     # Autonomous Evolution Loop (Sprint 1)
     # When True, HybridOrchestrator schedules post-execution analyze -> prioritize
@@ -89,9 +95,81 @@ class Settings(BaseSettings):
     shared_memory_enabled: bool = True     # Cross-run learning via SharedMemory
     skill_reuse_enabled: bool = True       # Reuse previously built skills
 
+    # Memory-Redesign Sprint A — Token-Reduktion
+    # Begründung: G-Memory (NeurIPS 2025) — naives Memory schadet, Filter ist Pflicht.
+    # ACON (arXiv:2510.00615) — Kontext-Kompression spart 26-54% Tokens.
+    # Complexity Trap (arXiv:2508.21433) — Masking ≥ Summarization.
+    shared_memory_max_items: int = 8              # Qdrant Search Limit (vorher 30)
+    shared_memory_max_tokens: int = 4000          # Token-Budget für Memory-Block (vorher max_context_tokens // 2)
+    shared_memory_top_k: int = 5                  # Post-Filter Cap pro Agent (vorher 20)
+    shared_memory_score_threshold: float = 0.30   # Mindest-Cosine-Similarity
+
+    # Sandbox-Infrastruktur (Docker-Hostnamen im lumari-network)
+    sandbox_postgres_host: str = "lumari-postgres"
+    sandbox_postgres_port: int = 5432
+    sandbox_qdrant_host: str = "lumari-qdrant"
+    sandbox_qdrant_port: int = 6333
+
     class Config:
         env_file = ".env"
         extra = "ignore"
+
+    def _parse_db_credentials(self) -> dict[str, str]:
+        """Extrahiert User/Password/DB aus database_url."""
+        clean_url = self.database_url.replace("+asyncpg", "")
+        parsed = urlparse(clean_url)
+        return {
+            "user": parsed.username or "lumari",
+            "password": parsed.password or "lumari_dev",
+            "dbname": (parsed.path or "/lumari").lstrip("/"),
+        }
+
+    def get_sandbox_env_vars(self) -> dict[str, str]:
+        """Env-Vars für Sandbox-Container mit echten Service-Adressen."""
+        creds = self._parse_db_credentials()
+        pg_url = (
+            f"postgresql://{creds['user']}:{creds['password']}"
+            f"@{self.sandbox_postgres_host}:{self.sandbox_postgres_port}"
+            f"/{creds['dbname']}"
+        )
+        return {
+            "DATABASE_URL": pg_url,
+            "POSTGRES_HOST": self.sandbox_postgres_host,
+            "POSTGRES_PORT": str(self.sandbox_postgres_port),
+            "POSTGRES_USER": creds["user"],
+            "POSTGRES_PASSWORD": creds["password"],
+            "POSTGRES_DB": creds["dbname"],
+            "QDRANT_URL": f"http://{self.sandbox_qdrant_host}:{self.sandbox_qdrant_port}",
+            "QDRANT_HOST": self.sandbox_qdrant_host,
+            "QDRANT_PORT": str(self.sandbox_qdrant_port),
+        }
+
+    def get_sandbox_infrastructure_context(self) -> str:
+        """Infrastruktur-Beschreibung für Architect/Implementer-Prompts."""
+        env = self.get_sandbox_env_vars()
+        return f"""## Sandbox Infrastructure
+The code runs in a Docker sandbox connected to the 'lumari-network'.
+These services are reachable — use them in test_cases and implementation code:
+
+### PostgreSQL Database
+- Host: {self.sandbox_postgres_host}
+- Port: {self.sandbox_postgres_port}
+- User: {env['POSTGRES_USER']}
+- Password: {env['POSTGRES_PASSWORD']}
+- Database: {env['POSTGRES_DB']}
+- Connection string: {env['DATABASE_URL']}
+- Also available as env var DATABASE_URL inside the sandbox
+
+### Qdrant Vector Database
+- URL: {env['QDRANT_URL']}
+- Also available as env var QDRANT_URL inside the sandbox
+
+### Rules for test cases:
+- Use the REAL connection strings above, NEVER use localhost or fictional credentials
+- Prefer reading env vars (os.environ["DATABASE_URL"]) over hardcoding credentials
+- Database tests MUST be READ-ONLY: only SELECT, never INSERT/UPDATE/DELETE/DROP/CREATE
+- For PostgreSQL test_cases, use input like: {{"database_url": "{env['DATABASE_URL']}"}}
+- For Qdrant test_cases, use input like: {{"qdrant_url": "{env['QDRANT_URL']}"}}"""
 
 
 settings = Settings()

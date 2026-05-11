@@ -81,14 +81,14 @@ CAPABILITY_PACKAGE_HINTS = {
         "apt": [],
         "approach": "Pydantic for type validation, jsonschema for JSON validation",
     },
-    # Stdlib-preferred capabilities — no pip packages needed
+    # Datenbank-Treiber — je nach Kontext waehlen
     "database": {
-        "pip": [], "apt": [], "stdlib": ["sqlite3"],
-        "approach": "Use stdlib sqlite3 for local database operations",
+        "pip": ["psycopg2-binary"], "apt": [],
+        "approach": "Use psycopg2-binary for PostgreSQL or sqlite3 (stdlib) for embedded databases. Choose based on the task description.",
     },
     "sqlite": {
         "pip": [], "apt": [], "stdlib": ["sqlite3"],
-        "approach": "Use stdlib sqlite3 for local database operations",
+        "approach": "Use stdlib sqlite3 for local/embedded database operations",
     },
     "csv processing": {
         "pip": [], "apt": [], "stdlib": ["csv"],

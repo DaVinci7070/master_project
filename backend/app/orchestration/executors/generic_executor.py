@@ -127,8 +127,13 @@ class GenericAgentExecutor:
         """
         logger.info(f"Executing agent: {agent.name} ({agent.agent_id})")
 
-        # 1. Build context
-        context = await self._build_context(agent, execution_id)
+        # 1. Build context (Sprint B: prompt_content + input_data weitergeben für Template-Skip + Query-Bau)
+        context = await self._build_context(
+            agent,
+            execution_id,
+            prompt_content=prompt_content,
+            input_data=input_data,
+        )
 
         # 2. Load skills from TopologyLoader cache (per CONTEXT: eager loading)
         skills, planning_skills = self._get_agent_skills(agent)
@@ -232,7 +237,7 @@ class GenericAgentExecutor:
         """
         planning_context = self._build_planning_prompt(planning_skills or [])
         messages = [
-            {"role": "system", "content": f"You are {agent.name}.{planning_context}"},
+            {"role": "system", "content": self._build_system_prompt(agent, planning_context)},
             {"role": "user", "content": full_prompt}
         ]
 
@@ -440,7 +445,9 @@ class GenericAgentExecutor:
                 upload_dir = os.path.join(
                     os.path.dirname(__file__), '..', '..', '..', 'uploads'
                 )
-                host_path = os.path.join(upload_dir, os.path.basename(arg_val))
+                # Behalte Subpath-Struktur (z.B. /workspace/etl_data/ -> uploads/etl_data/)
+                workspace_rel = arg_val[len("/workspace/"):]
+                host_path = os.path.join(upload_dir, workspace_rel)
 
             if os.path.isfile(host_path):
                 filename = os.path.basename(host_path)
@@ -448,6 +455,19 @@ class GenericAgentExecutor:
                     input_files[filename] = f.read()
                 sandbox_arguments[arg_key] = f"/workspace/{filename}"
                 logger.info(f"Providing file to sandbox: {filename} ({len(input_files[filename])} bytes)")
+            elif os.path.isdir(host_path):
+                # Verzeichnis: alle Dateien mit Subdir-Prefix injizieren
+                dir_name = os.path.basename(host_path.rstrip("/"))
+                file_count = 0
+                for fname in os.listdir(host_path):
+                    fpath = os.path.join(host_path, fname)
+                    if os.path.isfile(fpath):
+                        key = f"{dir_name}/{fname}"
+                        with open(fpath, "rb") as f:
+                            input_files[key] = f.read()
+                        file_count += 1
+                sandbox_arguments[arg_key] = f"/workspace/{dir_name}/"
+                logger.info(f"Providing directory to sandbox: {dir_name}/ ({file_count} files)")
 
         # Execute in sandbox via execute_skill (supports input_files)
         if self.sandbox_executor and hasattr(self.sandbox_executor, 'execute_skill'):
@@ -737,15 +757,44 @@ class GenericAgentExecutor:
 
         return "\n".join(sections)
 
+    @staticmethod
+    def _build_system_prompt(agent: AgentNode, planning_context: str) -> str:
+        """
+        System-Prompt für einen Agent zusammensetzen.
+
+        Entry-Point-Agents (ohne consumes_artifacts) bekommen den
+        Faktenrecall-Constraint: Sie sind die Schnittstelle zur Rohquelle —
+        was sie hier verlieren, kann downstream nicht mehr rekonstruiert
+        werden. Beobachtung aus den L3/L4-Runs am 2026-04-29: Failures sind
+        fast nur Faktenrecall-Probleme (Zahlen, Codes, Eigennamen).
+        """
+        base = f"You are {agent.name}.{planning_context}"
+        if not agent.consumes_artifacts:
+            base += (
+                "\n\n## Faktenrecall (verbindlich)\n"
+                "Übernimm Zahlen, Eigennamen, Datumsangaben, Normen-Codes "
+                "(z.B. DIN, EN, ÖNORM) und Geldbeträge WÖRTLICH und "
+                "VOLLSTÄNDIG aus der Quelle. Keine Zusammenfassung, keine "
+                "Rundung, keine Auslassung. Wenn ein Wert in der Quelle "
+                "steht, muss er im Output erscheinen."
+            )
+        return base
+
     async def _build_context(
         self,
         agent: AgentNode,
-        execution_id: str
+        execution_id: str,
+        prompt_content: Optional[str] = None,
+        input_data: Optional[dict] = None,
     ) -> dict[str, Any]:
         """
         Build context for agent from artifacts and shared memory.
 
         Respects context budget.
+
+        Sprint B.2: Memory-Retrieval wird nur ausgeführt, wenn der Prompt
+        tatsächlich `{shared_memory}` enthält — sonst wird Embedding-Compute
+        gespart (downstream-Agents arbeiten mit Artifacts).
         """
         context: dict[str, Any] = {
             "artifacts": [],
@@ -773,33 +822,55 @@ class GenericAgentExecutor:
             ]
 
         # Get shared memory context (gated by ablation flag)
+        # Memory-Redesign Sprint A: Score-Threshold + niedrigere Limits + Compact-Format
+        # Memory-Redesign Sprint B.2: Template-driven Skip — nur Agents mit {shared_memory}-Platzhalter
+        # bekommen Memory-Retrieval (Entry-Point-Only Strategie, IMA arXiv:2508.08997).
+        # Begründung: G-Memory (NeurIPS 2025), ACON (arXiv:2510.00615), Complexity Trap (arXiv:2508.21433)
         from app.core.config import settings as _settings
-        if self.shared_memory and _settings.shared_memory_enabled:
+        memory_requested = bool(prompt_content) and "{shared_memory}" in prompt_content
+        if self.shared_memory and _settings.shared_memory_enabled and memory_requested:
             try:
                 from app.models.schemas.shared_memory_schemas import SharedMemoryQuery
-                # Build query from artifacts content (task-relevant) instead of generic agent name
-                query_text = f"Context for {agent.name} agent"
-                if context["artifacts"]:
-                    # Use artifact content for semantic search — finds related past executions
-                    artifact_texts = []
-                    for a in context["artifacts"][:3]:
-                        payload = a.get("payload", {})
-                        for key in ("transcript", "challenge_text", "text", "summary", "key_points"):
-                            if key in payload and payload[key]:
-                                artifact_texts.append(str(payload[key])[:300])
-                                break
-                    if artifact_texts:
-                        query_text = " ".join(artifact_texts)
+                # Sprint B.3: Semantische Query aus Agent-Beschreibung + Aufgaben-Inhalt
+                # Voyager (arXiv:2305.16291): Skill-Suche per Beschreibung statt generischem Agent-Namen
+                query_text = self._build_search_query(
+                    agent=agent,
+                    artifacts=context["artifacts"],
+                    input_data=input_data,
+                )
                 query = SharedMemoryQuery(
                     query_text=query_text,
                     agent_id=None,  # Get from all agents
-                    max_items=30
+                    max_items=_settings.shared_memory_max_items,
+                    score_threshold=_settings.shared_memory_score_threshold,
                 )
                 memory = await self.shared_memory.retrieve_context(
                     query=query,
-                    max_tokens=self.max_context_tokens // 2
+                    max_tokens=_settings.shared_memory_max_tokens,
                 )
-                context["shared_memory"] = memory.get("facts", [])[:20]
+                context["shared_memory"] = memory.get("facts", [])[: _settings.shared_memory_top_k]
+
+                # Phase 0.2 — additives Token-Profiling: misst pro Agent wieviel
+                # Memory-Kontext tatsächlich injiziert wird. Kein Verhalten geändert.
+                facts_kept = context["shared_memory"]
+                hypotheses = memory.get("hypotheses", []) or []
+                relations = memory.get("relations", []) or []
+                memory_chars = (
+                    sum(len(str(f.get("text", ""))) for f in facts_kept)
+                    + sum(len(str(h.get("text", ""))) for h in hypotheses)
+                    + sum(len(str(r)) for r in relations)
+                )
+                logger.info(
+                    "shared_memory_metrics agent=%s facts_kept=%d facts_total=%d "
+                    "hypotheses=%d relations=%d approx_tokens=%d query_chars=%d",
+                    agent.name,
+                    len(facts_kept),
+                    len(memory.get("facts", []) or []),
+                    len(hypotheses),
+                    len(relations),
+                    memory_chars // 4,
+                    len(query_text),
+                )
             except Exception as e:
                 logger.warning(f"Failed to retrieve shared memory: {e}")
 
@@ -808,6 +879,79 @@ class GenericAgentExecutor:
         context["_budget"] = budget
 
         return context
+
+    @staticmethod
+    def _build_search_query(
+        agent: AgentNode,
+        artifacts: list[dict[str, Any]],
+        input_data: Optional[dict[str, Any]],
+    ) -> str:
+        """
+        Semantische Such-Query aus Agent-Beschreibung + Aufgaben-Inhalt bauen.
+
+        Begründung: Voyager (arXiv:2305.16291) — semantische Skill-Suche per
+        Rolle/Beschreibung schlägt generische Agent-Namens-Queries.
+
+        Quellen-Reihenfolge für den Inhaltsteil:
+        1. consumes_artifacts (über `artifacts`) — Wave-N-Agents
+        2. Fallback `input_data` — Entry-Point-Agents ohne consumes_artifacts
+           (z.B. transcript_analyzer mit Transkript im input_data)
+
+        Pro Quelle wird der erste belegte Schlüssel aus
+        ("transcript", "challenge_text", "text", "summary", "key_points")
+        genutzt, gekürzt auf 300 Zeichen.
+        """
+        # Basis: Agent-Identität. AgentNode hat kein role_description-Feld;
+        # capabilities ist die nächstbeste semantische Beschreibung.
+        base_parts = [agent.name]
+        if agent.capabilities:
+            base_parts.append(" ".join(agent.capabilities))
+        base = " ".join(p for p in base_parts if p).strip()
+
+        content_keys = ("transcript", "challenge_text", "text", "summary", "key_points")
+        content_parts: list[str] = []
+
+        # Quelle 1: Artifacts (Output vorheriger Waves)
+        for artifact in (artifacts or [])[:3]:
+            payload = artifact.get("payload", {})
+            if not isinstance(payload, dict):
+                continue
+            for key in content_keys:
+                value = payload.get(key)
+                if value:
+                    content_parts.append(str(value)[:300])
+                    break
+
+        # Quelle 2: Fallback auf input_data (z.B. transcript_analyzer)
+        if not content_parts and isinstance(input_data, dict):
+            for key in content_keys:
+                value = input_data.get(key)
+                if value:
+                    content_parts.append(str(value)[:300])
+                    break
+
+        if content_parts:
+            return f"{base} {' '.join(content_parts)}".strip()
+        return base or "shared memory context"
+
+    @staticmethod
+    def _format_facts_as_text(facts: list[dict[str, Any]]) -> str:
+        """
+        Memory-Facts als kompakter Textblock formatieren (statt JSON-Dump).
+
+        Reduziert Token-Verbrauch um ~75% pro Fact gegenüber pretty-printed JSON.
+        Begründung: ACON (arXiv:2510.00615) — Kontext-Kompression spart 26-54%.
+        """
+        if not facts:
+            return "Kein relevanter Kontext aus vorherigen Ausführungen."
+        lines = ["Relevanter Kontext aus vorherigen Ausführungen:"]
+        for f in facts:
+            score = f.get("score", 0.0)
+            text = (f.get("text") or "").strip().replace("\n", " ")
+            if len(text) > 280:
+                text = text[:277] + "..."
+            lines.append(f"- [score {score:.2f}] {text}")
+        return "\n".join(lines)
 
     def _construct_prompt(
         self,
@@ -821,23 +965,27 @@ class GenericAgentExecutor:
         Construct full prompt with context injection and skill descriptions.
 
         Template variables:
-        - {context}: Full context as JSON
-        - {artifacts}: Artifacts as JSON
-        - {shared_memory}: Shared memory as JSON
-        - {input}: Direct input as JSON
-        - {skills}: Available skills as JSON
+        - {artifacts}: Artifacts als compact JSON (Sprint A.2)
+        - {shared_memory}: Memory-Facts als kompakter Text (Sprint A.3)
+        - {input}: Direct input als compact JSON
+        - {skills}: Available skills als compact JSON
+
+        Hinweis: {context} (gesamter Kontext-Dump) wurde in Sprint A.1 entfernt —
+        wurde von keinem Main-Agent-Prompt genutzt (Code-Audit 2026-04-29).
         """
-        # Format context sections
-        artifacts_json = json.dumps(context["artifacts"], indent=2)
-        memory_json = json.dumps(context["shared_memory"], indent=2)
-        input_json = json.dumps(input_data or {}, indent=2)
-        skills_json = json.dumps([{"name": s["name"], "description": s["description"]} for s in skills], indent=2)
+        # Format context sections — compact JSON spart Tokens (ACON)
+        artifacts_json = json.dumps(context["artifacts"], separators=(",", ":"))
+        memory_text = self._format_facts_as_text(context.get("shared_memory", []))
+        input_json = json.dumps(input_data or {}, separators=(",", ":"))
+        skills_json = json.dumps(
+            [{"name": s["name"], "description": s["description"]} for s in skills],
+            separators=(",", ":"),
+        )
 
         # Replace template variables
         prompt = prompt_content
-        prompt = prompt.replace("{context}", json.dumps(context, indent=2))
         prompt = prompt.replace("{artifacts}", artifacts_json)
-        prompt = prompt.replace("{shared_memory}", memory_json)
+        prompt = prompt.replace("{shared_memory}", memory_text)
         prompt = prompt.replace("{input}", input_json)
         prompt = prompt.replace("{skills}", skills_json)
 
@@ -882,7 +1030,7 @@ class GenericAgentExecutor:
 
         planning_context = self._build_planning_prompt(planning_skills or [])
         messages = [
-            {"role": "system", "content": f"You are {agent.name}.{planning_context}"},
+            {"role": "system", "content": self._build_system_prompt(agent, planning_context)},
             {"role": "user", "content": prompt}
         ]
 

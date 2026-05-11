@@ -115,6 +115,8 @@ Respond with a JSON object:
 ## Available Agents:
 {available_agents}
 
+n{infrastructure_context}
+
 ## Guidelines:
 - Design for robustness and error handling
 - Keep the interface simple but flexible
@@ -122,7 +124,9 @@ Respond with a JSON object:
 - Consider resource constraints
 - Follow Python best practices
 - If previous attempts failed, consider alternative package choices and error handling
+- All file/directory paths must be defined as required input_schema properties (type: string), never hardcoded — skills must work with any path passed at runtime for reuse
 - For target_agent: Choose the agent whose role best matches this capability. Consider the agent's existing skills and purpose.
+- If the capability requires database or service access, use the sandbox infrastructure info above for realistic test_cases
 
 ## Capability to Design:
 {capability}
@@ -140,6 +144,16 @@ The code will be executed in an isolated Docker sandbox with no internet access.
 2. This function MUST return a dict with key "success" (bool) and either "result" (on success) or "error" (on failure)
 3. All imports MUST be at the top of the file
 4. The code MUST be complete and self-contained — no external files, no placeholder comments
+5. File and directory paths MUST come from `input_data` parameters (e.g., `input_data["file_path"]`).
+   NEVER hardcode paths like "/workspace/data/", "/data/files/", or any absolute path in the code.
+   The function receives all paths at runtime — this enables skill reuse across different contexts.
+6. Database connections MUST use the URL/credentials from `input_data` (e.g., `input_data["database_url"]`).
+   NEVER use `os.getenv("DATABASE_URL")`, global connection pools, or hardcoded credentials.
+   Each call to `execute()` must connect using the parameters it receives — not environment defaults.
+   Create a NEW connection per `execute()` call using `input_data["database_url"]` directly.
+7. NEVER restrict which hosts, ports, or databases the skill can connect to.
+   No hostname whitelists, no port checks, no hardcoded allowed-hosts lists.
+   The caller controls what the skill connects to via `input_data` — the skill just executes.
 
 ## DO NOT:
 - Define a class instead of a function
@@ -148,6 +162,8 @@ The code will be executed in an isolated Docker sandbox with no internet access.
 - Leave TODO/FIXME/placeholder comments
 - Import modules that are not in the pip requirements
 - Use `async def execute` (must be synchronous)
+- Use global state, module-level connections, or connection pools
+- Add host/URL validation or whitelists — the skill trusts its input parameters
 
 ## Architecture Design:
 {design}
@@ -157,6 +173,8 @@ The code will be executed in an isolated Docker sandbox with no internet access.
 
 ## Previous Failures (if any):
 {failure_context}
+
+{infrastructure_context}
 
 ## Output Format:
 Provide ONLY a single fenced Python code block. Nothing else — no explanation, no markdown outside the code block.
@@ -273,6 +291,8 @@ You need to fix the following code based on review feedback.
 ## Required Changes:
 {required_changes}
 
+{infrastructure_context}
+
 ## Output:
 Provide the FIXED code only. Do not include explanations.
 
@@ -307,6 +327,7 @@ def get_architect_prompt(
     research_context: str,
     failure_context: str = "",
     available_agents: list[dict] | None = None,
+    infrastructure_context: str = "",
 ) -> str:
     """Get architect prompt with research context, failure history, and available agents."""
     failure_section = ""
@@ -328,6 +349,7 @@ Based on the failures above, design with different error handling or alternative
         research_context=research_context,
         failure_context=failure_section,
         available_agents=agents_section,
+        infrastructure_context=infrastructure_context,
     )
 
 
@@ -336,6 +358,7 @@ def get_implementer_prompt(
     design: str,
     research_context: str = "",
     failure_context: str = "",
+    infrastructure_context: str = "",
 ) -> str:
     """Get implementer prompt with design and context."""
     return IMPLEMENTER_PROMPT.format(
@@ -343,6 +366,7 @@ def get_implementer_prompt(
         design=design,
         research_context=research_context,
         failure_context=failure_context,
+        infrastructure_context=infrastructure_context,
     )
 
 
@@ -363,12 +387,14 @@ def get_revision_prompt(
     code: str,
     findings: str,
     required_changes: str,
+    infrastructure_context: str = "",
 ) -> str:
     """Get revision prompt for fixing code."""
     return REVISION_PROMPT.format(
         code=code,
         findings=findings,
         required_changes=required_changes,
+        infrastructure_context=infrastructure_context,
     )
 
 

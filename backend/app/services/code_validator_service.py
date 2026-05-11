@@ -286,6 +286,46 @@ class CodeValidatorService:
             warnings=warnings,
         )
 
+    def validate_paths(self, code: str) -> ValidationResult:
+        """Prüft ob der Code hardcodierte Dateipfade enthält.
+
+        Skills müssen Pfade als input_data-Parameter empfangen,
+        nicht im Code hardcoden — sonst bricht Warm-Reuse.
+        """
+        import re as _re
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            return ValidationResult(is_valid=True, errors=[], warnings=[])
+
+        path_patterns = [
+            _re.compile(r'^/workspace/.+'),
+            _re.compile(r'^/data/.+'),
+            _re.compile(r'^/tmp/.+'),
+            _re.compile(r'^/home/.+'),
+            _re.compile(r'^[A-Z]:\\.+'),
+        ]
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            val = node.value
+            if any(p.match(val) for p in path_patterns):
+                line = getattr(node, 'lineno', '?')
+                errors.append(
+                    f"Hardcoded path '{val}' at line {line}. "
+                    f"File paths must come from input_data parameters for reuse."
+                )
+
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+        )
+
     def fingerprint(self, code: str) -> str:
         """
         Generate a fingerprint for code deduplication.

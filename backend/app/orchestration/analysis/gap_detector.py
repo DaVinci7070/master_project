@@ -47,7 +47,7 @@ For each gap, specify:
   - weak_prompt: agent exists but prompt is too weak for this capability
   - topology_issue: dependency or routing problem
   - missing_agent: no suitable agent exists
-  - schema_mismatch: input/output schema incompatibility
+  - schema_mismatch: input/output schema incompatibility between agents (NOT for database access, external API connections, or ETL — those are missing_skill)
 - severity: one of [critical, important, minor]
   - critical: blocks execution entirely
   - important: significantly degrades quality

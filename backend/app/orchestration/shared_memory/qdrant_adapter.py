@@ -149,7 +149,8 @@ class SharedMemoryQdrantAdapter:
         agent_id: Optional[str] = None,
         project_id: Optional[str] = None,
         tags: Optional[list[str]] = None,
-        recency_scale: int = 604800  # 1 week in seconds
+        recency_scale: int = 604800,  # 1 week in seconds
+        score_threshold: float = 0.0,
     ) -> list[dict[str, Any]]:
         """
         Search facts with semantic similarity + recency bias.
@@ -157,11 +158,13 @@ class SharedMemoryQdrantAdapter:
         Args:
             query_embedding: Query vector
             limit: Max results (soft max from CONTEXT)
-            min_confidence: Minimum confidence filter
+            min_confidence: Minimum confidence filter (auf Fact-Confidence im Payload)
             agent_id: Filter by source agent
             project_id: Filter by project (optional)
             tags: Filter by tags (any match)
             recency_scale: Decay scale in seconds (default 1 week)
+            score_threshold: Mindest-Cosine-Similarity. G-Memory (NeurIPS 2025):
+                naives Memory schadet — Filter unter dem Threshold drückt Rauschen raus.
 
         Returns:
             List of fact dicts with scores
@@ -190,7 +193,7 @@ class SharedMemoryQdrantAdapter:
             query_filter=query_filter,
             limit=limit,
             with_payload=True,
-            score_threshold=0.0
+            score_threshold=score_threshold,
         ).points
 
         # Apply recency boost in post-processing

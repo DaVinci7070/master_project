@@ -62,6 +62,23 @@ echo -e "\n${YELLOW}Starting Docker services...${NC}"
 # Start postgres and qdrant
 docker-compose up -d postgres qdrant
 
+# Benchmark-DB (eigenes Compose-File, shared Network)
+docker network inspect lumari-network >/dev/null 2>&1 || docker network create lumari-network
+docker-compose -f docker-compose.benchmark.yml up -d benchmark-db
+
+# Wait for Benchmark-DB to be healthy
+echo "Waiting for Benchmark-DB..."
+for i in {1..20}; do
+    if docker exec lumari-benchmark-db pg_isready -U benchmark -d lumari_benchmark_db >/dev/null 2>&1; then
+        echo -e "${GREEN}Benchmark-DB is ready${NC}"
+        break
+    fi
+    if [ $i -eq 20 ]; then
+        echo -e "${YELLOW}Benchmark-DB may still be initializing...${NC}"
+    fi
+    sleep 1
+done
+
 # Wait for PostgreSQL to be healthy
 echo "Waiting for PostgreSQL..."
 for i in {1..30}; do
@@ -140,6 +157,7 @@ cleanup() {
     echo -e "${YELLOW}Stopping Docker services...${NC}"
     cd "$PROJECT_DIR"
     docker-compose stop postgres qdrant
+    docker-compose -f docker-compose.benchmark.yml stop benchmark-db
     echo -e "${GREEN}Done${NC}"
     exit 0
 }
@@ -150,7 +168,11 @@ trap cleanup SIGINT SIGTERM
 echo "Starting backend on http://localhost:8000..."
 cd "$PROJECT_DIR/backend"
 source "$PROJECT_DIR/.venv/bin/activate"
-python -m uvicorn app.main:app --reload --port 8000 &
+mkdir -p logs
+BACKEND_LOG="logs/backend_$(date +%Y%m%d_%H%M%S).log"
+echo "Backend log: $BACKEND_LOG"
+# Process Substitution: $! ist die uvicorn-PID (nicht die tee-PID)
+python -m uvicorn app.main:app --reload --port 8000 > >(tee "$BACKEND_LOG") 2>&1 &
 BACKEND_PID=$!
 
 # Wait for backend to start
@@ -200,6 +222,14 @@ else
     echo -e "${GREEN}Found $AGENT_COUNT agents in database${NC}"
 fi
 
+# ETL-Testdaten generieren (für L5-Benchmark)
+ETL_DIR="$PROJECT_DIR/backend/scripts/evaluation/data/etl_csvs"
+if [ ! -d "$ETL_DIR" ] || [ -z "$(ls -A "$ETL_DIR" 2>/dev/null)" ]; then
+    echo -e "${YELLOW}Generating ETL test data...${NC}"
+    python scripts/evaluation/generate_etl_data.py
+    echo -e "${GREEN}ETL test data generated${NC}"
+fi
+
 # Start frontend
 echo "Starting frontend on http://localhost:3000..."
 cd "$PROJECT_DIR/frontend"
@@ -213,11 +243,12 @@ echo -e "\n${GREEN}========================================"
 echo " Lumari is running!"
 echo "========================================"
 echo -e "${NC}"
-echo "  Frontend:   http://localhost:3000"
-echo "  Backend:    http://localhost:8000"
-echo "  Health:     http://localhost:8000/health"
-echo "  PostgreSQL: localhost:5432"
-echo "  Qdrant:     http://localhost:6333"
+echo "  Frontend:     http://localhost:3000"
+echo "  Backend:      http://localhost:8000"
+echo "  Health:       http://localhost:8000/health"
+echo "  PostgreSQL:   localhost:5432"
+echo "  Benchmark-DB: localhost:5433"
+echo "  Qdrant:       http://localhost:6333"
 echo ""
 echo "Press Ctrl+C to stop all services"
 echo ""

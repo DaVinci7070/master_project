@@ -158,7 +158,7 @@ class GapPlanExecutor:
                                 capability=affected_capability,
                                 code="",
                                 success=True,
-                                skill_id=result.artifact_id,
+                                skill_id=result.artifact_id if result.artifact_type == "skill" else None,
                                 strategy_id=getattr(result, '_strategy_id', None),
                             )
                             if result.artifact_type == "skill":

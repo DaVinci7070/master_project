@@ -61,6 +61,8 @@ HARDCODED_MAPPINGS = {
     "camelot": "camelot-py",
     "spacy": "spacy",
     "nltk": "nltk",
+    "psycopg2": "psycopg2-binary",
+    "qdrant_client": "qdrant-client",
 }
 
 # Standard library modules (don't need pip install)

@@ -76,12 +76,17 @@ class ExecutionConfig:
     pids_limit: int = 100     # Max processes
 
     # Timeouts
-    execution_timeout: int = 300  # 5 minutes for pip install + execution
+    execution_timeout: int = 600  # 10 Minuten — erste Ausfuehrung kann Model-Downloads enthalten
     pip_timeout: int = 600        # 10 minutes for pip install (large packages need time)
     apt_timeout: int = 180        # 3 minutes for apt-get (can be slow)
 
     # Pip cache
     pip_cache_volume: str = "lumari-pip-cache"  # Named Docker volume for pip cache
+
+    # Data-Mount: uploads/ → /data/ (read-only) für Directory-Level-Zugriff
+    uploads_mount_enabled: bool = True
+    uploads_host_dir: str = str(Path(__file__).parent.parent.parent / "uploads")
+    uploads_container_dir: str = "/data"
 
     # Network
     network_enabled: bool = True  # Enable for pip/apt/research
@@ -519,18 +524,33 @@ class DynamicSandboxService:
             "cpu_period": self.config.cpu_period,
             "cpu_quota": self.config.cpu_quota,
             "pids_limit": self.config.pids_limit,
-            "network_mode": "bridge" if self.config.network_enabled else "none",
         }
 
-        # Mount pip cache volume for faster repeated installs
+        # Netzwerk: lumari-network für Zugriff auf benchmark-db u.a. Services
+        if self.config.network_enabled:
+            container_config["network_mode"] = "lumari-network"
+        else:
+            container_config["network_mode"] = "none"
+
+        # Mounts: pip-cache + uploads-Verzeichnis
+        mounts = []
         if self.config.pip_cache_volume:
-            container_config["mounts"] = [
-                Mount(
-                    target="/root/.cache/pip",
-                    source=self.config.pip_cache_volume,
-                    type="volume",
-                ),
-            ]
+            mounts.append(Mount(
+                target="/root/.cache/pip",
+                source=self.config.pip_cache_volume,
+                type="volume",
+            ))
+        if self.config.uploads_mount_enabled:
+            uploads_dir = Path(self.config.uploads_host_dir)
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            mounts.append(Mount(
+                target=self.config.uploads_container_dir,
+                source=str(uploads_dir.resolve()),
+                type="bind",
+                read_only=True,
+            ))
+        if mounts:
+            container_config["mounts"] = mounts
 
         # Only add security options if specified
         if self.config.user:
@@ -635,12 +655,23 @@ class DynamicSandboxService:
         # Create a tar archive with all files
         tar_stream = io.BytesIO()
         with tarfile.open(fileobj=tar_stream, mode="w") as tar:
+            # Subdirectory-Einträge vorab anlegen
+            created_dirs: set[str] = set()
+            for filename in files:
+                parts = filename.split("/")
+                if len(parts) > 1:
+                    dir_path = "/".join(parts[:-1])
+                    if dir_path not in created_dirs:
+                        dir_info = tarfile.TarInfo(name=dir_path)
+                        dir_info.type = tarfile.DIRTYPE
+                        dir_info.mode = 0o755
+                        tar.addfile(dir_info)
+                        created_dirs.add(dir_path)
+
             for filename, content in files.items():
-                # Create file info
                 info = tarfile.TarInfo(name=filename)
                 info.size = len(content)
                 info.mode = 0o644
-                # Add to archive
                 tar.addfile(info, io.BytesIO(content))
 
         tar_stream.seek(0)
@@ -652,7 +683,7 @@ class DynamicSandboxService:
             tar_stream.getvalue(),
         )
 
-        log.debug(f"Files copied: {list(files.keys())}")
+        log.debug(f"Files copied: {list(files.keys())[:10]}{'...' if len(files) > 10 else ''}")
 
     async def _execute_code(
         self,

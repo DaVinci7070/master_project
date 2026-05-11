@@ -158,6 +158,15 @@ class SharedMemoryQuery(BaseModel):
         le=100,
         description="Maximum items to return (soft limit)"
     )
+    score_threshold: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Mindest-Cosine-Similarity für Treffer (semantisch, nicht confidence). "
+            "Memory-Redesign Sprint A — G-Memory-inspirierter Filter."
+        ),
+    )
     include_hypotheses: bool = Field(default=True, description="Include hypotheses in results")
     include_relations: bool = Field(default=True, description="Include relations in results")
     tags: Optional[list[str]] = Field(None, description="Filter by tags")

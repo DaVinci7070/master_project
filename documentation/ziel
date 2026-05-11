@@ -11,7 +11,7 @@ Der Aufbau besteht aus drei Kernkomponenten:
 • Effizienzsteigerung durch Wiederverwendung: Zeigen, dass das Speichern und Abrufen von Agenten-Blueprints (aus Qdrant) die Kosten und Latenzzeit im Vergleich zur ständigen Neugenerierung über die Zeit reduziert.
 3. Forschungsfragen (RQs)
 1. RQ1 (Effektivität): Führt Structural Self-Evolution (dynamische Erstellung neuer Agenten-Rollen) zu einer höheren Lösungsrate (Task Completion Rate) bei komplexen Benchmarks (z. B. GAIA) im Vergleich zu statischen MAS-Architekturen?
-2. RQ2 (Effizienz): Wie entwickelt sich die Blueprint Reuse Rate über die Zeit, und korreliert eine höhere Wiederverwendung mit reduzierten Token-Kosten und geringerer Latenz?
+2. RQ2 (Effizienz): Reduziert die Wiederverwendung autonom generierter Blueprints den Ressourcenverbrauch bei nachfolgenden Aufgaben gleichen Typs?
 3. RQ3 (Sicherheit): Kann ein semantischer Gatekeeper-Mechanismus (Vergleich von Beschreibung und Code-AST) gefährliche Diskrepanzen in autogenerierten Agenten-Tools zuverlässig erkennen und verhindern?
 4. Was wird untersucht? (Methodik & Evaluierung)
 Das System wird implementiert (basierend auf Frameworks wie LangGraph/A2A und Qdrant) und mittels einer Ablation Study evaluiert:

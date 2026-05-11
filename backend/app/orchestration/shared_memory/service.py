@@ -295,7 +295,8 @@ class SharedMemoryService:
             min_confidence=query.min_confidence,
             agent_id=query.agent_id,
             project_id=query.project_id,
-            tags=query.tags
+            tags=query.tags,
+            score_threshold=query.score_threshold,
         )
 
         # Search hypotheses if requested

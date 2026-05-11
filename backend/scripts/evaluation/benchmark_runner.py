@@ -29,6 +29,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import shutil
+
 import httpx
 import yaml
 from pydantic import BaseModel
@@ -41,6 +43,7 @@ from app.core.llm_client import LLMClient
 log = logging.getLogger(__name__)
 
 DATASETS_DIR = Path(__file__).parent / "datasets"
+UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
 
 
 # ---------------------------------------------------------------------------
@@ -301,17 +304,53 @@ async def run_task(
     }
 
     try:
-        # 1. Analyze
+        # 0. Stage data_dir files into uploads/ if specified
+        if "data_dir" in task:
+            data_dir = DATASETS_DIR.parent / task["data_dir"]
+            if data_dir.is_dir():
+                # Target: uploads/<target_name>/ → /data/<target_name>/ im Container
+                target_subdir = task.get("data_target", Path(task["data_dir"]).name)
+                target_dir = UPLOADS_DIR / target_subdir
+                if target_dir.exists():
+                    shutil.rmtree(target_dir)
+                shutil.copytree(data_dir, target_dir)
+                staged = len(list(target_dir.glob("*")))
+                print(f"\n    [{task_id}] Staged {staged} files to {target_dir}")
+            else:
+                print(f"\n    [WARN] data_dir not found: {data_dir}")
+
+        # 1. Analyze (oder Upload bei audio_file-Tasks)
         t_analyze = time.monotonic()
-        resp = await client.post(
-            f"{base_url}/challenges/analyze",
-            json={
-                "challenge_text": task["description"],
-                "execution_id": execution_id,
-                "project_id": project_id,
-            },
-            timeout=60,
-        )
+
+        if "audio_file" in task:
+            # Audio-Datei per /upload-Endpoint senden
+            audio_path = DATASETS_DIR.parent / task["audio_file"]
+            if not audio_path.is_file():
+                raise FileNotFoundError(f"Audio-Datei nicht gefunden: {audio_path}")
+            print(f"\n    [{task_id}] Uploading audio: {audio_path.name} ({audio_path.stat().st_size} bytes)")
+            instructions = task.get("instructions", task["description"])
+            with open(audio_path, "rb") as af:
+                resp = await client.post(
+                    f"{base_url}/challenges/upload",
+                    files={"file": (audio_path.name, af, "audio/opus")},
+                    data={
+                        "project_id": project_id,
+                        "execution_id": execution_id,
+                        "instructions": instructions,
+                    },
+                    timeout=600,
+                )
+        else:
+            resp = await client.post(
+                f"{base_url}/challenges/analyze",
+                json={
+                    "challenge_text": task["description"],
+                    "execution_id": execution_id,
+                    "project_id": project_id,
+                },
+                timeout=300,
+            )
+
         resp.raise_for_status()
         analysis = resp.json()
         analyze_ms = int((time.monotonic() - t_analyze) * 1000)
@@ -332,13 +371,13 @@ async def run_task(
                 resp = await client.post(
                     f"{base_url}/challenges/{challenge_id}/build-plan/approve",
                     json={"approved": True},
-                    timeout=60,
+                    timeout=300,
                 )
                 resp.raise_for_status()
 
             # Poll until build is complete
             build_elapsed = 0.0
-            build_timeout = timeout * 0.6  # Use up to 60% of timeout for building
+            build_timeout = timeout * 0.85  # Muss über Backend-Hard-Timeout (240s) liegen
             while build_elapsed < build_timeout:
                 await asyncio.sleep(poll_interval)
                 build_elapsed += poll_interval
@@ -482,6 +521,58 @@ async def run_suite(args: argparse.Namespace) -> dict:
                 print(f"  - {t['task_id']} ({t['level']}) — {kw} keywords, {sec} sections")
         return {}
 
+    # Multi-Seed-Loop: bei seeds==1 Verhalten unverändert, bei n>1 pro Seed
+    # eigener Output und am Ende Aggregat-Datei für Wilcoxon-Auswertung.
+    seeds = max(1, int(getattr(args, "seeds", 1)))
+    base_seed = int(args.seed)
+    suite_name = suite.get("suite", args.suite)
+
+    seed_outputs: list[dict] = []
+    for i in range(seeds):
+        current_seed = base_seed + i
+        seed_args = argparse.Namespace(**vars(args))
+        seed_args.seed = current_seed
+
+        # Per-Seed-Output-Pfade ableiten — bei seeds==1 unverändert
+        if seeds > 1:
+            base_out = Path(args.output)
+            seed_args.output = str(
+                base_out.with_name(f"{base_out.stem}_seed{current_seed}{base_out.suffix}")
+            )
+            if args.csv:
+                base_csv = Path(args.csv)
+                seed_args.csv = str(
+                    base_csv.with_name(f"{base_csv.stem}_seed{current_seed}{base_csv.suffix}")
+                )
+            print(f"\n=== Seed {i + 1}/{seeds} (seed={current_seed}) ===")
+
+            # Cold-Reset zwischen Seeds (nicht vor dem ersten Seed —
+            # Annahme: User hat State vor dem Run vorbereitet).
+            if args.mode == "cold" and i > 0:
+                print(f"  Cold-Reset vor Seed {current_seed}...")
+                from scripts.evaluation.cold_warm_switch import cold_reset
+                reset_summary = await cold_reset()
+                print(f"  Reset: tables={reset_summary.get('tables_truncated')} "
+                      f"qdrant={len(reset_summary.get('qdrant_cleared', []))} "
+                      f"agents={reset_summary.get('agents_seeded')}")
+
+        seed_output = await _run_single_seed(seed_args, suite, tasks)
+        seed_outputs.append(seed_output)
+
+    # Aggregat nur wenn n>1
+    if seeds > 1:
+        _write_aggregate(args, suite_name, seed_outputs)
+
+    # Rückgabe: bei n=1 wie vorher, sonst Aggregat-Repräsentation
+    return seed_outputs[0] if seeds == 1 else {
+        "suite": suite_name,
+        "seeds": seeds,
+        "seed_outputs": seed_outputs,
+    }
+
+
+async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
+    """Führt eine einzelne Seed-Iteration aus (Original-Run-Logic)."""
     # Create LLM client for claim-based evaluation
     llm_client = LLMClient()
 
@@ -569,6 +660,53 @@ async def run_suite(args: argparse.Namespace) -> dict:
     return run_output
 
 
+def _write_aggregate(args, suite_name: str, seed_outputs: list[dict]) -> None:
+    """Aggregat-JSON für Wilcoxon-Auswertung schreiben."""
+    base_out = Path(args.output)
+    aggregate_path = base_out.with_name(f"{base_out.stem}_aggregate{base_out.suffix}")
+
+    pass_at_1_per_seed = [s["pass_at_1"] for s in seed_outputs]
+    tokens_per_seed = [
+        sum(t.get("tokens_total") or 0 for t in s["tasks"]) for s in seed_outputs
+    ]
+    duration_per_seed = [
+        sum(t.get("duration_ms") or 0 for t in s["tasks"]) for s in seed_outputs
+    ]
+
+    # Task-Pass-Matrix: rows=tasks, cols=seeds — Input für Wilcoxon
+    task_ids = [t["task_id"] for t in seed_outputs[0]["tasks"]]
+    task_pass_matrix: dict[str, list[int]] = {}
+    for tid in task_ids:
+        row: list[int] = []
+        for s in seed_outputs:
+            r = next((x for x in s["tasks"] if x["task_id"] == tid), None)
+            row.append(1 if (r and r["pass"]) else 0)
+        task_pass_matrix[tid] = row
+
+    n = len(pass_at_1_per_seed)
+    mean_pass = sum(pass_at_1_per_seed) / n if n else 0.0
+    var = sum((x - mean_pass) ** 2 for x in pass_at_1_per_seed) / n if n else 0.0
+    std_pass = var ** 0.5
+
+    aggregate = {
+        "suite": suite_name,
+        "seeds": n,
+        "seed_run_ids": [s["run_id"] for s in seed_outputs],
+        "pass_at_1_per_seed": pass_at_1_per_seed,
+        "pass_at_1_mean": round(mean_pass, 4),
+        "pass_at_1_std": round(std_pass, 4),
+        "tokens_total_per_seed": tokens_per_seed,
+        "duration_ms_per_seed": duration_per_seed,
+        "task_pass_matrix": task_pass_matrix,
+    }
+    aggregate_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(aggregate_path, "w") as f:
+        json.dump(aggregate, f, indent=2, ensure_ascii=False)
+    print(f"\nAggregate JSON written to {aggregate_path}")
+    print(f"Pass@1 mean={mean_pass * 100:.1f}% std={std_pass * 100:.1f}% "
+          f"(seeds={n})")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -580,16 +718,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=1, help="Random seed (stored in metadata)")
     parser.add_argument("--output", required=True, help="Path for JSON result file")
     parser.add_argument("--csv", default=None, help="Path for CSV output (default: <output>.csv)")
-    parser.add_argument("--timeout", type=int, default=300, help="Max seconds per task")
+    parser.add_argument("--timeout", type=int, default=1200, help="Max seconds per task (20min, Audio-Tasks brauchen Transkription + Multi-Agent-Waves)")
     parser.add_argument("--poll-interval", type=int, default=5, help="Seconds between status polls")
     parser.add_argument("--project-id", default="evaluation", help="project_id for challenge submissions")
     parser.add_argument("--dry-run", action="store_true", help="Validate suite without executing")
+    parser.add_argument("--seeds", type=int, default=1,
+                        help="Anzahl Seed-Iterationen (n>1 erzeugt Aggregat-JSON)")
+    parser.add_argument("--mode", choices=["warm", "cold"], default="warm",
+                        help="cold: zwischen Seeds System-State zurücksetzen")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None):
     args = parse_args(argv)
-    print(f"Benchmark Runner — suite={args.suite}, seed={args.seed}")
+    print(f"Benchmark Runner — suite={args.suite}, seeds={args.seeds}, "
+          f"base_seed={args.seed}, mode={args.mode}")
     asyncio.run(run_suite(args))
 
 

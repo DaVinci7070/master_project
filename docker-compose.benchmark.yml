@@ -1,0 +1,38 @@
+# Benchmark-Datenbank für L5-Evaluationsaufgaben
+# Enthält realistische Baustellendaten zum Testen von Schema-Discovery-Skills
+#
+# Usage:
+#   docker-compose -f docker-compose.benchmark.yml up -d
+#   docker-compose -f docker-compose.benchmark.yml down -v
+
+version: "3.8"
+
+services:
+  benchmark-db:
+    image: postgres:16-alpine
+    container_name: lumari-benchmark-db
+    environment:
+      POSTGRES_USER: benchmark
+      POSTGRES_PASSWORD: bench2024
+      POSTGRES_DB: lumari_benchmark_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - benchmark_data:/var/lib/postgresql/data
+      - ./backend/scripts/evaluation/init_benchmark_db.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    networks:
+      - lumari-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U benchmark -d lumari_benchmark_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  benchmark_data:
+    driver: local
+
+networks:
+  lumari-network:
+    external: true

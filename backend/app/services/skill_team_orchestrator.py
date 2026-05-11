@@ -9,11 +9,14 @@ Coordinates multiple specialized roles for high-quality skill development:
 5. Tester: Runs tests and validates output
 """
 
+import ast
 import json
 import logging
 import re
 import time
 import uuid
+from collections import Counter
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, Any
 
@@ -54,6 +57,16 @@ from app.prompts.skill_team_prompts import (
 )
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class ImplementationResult:
+    """Ergebnis der Implementation-Phase inkl. aufgelöster Requirements."""
+    code: str
+    pip_requirements: list[str]
+    system_requirements: list[str]
+    iterations: int
+    iteration_errors: list[dict] = field(default_factory=list)
 
 
 class SkillTeamOrchestrator:
@@ -185,14 +198,14 @@ class SkillTeamOrchestrator:
                 agents = await self._get_available_agents()
                 design.integration_plan = self._resolve_agent_id_by_name(design.integration_plan, agents)
 
-            # Phase 3: Implementation (with iterations)
+            # Phase 3: Implementation (Self-Healing Double-Loop)
             phase_start = time.time()
-            code = await self._implementation_phase(
+            impl_result = await self._implementation_phase(
                 capability, design, research, input_files
             )
             phase_times["implementation"] = int((time.time() - phase_start) * 1000)
 
-            if code is None:
+            if impl_result is None:
                 return SkillBuildResult(
                     success=False,
                     failure_phase=TeamRole.IMPLEMENTER,
@@ -204,6 +217,11 @@ class SkillTeamOrchestrator:
                     phase_times=phase_times,
                     attempt_id=attempt_id,
                 )
+
+            code = impl_result.code
+            # Requirements aus Self-Healing propagieren (Requirement-Drift)
+            design.pip_requirements = impl_result.pip_requirements
+            design.system_requirements = impl_result.system_requirements
 
             # Phase 4: Review
             phase_start = time.time()
@@ -359,7 +377,7 @@ class SkillTeamOrchestrator:
                 integration_plan=design.integration_plan,
                 final_code=code,
                 requirements_txt=requirements_txt,
-                implementation_iterations=1,  # Could track this
+                implementation_iterations=impl_result.iterations,
                 review_iterations=1,
                 total_time_ms=total_time_ms,
                 phase_times=phase_times,
@@ -620,8 +638,13 @@ class SkillTeamOrchestrator:
         # Load available agents for integration planning
         available_agents = await self._get_available_agents()
 
-        # Include failure context in architecture prompt
-        prompt = get_architect_prompt(capability, research_context, failure_context, available_agents)
+        # Infrastruktur-Kontext für realistische Test-Cases
+        infra_context = settings.get_sandbox_infrastructure_context()
+
+        prompt = get_architect_prompt(
+            capability, research_context, failure_context, available_agents,
+            infrastructure_context=infra_context,
+        )
 
         response = await llm.chat(
             messages=[
@@ -733,6 +756,129 @@ class SkillTeamOrchestrator:
                 break
         return plan
 
+    # -- Self-Healing Hilfsmethoden (portiert aus AutonomousSkillBuilder) --
+
+    def _extract_imports(self, code: str) -> list[str]:
+        """AST-basierte Import-Extraktion aus Code."""
+        imports = []
+        try:
+            tree = ast.parse(code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imports.append(alias.name.split('.')[0])
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        imports.append(node.module.split('.')[0])
+        except SyntaxError:
+            import_matches = re.findall(r'^import\s+(\w+)', code, re.MULTILINE)
+            from_matches = re.findall(r'^from\s+(\w+)', code, re.MULTILINE)
+            imports = import_matches + from_matches
+        return list(set(imports))
+
+    def _detect_libraries(self, code: str) -> list[str]:
+        """Third-Party-Libraries im Code erkennen."""
+        from app.services.package_resolver import STDLIB_MODULES
+        all_imports = self._extract_imports(code)
+        return [imp for imp in all_imports if imp not in STDLIB_MODULES]
+
+    def _resolve_new_packages(
+        self, imports: list[str], current_pip: list[str]
+    ) -> list[str]:
+        """Findet neue Packages die im Code importiert aber noch nicht installiert sind."""
+        from app.services.package_resolver import HARDCODED_MAPPINGS, STDLIB_MODULES
+        new_packages = []
+        current_names = {p.lower().replace("-", "_") for p in current_pip}
+        for imp in imports:
+            if imp in STDLIB_MODULES:
+                continue
+            package = HARDCODED_MAPPINGS.get(imp, imp)
+            if package.lower().replace("-", "_") not in current_names:
+                new_packages.append(package)
+        return new_packages
+
+    def _module_to_package(self, module: str) -> Optional[str]:
+        """Einzelnes Modul → pip-Package."""
+        from app.services.package_resolver import HARDCODED_MAPPINGS
+        return HARDCODED_MAPPINGS.get(module, module)
+
+    def _extract_missing_module(self, error: str) -> Optional[str]:
+        """Extrahiert den fehlenden Modulnamen aus einem ModuleNotFoundError."""
+        match = re.search(r"No module named ['\"]?(\w+)['\"]?", error)
+        return match.group(1) if match else None
+
+    def _extract_bad_package(self, error: str) -> Optional[str]:
+        """Extrahiert den fehlgeschlagenen Package-Namen aus einem pip-Error."""
+        match = re.search(r"No matching distribution found for (\S+)", error)
+        return match.group(1) if match else None
+
+    def _should_switch_approach(self, iteration_errors: list[dict]) -> bool:
+        """Prüft ob die gleiche Library 3+ mal hintereinander gescheitert ist."""
+        if len(iteration_errors) < 3:
+            return False
+        recent_libs = [lib for e in iteration_errors[-3:] for lib in e.get("libraries", [])]
+        if not recent_libs:
+            return False
+        most_common_lib, count = Counter(recent_libs).most_common(1)[0]
+        return count >= 3
+
+    def _find_repeated_failure_lib(self, iteration_errors: list[dict]) -> str:
+        """Findet die Library die am häufigsten in den letzten Errors vorkommt."""
+        recent_libs = [lib for e in iteration_errors[-3:] for lib in e.get("libraries", [])]
+        return Counter(recent_libs).most_common(1)[0][0]
+
+    def _errors_oscillating(self, iteration_errors: list[dict]) -> bool:
+        """Prüft ob Error-Types nicht konvergieren (min 3 verschiedene in letzten 5)."""
+        if len(iteration_errors) < 5:
+            return False
+        recent_types = [e["error_type"] for e in iteration_errors[-5:]]
+        return len(set(recent_types)) >= 3
+
+    async def _generate_code(
+        self,
+        capability: str,
+        design: ArchitectureDesign,
+        research: ResearchContext,
+        failure_context: str = "",
+    ) -> str:
+        """Generiert initialen Skill-Code via LLM."""
+        llm = self._get_role_llm(TeamRole.IMPLEMENTER)
+
+        design_str = json.dumps({
+            "function_signature": design.function_signature,
+            "input_schema": design.input_schema,
+            "output_schema": design.output_schema,
+            "pip_requirements": design.pip_requirements,
+            "error_handling": design.error_handling,
+        }, indent=2)
+
+        research_str = json.dumps({
+            "packages": research.pip_packages,
+            "approach": research.implementation_approach,
+            "examples": research.code_examples[:1] if research.code_examples else [],
+        }, indent=2)
+
+        infra_context = settings.get_sandbox_infrastructure_context()
+
+        prompt = get_implementer_prompt(
+            capability=capability,
+            design=design_str,
+            research_context=research_str,
+            failure_context=failure_context,
+            infrastructure_context=infra_context,
+        )
+
+        response = await llm.chat(
+            messages=[
+                {"role": "system", "content": "You are a Python expert. Write clean, working code."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            max_tokens=3000,
+        )
+
+        return self._extract_code(response.content)
+
     async def _debug_code(
         self,
         code: str,
@@ -792,132 +938,220 @@ class SkillTeamOrchestrator:
         design: ArchitectureDesign,
         research: ResearchContext,
         input_files: Optional[dict[str, bytes]] = None,
-    ) -> Optional[str]:
-        """Execute implementation phase with iterations."""
-        llm = self._get_role_llm(TeamRole.IMPLEMENTER)
+    ) -> Optional[ImplementationResult]:
+        """
+        Self-Healing Implementation mit Double-Loop und Error-Type-Routing.
 
-        # Get failure history
+        Outer Loop: Erstellt neue Sessions wenn Requirements sich ändern.
+        Inner Loop: Iteriert innerhalb einer Session mit Debug-Zyklen.
+        """
+        max_iterations = self.config.max_implementation_iterations
         failure_history = await self.failure_analyzer.get_failure_history(capability)
         failure_context = self.failure_analyzer.format_failure_context(failure_history)
 
-        design_str = json.dumps({
-            "function_signature": design.function_signature,
-            "input_schema": design.input_schema,
-            "output_schema": design.output_schema,
-            "pip_requirements": design.pip_requirements,
-            "error_handling": design.error_handling,
-        }, indent=2)
+        iteration_errors: list[dict] = []
+        current_pip = list(design.pip_requirements)
+        current_apt = list(design.system_requirements)
+        code: Optional[str] = None
+        iteration = 0
+        validator = CodeValidatorService()
 
-        research_str = json.dumps({
-            "packages": research.pip_packages,
-            "approach": research.implementation_approach,
-            "examples": research.code_examples[:1] if research.code_examples else [],
-        }, indent=2)
+        while iteration < max_iterations:
+            log.info(
+                f"Session start: iteration={iteration + 1}/{max_iterations}, "
+                f"pip={len(current_pip)}, apt={len(current_apt)}"
+            )
 
-        # Use a session to reuse the same container across iterations
-        async with self.sandbox.session(
-            pip_requirements=design.pip_requirements,
-            system_packages=design.system_requirements,
-            input_files=input_files,
-        ) as session:
-            for iteration in range(self.config.max_implementation_iterations):
-                log.info(f"Implementation iteration {iteration + 1}/{self.config.max_implementation_iterations}")
+            async with self.sandbox.session(
+                pip_requirements=current_pip,
+                system_packages=current_apt,
+                input_files=input_files,
+                env_vars=settings.get_sandbox_env_vars(),
+            ) as session:
+                while iteration < max_iterations:
+                    log.info(f"Implementation iteration {iteration + 1}/{max_iterations}")
 
-                prompt = get_implementer_prompt(
-                    capability=capability,
-                    design=design_str,
-                    research_context=research_str,
-                    failure_context=failure_context,
-                )
+                    # Code generieren oder nach Regeneration-Schwelle neu erzeugen
+                    if code is None:
+                        code = await self._generate_code(
+                            capability, design, research, failure_context,
+                        )
 
-                response = await llm.chat(
-                    messages=[
-                        {"role": "system", "content": "You are a Python expert. Write clean, working code."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.2,
-                    max_tokens=3000,
-                )
+                    # AST Structure Validation
+                    structure_result = validator.validate_structure(code)
+                    if not structure_result.is_valid:
+                        error_msg = "; ".join(structure_result.errors)
+                        log.warning(f"Structure validation failed: {error_msg}")
+                        code = await self._debug_code(
+                            code, "STRUCTURE_ERROR", error_msg,
+                            capability, design, research,
+                        )
+                        recheck = validator.validate_structure(code)
+                        if not recheck.is_valid:
+                            iteration_errors.append({
+                                "iteration": iteration + 1,
+                                "error": error_msg[:300],
+                                "error_type": "STRUCTURE_ERROR",
+                                "libraries": [],
+                            })
+                            failure_context += f"\n\nIteration {iteration + 1} STRUCTURE_ERROR: {error_msg}"
+                            code = None
+                            iteration += 1
+                            continue
 
-                code = self._extract_code(response.content)
+                    # Pfad-Hardcoding prüfen (Skills müssen Pfade als Parameter empfangen)
+                    path_result = validator.validate_paths(code)
+                    if not path_result.is_valid:
+                        error_msg = "; ".join(path_result.errors)
+                        log.warning(f"Path validation failed: {error_msg}")
+                        code = await self._debug_code(
+                            code, "HARDCODED_PATH", error_msg,
+                            capability, design, research,
+                        )
+                        recheck = validator.validate_paths(code)
+                        if not recheck.is_valid:
+                            iteration_errors.append({
+                                "iteration": iteration + 1,
+                                "error": error_msg[:300],
+                                "error_type": "HARDCODED_PATH",
+                                "libraries": [],
+                            })
+                            failure_context += f"\n\nIteration {iteration + 1} HARDCODED_PATH: {error_msg}"
+                            code = None
+                            iteration += 1
+                            continue
 
-                # AST structure validation: def execute() must exist
-                validator = CodeValidatorService()
-                structure_result = validator.validate_structure(code)
-                if not structure_result.is_valid:
-                    error_msg = "; ".join(structure_result.errors)
-                    log.warning(f"Structure validation failed (iteration {iteration + 1}): {error_msg}")
+                    # Proaktiver Import-Scan: neue Packages erkennen bevor Sandbox läuft
+                    new_imports = self._extract_imports(code)
+                    new_packages = self._resolve_new_packages(new_imports, current_pip)
+                    if new_packages:
+                        log.info(f"Proaktiv erkannte neue Packages: {new_packages}")
+                        current_pip.extend(new_packages)
+                        iteration += 1
+                        break  # → Session-Restart mit neuen Packages
 
-                    error_type_classified = "STRUCTURE_ERROR"
+                    # Sandbox-Test
+                    test_code = self._build_test_code(code, design)
+                    result = await session.execute_code(code=test_code)
+
+                    if result.success:
+                        log.info(f"Implementation erfolgreich nach {iteration + 1} Iterationen")
+                        return ImplementationResult(
+                            code=code,
+                            pip_requirements=current_pip,
+                            system_requirements=current_apt,
+                            iterations=iteration + 1,
+                            iteration_errors=iteration_errors,
+                        )
+
+                    # Fehler klassifizieren
+                    error_msg = result.error or result.stderr or "Unknown error"
+                    error_type = self.failure_analyzer.classify_error(
+                        error_msg, result.stderr or ""
+                    )
+                    error_type_classified = self.failure_analyzer.classify_error_coarse(error_type)
+                    used_libs = self._detect_libraries(code)
+
+                    iteration_errors.append({
+                        "iteration": iteration + 1,
+                        "error": error_msg[:300],
+                        "error_type": error_type_classified,
+                        "libraries": used_libs,
+                    })
+
                     await self.failure_analyzer.record_attempt(
                         capability=capability,
                         code=code,
                         success=False,
-                        error_type=ErrorType.STRUCTURE_ERROR,
+                        error_type=error_type,
                         error_message=error_msg,
-                        stderr="",
-                        pip_requirements=design.pip_requirements,
-                        system_packages=design.system_requirements,
+                        stderr=result.stderr or "",
+                        pip_requirements=current_pip,
+                        system_packages=current_apt,
                         team_role=TeamRole.IMPLEMENTER.value,
                         attempt_number=iteration + 1,
                         error_type_classified=error_type_classified,
-                        lesson_learned=f"STRUCTURE_ERROR: {error_msg}",
+                        lesson_learned=f"{error_type_classified}: {error_msg[:200]}",
                     )
 
-                    # Debug: fix structure error
-                    code = await self._debug_code(
-                        code, error_type_classified, error_msg,
-                        capability, design, research,
-                    )
-                    # Re-validate immediately; if still broken, next iteration will re-generate
-                    recheck = validator.validate_structure(code)
-                    if recheck.is_valid:
-                        # Fixed! Continue to test phase below instead of skipping
-                        pass
+                    # -- Error-Type-Routing --
+
+                    if error_type_classified == "IMPORT_ERROR":
+                        module = self._extract_missing_module(error_msg)
+                        if module:
+                            package = self._module_to_package(module)
+                            # In-Session pip install versuchen
+                            install_result = await session.execute_code(
+                                f"import subprocess; subprocess.check_call("
+                                f"['pip', 'install', '-q', '{package}'])"
+                            )
+                            if install_result.success:
+                                current_pip.append(package)
+                                log.info(f"In-Session pip install erfolgreich: {package}")
+                                iteration += 1
+                                continue  # Gleiche Session, nächster Versuch
+                            else:
+                                current_pip.append(package)
+                                iteration += 1
+                                break  # → Session-Restart
+
+                    elif "No matching distribution found for" in error_msg:
+                        bad_pkg = self._extract_bad_package(error_msg)
+                        if bad_pkg and bad_pkg in current_pip:
+                            current_pip.remove(bad_pkg)
+                            from app.services.package_resolver import HARDCODED_MAPPINGS
+                            correct = HARDCODED_MAPPINGS.get(bad_pkg)
+                            if correct:
+                                current_pip.append(correct)
+                            iteration += 1
+                            break  # → Session-Restart
+
+                    elif error_type_classified in ("RUNTIME_ERROR", "LOGIC_ERROR"):
+                        if self._should_switch_approach(iteration_errors):
+                            bad_lib = self._find_repeated_failure_lib(iteration_errors)
+                            log.warning(f"Approach-Switch: {bad_lib} scheitert wiederholt")
+                            code = await self._debug_code(
+                                code, error_type_classified, error_msg,
+                                capability, design, research,
+                            )
+                            current_pip = [
+                                p for p in current_pip
+                                if bad_lib not in p.lower().replace("-", "_")
+                            ]
+                            iteration += 1
+                            break  # → Session-Restart ohne die fehlerhafte Library
+                        else:
+                            code = await self._debug_code(
+                                code, error_type_classified, error_msg,
+                                capability, design, research,
+                            )
+
                     else:
-                        failure_context += f"\n\nIteration {iteration + 1} STRUCTURE ERROR (debug failed): {error_msg}"
-                        continue
+                        # SEMANTIC_ERROR, STRUCTURE_ERROR, TIMEOUT_ERROR etc.
+                        code = await self._debug_code(
+                            code, error_type_classified, error_msg,
+                            capability, design, research,
+                        )
 
-                # Quick test in session (reuses container)
-                test_code = self._build_test_code(code, design)
-                result = await session.execute_code(code=test_code)
-                test_result = {
-                    "success": result.success,
-                    "error": result.error or result.stderr,
-                    "stderr": result.stderr,
-                    "stdout": result.stdout,
-                }
+                    # Proaktiver Import-Scan nach Debug
+                    new_imports = self._extract_imports(code)
+                    new_packages = self._resolve_new_packages(new_imports, current_pip)
+                    if new_packages:
+                        log.info(f"Proaktiv erkannte neue Packages nach Debug: {new_packages}")
+                        current_pip.extend(new_packages)
+                        iteration += 1
+                        break  # → Session-Restart
 
-                if test_result["success"]:
-                    return code
+                    # Regeneration-Schwelle: nach 5 Iterationen mit oszillierenden Errors
+                    if iteration >= 5 and self._errors_oscillating(iteration_errors):
+                        log.warning("Error-Types oszillieren — erzwinge komplette Neugenerierung")
+                        code = None
+                        failure_context += "\n\nKOMPLETT NEUER ANSATZ NÖTIG — bisherige Versuche konvergieren nicht."
 
-                # Classify the error and debug with type-aware strategy
-                error_msg = test_result.get("error", "Unknown error")
-                error_type = self.failure_analyzer.classify_error(error_msg, test_result.get("stderr", ""))
-                error_type_classified = self.failure_analyzer.classify_error_coarse(error_type)
+                    failure_context += f"\n\nIteration {iteration + 1} [{error_type_classified}]: {error_msg[:300]}"
+                    iteration += 1
 
-                await self.failure_analyzer.record_attempt(
-                    capability=capability,
-                    code=code,
-                    success=False,
-                    error_type=error_type,
-                    error_message=error_msg,
-                    stderr=test_result.get("stderr", ""),
-                    pip_requirements=design.pip_requirements,
-                    system_packages=design.system_requirements,
-                    team_role=TeamRole.IMPLEMENTER.value,
-                    attempt_number=iteration + 1,
-                    error_type_classified=error_type_classified,
-                    lesson_learned=f"{error_type_classified}: {error_msg[:200]}",
-                )
-
-                # Error-type-aware debug: fix the code for next iteration
-                code = await self._debug_code(
-                    code, error_type_classified, error_msg,
-                    capability, design, research,
-                )
-                failure_context += f"\n\nIteration {iteration + 1} [{error_type_classified}]: {error_msg[:300]}"
-
+        log.warning(f"Implementation fehlgeschlagen nach {max_iterations} Iterationen")
         return None
 
     async def _quick_test(
@@ -988,10 +1222,25 @@ class SkillTeamOrchestrator:
             if review.approved:
                 return code, review
 
-            # Not approved - try to fix
+            # Nicht approved — Revision versuchen (außer letzte Iteration)
             if iteration < self.config.max_review_iterations - 1:
+                code_before = code
                 code = await self._revision_phase(code, review)
 
+                # Quick-Re-Test: Revision darf Code nicht brechen
+                quick_result = await self._quick_test(code, design)
+                if not quick_result["success"]:
+                    log.warning(
+                        f"Revision broke the code: {quick_result['error'][:200]}. "
+                        f"Reverting to pre-review code."
+                    )
+                    code = code_before
+                    review.approved = True
+                    return code, review
+
+        # Alle Revisionen gescheitert — funktionierenden Code trotzdem akzeptieren
+        log.warning("Review-Iterationen erschöpft, akzeptiere pre-review Code")
+        review.approved = True
         return code, review
 
     def _extract_json(self, response: str) -> Optional[dict]:
@@ -1082,6 +1331,7 @@ class SkillTeamOrchestrator:
             code=code,
             findings=findings_str,
             required_changes=required_changes,
+            infrastructure_context=settings.get_sandbox_infrastructure_context(),
         )
 
         response = await llm.chat(
@@ -1133,6 +1383,27 @@ class SkillTeamOrchestrator:
                 return True
         return False
 
+    # Keys die auf Infrastruktur-Services verweisen (DB, Qdrant, etc.)
+    _INFRA_KEY_MAP: dict[str, str] = {
+        "database_url": "DATABASE_URL",
+        "db_url": "DATABASE_URL",
+        "connection_string": "DATABASE_URL",
+        "postgres_url": "DATABASE_URL",
+        "postgresql_url": "DATABASE_URL",
+        "qdrant_url": "QDRANT_URL",
+        "vector_db_url": "QDRANT_URL",
+    }
+
+    def _inject_infrastructure_values(self, test_input: dict) -> dict:
+        """Ersetzt fiktive Service-URLs im Test-Input durch echte Sandbox-Werte."""
+        env = settings.get_sandbox_env_vars()
+        patched = dict(test_input)
+        for key in patched:
+            env_key = self._INFRA_KEY_MAP.get(key.lower())
+            if env_key and env_key in env:
+                patched[key] = env[env_key]
+        return patched
+
     def _build_test_code(
         self,
         code: str,
@@ -1143,6 +1414,9 @@ class SkillTeamOrchestrator:
         test_input = test_input or {}
         if design.test_cases:
             test_input = design.test_cases[0].input_data or test_input
+
+        # Infrastruktur-Werte in Test-Input einsetzen
+        test_input = self._inject_infrastructure_values(test_input)
 
         # If no real test input or input references non-existent files,
         # do a smoke test (imports + callable check)

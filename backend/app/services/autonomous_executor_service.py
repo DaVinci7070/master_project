@@ -264,12 +264,18 @@ class AutonomousExecutorService:
         if result.success:
             self._metrics.successful_executions += 1
 
-            # Try to parse output as JSON
+            # JSON-Ausgabe suchen (von hinten, Libraries koennen nach dem Result loggen)
             output = None
             if result.stdout:
-                try:
-                    output = json.loads(result.stdout.strip().split('\n')[-1])
-                except json.JSONDecodeError:
+                for line in reversed(result.stdout.strip().split('\n')):
+                    line = line.strip()
+                    if line.startswith('{') or line.startswith('['):
+                        try:
+                            output = json.loads(line)
+                            break
+                        except json.JSONDecodeError:
+                            continue
+                if output is None:
                     output = result.stdout
 
             return ExecutionResult(
@@ -426,9 +432,21 @@ class AutonomousExecutorService:
 # Execute and print result as JSON
 if __name__ == "__main__":
     import json
+    import inspect
     _input = json.loads({repr(args_json)})
-    _result = {function_name}(_input)
-    print(json.dumps(_result))
+
+    # Signatur prüfen und passend aufrufen (kwargs vs. positionaler dict)
+    _sig = inspect.signature({function_name})
+    _params = _sig.parameters
+    _has_kwargs = any(p.kind == p.VAR_KEYWORD for p in _params.values())
+    _named_params = [n for n, p in _params.items() if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)]
+
+    if _has_kwargs or (len(_named_params) > 0 and all(k in _named_params for k in _input)):
+        _result = {function_name}(**_input)
+    else:
+        _result = {function_name}(_input)
+
+    print(json.dumps(_result, default=str))
 '''
 
     def _is_module_not_found_error(self, result: SandboxResult) -> bool:

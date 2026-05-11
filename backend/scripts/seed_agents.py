@@ -90,6 +90,8 @@ Gib ein JSON-Objekt zurück mit:
 - questions: Offene Fragen oder Bedenken
 - sentiment: Gesamtstimmung der Besprechung (positive/neutral/negative/mixed)
 
+{shared_memory}
+
 {input}"""
     },
     {
@@ -129,8 +131,7 @@ Gib ein JSON-Objekt zurück mit:
 - patterns: Identifizierte wiederkehrende Muster
 - context_quality: Bewertung der Kontextvollständigkeit (excellent/good/limited/poor)
 
-{artifacts}
-{shared_memory}"""
+{artifacts}"""
     },
     {
         "name": "report_generator",

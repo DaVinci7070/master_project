@@ -5,6 +5,8 @@ Provides endpoints for submitting challenges, triggering capability assessment,
 and starting execution.
 """
 import logging
+import os
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -85,6 +87,18 @@ CAPABILITY_DEFAULT_REQUIREMENTS = {
     "video transcription": {
         "pip": ["faster-whisper", "moviepy", "pydub"],
         "apt": ["ffmpeg"],
+    },
+    "csv parsing": {
+        "pip": ["pandas"],
+        "apt": [],
+    },
+    "database connection": {
+        "pip": ["psycopg2-binary"],
+        "apt": [],
+    },
+    "etl pipeline": {
+        "pip": ["pandas", "psycopg2-binary"],
+        "apt": [],
     },
 }
 
@@ -1090,6 +1104,109 @@ async def execute_challenge(
     )
 
 
+async def _transcribe_audio_before_execution(
+    session,
+    challenge_id: str,
+    challenge_text: str,
+) -> str:
+    """Führt existierenden Transkriptions-Skill auf die Audio-Datei aus."""
+    from app.dependencies.dependencies import AsyncSessionLocal
+    from app.models.sql.versioned_models import Skill
+
+    file_path_match = re.search(r'Storage Path: (.+)', challenge_text)
+    if not file_path_match:
+        log.warning(f"Kein Storage Path in challenge_text gefunden: {challenge_id}")
+        return challenge_text
+
+    file_path = file_path_match.group(1).strip()
+    if not os.path.exists(file_path):
+        log.warning(f"Audio-Datei nicht gefunden: {file_path}")
+        return challenge_text
+
+    # Skill-Daten lesen (read-only, eigene Session)
+    async with AsyncSessionLocal() as read_session:
+        skill_result = await read_session.execute(
+            select(Skill).where(
+                (Skill.name.like("%audio%transcription%")) &
+                (Skill.is_active == True)
+            )
+        )
+        skill = skill_result.scalar_one_or_none()
+        if not skill:
+            log.warning(f"Kein aktiver Transkriptions-Skill gefunden: {challenge_id}")
+            return challenge_text
+
+        skill_code = skill.code
+        skill_name = skill.name
+        skill_meta = skill.skill_metadata or {}
+
+    log.info(f"Transkribiere Audio vor Execution: {file_path} mit Skill {skill_name}")
+
+    try:
+        # Sandbox-Execution in isoliertem Kontext (keine geteilte DB-Session)
+        executor = AutonomousExecutorService(db=None)
+        pip_requirements = skill_meta.get("pip_requirements", [])
+        system_packages = skill_meta.get("system_packages", [])
+
+        if not pip_requirements:
+            pip_requirements = _detect_pip_requirements(skill_code, "audio transcription")
+        if not system_packages:
+            system_packages = _detect_system_packages("audio transcription")
+
+        with open(file_path, "rb") as f:
+            input_files = {os.path.basename(file_path): f.read()}
+
+        exec_result = await executor.execute_skill(
+            code=skill_code,
+            function_name="execute",
+            arguments={"file_path": f"/workspace/{os.path.basename(file_path)}"},
+            pip_requirements=pip_requirements,
+            system_packages=system_packages,
+            input_files=input_files,
+            timeout=600,
+        )
+
+        if exec_result.success and exec_result.output:
+            if isinstance(exec_result.output, dict):
+                transcript = (
+                    exec_result.output.get("text")
+                    or exec_result.output.get("result")
+                    or exec_result.output.get("transcription")
+                    or str(exec_result.output)
+                )
+            else:
+                transcript = str(exec_result.output)
+
+            log.info(f"Transkription erfolgreich: {len(transcript)} Zeichen")
+
+            new_text = f"""[TRANSCRIBED AUDIO FILE]
+Original File: {os.path.basename(file_path)}
+Transcription Method: Pre-built Skill ({skill_name})
+
+[TRANSCRIPTION]
+{transcript}
+
+[TASK]
+Analyze the above transcribed content.
+"""
+            # DB-Update in eigener Session (isoliert von Sandbox-Seiteneffekten)
+            async with AsyncSessionLocal() as write_session:
+                stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
+                result = await write_session.execute(stmt)
+                challenge = result.scalar_one_or_none()
+                if challenge:
+                    challenge.challenge_text = new_text
+                    await write_session.commit()
+
+            return new_text
+
+        log.warning(f"Transkription fehlgeschlagen: {exec_result.error}")
+    except Exception as e:
+        log.error(f"Fehler bei Audio-Transkription: {e}")
+
+    return challenge_text
+
+
 async def _run_challenge_execution(
     challenge_id: str,
     execution_id: str,
@@ -1110,6 +1227,12 @@ async def _run_challenge_execution(
 
     async with AsyncSessionLocal() as session:
         try:
+            # Audio-Transkription nachholen, falls Skill existiert aber noch nicht ausgeführt
+            if "[UPLOADED AUDIO FILE - READY FOR TRANSCRIPTION]" in challenge_text:
+                challenge_text = await _transcribe_audio_before_execution(
+                    session, challenge_id, challenge_text
+                )
+
             # Initialize orchestrator
             llm = LLMClient()
             embedding_fn = create_embedding_fn()
@@ -1385,9 +1508,11 @@ async def _run_capability_building(challenge_id: str) -> None:
     3. Re-assess
     4. Execute if CAN_DO
     """
+    import asyncio
     from app.dependencies.dependencies import AsyncSessionLocal
     from app.orchestration.intervention.orchestrator import create_intervention_orchestrator
     from app.core.llm_client import create_llm_fn, create_embedding_fn, create_structured_llm_fn
+    from app.core.config import settings as app_settings
 
     log.info(f"Starting capability building: challenge_id={challenge_id}")
 
@@ -1420,8 +1545,35 @@ async def _run_capability_building(challenge_id: str) -> None:
                 structured_llm_fn=structured_llm_fn,
             )
 
-            # Process the challenge
-            intervention_result = await orchestrator.process_blocked_challenge(challenge)
+            # Process the challenge mit Hard-Timeout (Phase 0 / V2-Plan).
+            # Ohne dieses Timeout konnten hängende SkillTeam-Builds das Backend
+            # endlos blockieren — der Benchmark-Runner gab nach 180s auf, der
+            # Backend-Task lief aber weiter und blockierte Folge-Tasks.
+            try:
+                intervention_result = await asyncio.wait_for(
+                    orchestrator.process_blocked_challenge(challenge),
+                    timeout=float(app_settings.build_total_timeout),
+                )
+            except asyncio.TimeoutError:
+                log.error(
+                    f"Capability building hard-timeout after "
+                    f"{app_settings.build_total_timeout}s: challenge_id={challenge_id}"
+                )
+                # Session sauber halten und Status auf build_failed setzen
+                await session.rollback()
+                stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
+                result = await session.execute(stmt)
+                challenge = result.scalar_one_or_none()
+                if challenge:
+                    challenge.build_plan_status = BuildPlanStatus.FAILED.value
+                    challenge.status = "build_failed"
+                    failure_reasons = challenge.failure_reasons or []
+                    failure_reasons.append(
+                        f"build_total_timeout: {app_settings.build_total_timeout}s überschritten"
+                    )
+                    challenge.failure_reasons = failure_reasons
+                    await session.commit()
+                return
 
             # Update based on result — use status values the benchmark poller expects
             built_ids = [
@@ -1730,7 +1882,15 @@ async def _run_autonomous_skill_building(
 
                                     # Update challenge text with the result (e.g., transcription)
                                     if capability == "audio transcription" and exec_result.output:
-                                        transcript = exec_result.output.get("text") or exec_result.output.get("result") or str(exec_result.output)
+                                        if isinstance(exec_result.output, dict):
+                                            transcript = (
+                                                exec_result.output.get("text")
+                                                or exec_result.output.get("result")
+                                                or exec_result.output.get("transcription")
+                                                or str(exec_result.output)
+                                            )
+                                        else:
+                                            transcript = str(exec_result.output)
                                         challenge.challenge_text = f"""[TRANSCRIBED AUDIO FILE]
 Original File: {os.path.basename(file_path)}
 Transcription Method: Auto-built Skill (faster-whisper)

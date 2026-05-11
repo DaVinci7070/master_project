@@ -247,7 +247,7 @@ class AutonomousSkillBuilder:
 
                         # Step 3.5: Semantic validation (if enabled)
                         semantic_result: Optional[SemanticValidationResult] = None
-                        if self.enable_semantic_validation and (expected_output is not None or expected_output_type != "any"):
+                        if self.enable_semantic_validation:
                             log.info("Running semantic validation...")
                             try:
                                 # Parse output from stdout
@@ -527,7 +527,7 @@ Return a JSON object with:
             if hint_key in capability_lower or capability_lower in hint_key:
                 stdlib_modules = hint_val.get("stdlib", [])
                 if stdlib_modules:
-                    stdlib_info = f"\nPreferred standard library modules: {', '.join(stdlib_modules)} — use these instead of third-party packages."
+                    stdlib_info = f"\nStandard library alternative: {', '.join(stdlib_modules)} — use if appropriate for the task."
                     break
 
         examples_info = ""
@@ -539,10 +539,15 @@ Return a JSON object with:
         if failure_context:
             failure_section = f"\n{failure_context}\n"
 
+        approach_info = ""
+        if research.summary:
+            approach_info = f"\nRecommended approach: {research.summary}"
+
         prompt = f"""Create a Python skill for: {capability}
 
 {packages_info}
 {stdlib_info}
+{approach_info}
 {examples_info}
 {failure_section}
 Requirements:
@@ -551,8 +556,8 @@ Requirements:
 3. Return a dict with 'success': bool and 'result': the output
 4. Handle errors gracefully and return {{'success': False, 'error': str}}
 5. Include necessary imports at the top
-6. ALWAYS prefer Python standard library modules over third-party packages when possible (e.g. use sqlite3 with raw SQL instead of sqlite_utils, use csv instead of pandas for simple tasks, use json instead of orjson)
-7. Only use third-party packages when the standard library genuinely cannot do the job
+6. When a standard library module can fully solve the task, prefer it (e.g. csv for simple files, json instead of orjson). But use the right tool — external databases need proper drivers, complex formats need specialized libraries.
+7. Use the recommended packages from research when they fit the task
 
 For {capability}, the input_data might contain:
 - file_path: path to a file to process
@@ -792,32 +797,64 @@ if __name__ == "__main__":
     exit(0)
 '''
 
+        # Prüfe ob Dateien verarbeitet werden sollen
+        has_file_input = any(
+            k in (test_input or {}) for k in ("file_path", "file", "input_file", "audio_file")
+        )
+
         return f'''
 # Test the skill
 if __name__ == "__main__":
     import json
+    import inspect
 
     test_input = json.loads('{input_json}')
     print("Testing skill with input:", test_input)
 
+    # Signatur prüfen — execute() muss die übergebenen Keys akzeptieren
+    sig = inspect.signature(execute)
+    params = sig.parameters
+    accepts_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
+    if not accepts_kwargs:
+        for key in test_input:
+            if key not in params:
+                print(f"ERROR: execute() akzeptiert Parameter '{{key}}' nicht (Signatur: {{sig}})")
+                exit(1)
+
     try:
-        result = execute(test_input)
+        # Aufruf mit Keyword-Arguments statt positionellem dict
+        result = execute(**test_input)
         print("Result:", result)
+        result_str = json.dumps(result, default=str) if isinstance(result, (dict, list)) else str(result)
 
-        if not isinstance(result, dict):
-            print("ERROR: Result must be a dict")
+        # Grundvalidierung
+        if result is None:
+            print("ERROR: Ergebnis ist None")
             exit(1)
 
-        if "success" not in result:
-            print("ERROR: Result must have 'success' key")
+        if isinstance(result, dict):
+            # Fehler-Erkennung
+            if result.get("error") and not result.get("text") and not result.get("result"):
+                print(f"TEST FAILED: Skill meldet Fehler: {{result.get('error')}}")
+                exit(1)
+
+        # Anti-Gaming: Ergebnis muss substanziell sein (nicht nur Config/Flags)
+        content_len = len(result_str)
+        if content_len < 50:
+            print(f"ERROR: Ergebnis zu kurz ({{content_len}} Zeichen) — Skill verarbeitet Input nicht wirklich")
             exit(1)
 
-        if result.get("success"):
-            print("TEST PASSED")
-            exit(0)
-        else:
-            print("TEST FAILED:", result.get("error", "Unknown error"))
-            exit(1)
+        {"" if not has_file_input else '''
+        # Dateiverarbeitung: Ergebnis muss echten Inhalt enthalten
+        if isinstance(result, dict):
+            text_content = result.get("text") or result.get("result") or result.get("transcription") or result.get("content") or ""
+            if isinstance(text_content, str) and len(text_content) < 20:
+                print(f"ERROR: Skill hat Datei nicht verarbeitet — Textinhalt fehlt oder zu kurz ({len(text_content)} Zeichen)")
+                exit(1)
+        '''}
+
+        print("TEST PASSED")
+        exit(0)
 
     except Exception as e:
         print(f"EXCEPTION: {{type(e).__name__}}: {{e}}")
