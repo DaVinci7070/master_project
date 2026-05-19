@@ -115,7 +115,7 @@ Respond with a JSON object:
 ## Available Agents:
 {available_agents}
 
-n{infrastructure_context}
+{infrastructure_context}
 
 ## Guidelines:
 - Design for robustness and error handling
@@ -128,6 +128,9 @@ n{infrastructure_context}
 - For target_agent: Choose the agent whose role best matches this capability. Consider the agent's existing skills and purpose.
 - If the capability requires database or service access, use the sandbox infrastructure info above for realistic test_cases
 
+## Challenge Context (the original task this skill will be used for):
+{challenge_context}
+
 ## Capability to Design:
 {capability}
 """
@@ -136,7 +139,7 @@ n{infrastructure_context}
 IMPLEMENTER_PROMPT = """You are a Python Implementation Specialist for autonomous skill development.
 
 Your role is to implement a Python skill based on the provided architecture design.
-The code will be executed in an isolated Docker sandbox with no internet access.
+The code will be executed in a Docker sandbox (python:3.11-slim) with network access. pip install and apt-get work at runtime.
 
 ## MANDATORY REQUIREMENTS (violation = automatic rejection):
 
@@ -328,6 +331,7 @@ def get_architect_prompt(
     failure_context: str = "",
     available_agents: list[dict] | None = None,
     infrastructure_context: str = "",
+    challenge_context: str = "",
 ) -> str:
     """Get architect prompt with research context, failure history, and available agents."""
     failure_section = ""
@@ -350,6 +354,7 @@ Based on the failures above, design with different error handling or alternative
         failure_context=failure_section,
         available_agents=agents_section,
         infrastructure_context=infrastructure_context,
+        challenge_context=challenge_context or "No specific challenge context available.",
     )
 
 

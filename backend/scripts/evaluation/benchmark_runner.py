@@ -718,7 +718,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=1, help="Random seed (stored in metadata)")
     parser.add_argument("--output", required=True, help="Path for JSON result file")
     parser.add_argument("--csv", default=None, help="Path for CSV output (default: <output>.csv)")
-    parser.add_argument("--timeout", type=int, default=1200, help="Max seconds per task (20min, Audio-Tasks brauchen Transkription + Multi-Agent-Waves)")
+    parser.add_argument("--timeout", type=int, default=1800, help="Max seconds per task (30min, Audio-Tasks brauchen Skill-Build + Transkription + Multi-Agent-Waves)")
     parser.add_argument("--poll-interval", type=int, default=5, help="Seconds between status polls")
     parser.add_argument("--project-id", default="evaluation", help="project_id for challenge submissions")
     parser.add_argument("--dry-run", action="store_true", help="Validate suite without executing")

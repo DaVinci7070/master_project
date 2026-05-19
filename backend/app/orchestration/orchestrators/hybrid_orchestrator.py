@@ -14,9 +14,13 @@ from sqlalchemy import select
 from app.orchestration.topology.loader import TopologyLoader
 from app.orchestration.topology.models import Topology, AgentNode
 from app.orchestration.artifacts.pool import ArtifactPool
+from app.orchestration.artifacts.models import Artifact
 from app.orchestration.shared_memory.service import SharedMemoryService
 from app.orchestration.executors.generic_executor import GenericAgentExecutor
 from app.orchestration.context_manager import ContextBudgetManager
+from app.orchestration.verification.execution_verifier import ExecutionVerifier
+from app.orchestration.verification.adapt_strategy import AdaptStrategy
+from app.models.schemas.team_schemas import AdaptAction, TeamPlan, GapReport, VerificationResult
 from app.models.sql.agent_event_models import AgentExecutionEvent
 from app.models.sql.execution_models import Execution
 
@@ -71,19 +75,12 @@ class HybridOrchestrator:
         context_manager: Optional[ContextBudgetManager] = None,
         session_factory: Optional[SessionFactory] = None,
         embedding_fn: Optional[Any] = None,
+        execution_verifier: Optional[ExecutionVerifier] = None,
+        adapt_strategy: Optional[AdaptStrategy] = None,
+        team_assembler: Optional[Any] = None,
+        agent_promotion: Optional[Any] = None,
+        strategy_memory: Optional[Any] = None,
     ):
-        """
-        Initialize hybrid orchestrator.
-
-        Args:
-            db: Database session (for backward compatibility)
-            llm_client: LLM client for agent execution
-            topology_loader: Topology loader (creates if not provided)
-            shared_memory: Shared memory service (creates if not provided)
-            context_manager: Context budget manager
-            session_factory: Factory for creating new sessions (preferred over db)
-            embedding_fn: Async function(text) -> embedding vector for SharedMemory
-        """
         self.db = db
         self.llm_client = llm_client
         self.topology_loader = topology_loader
@@ -91,7 +88,16 @@ class HybridOrchestrator:
         self.context_manager = context_manager or ContextBudgetManager()
         self._session_factory = session_factory
         self._embedding_fn = embedding_fn
-        self._db_lock = asyncio.Lock()  # Lock for serializing DB operations
+        self._db_lock = asyncio.Lock()
+
+        # Verify-Adapt Loop
+        self._execution_verifier = execution_verifier
+        self._adapt_strategy = adapt_strategy
+
+        # Dynamic Team Assembly (Phase B)
+        self._team_assembler = team_assembler
+        self._agent_promotion = agent_promotion
+        self._strategy_memory = strategy_memory
 
         self._artifact_pool: Optional[ArtifactPool] = None
         self._executor: Optional[GenericAgentExecutor] = None
@@ -170,11 +176,56 @@ class HybridOrchestrator:
 
         logger.info(f"Starting execution: {self._execution_id}")
 
+        from app.core.config import settings
+
         # Create execution record in database
         await self._create_execution_record(input_data)
 
-        # 1. Reload topology (per CONTEXT: between runs only)
-        topology, validation = await self.topology_loader.reload()
+        # 1. Team Assembly — aufgabenspezifische Topologie erstellen
+        team_plan = None
+        if self._team_assembler and settings.team_assembly_enabled and input_data:
+            try:
+                all_agents = await self._load_all_agents()
+                all_skills = await self._load_all_skills()
+
+                result = await self._team_assembler.assemble_team(
+                    challenge_text=input_data.get("challenge", ""),
+                    available_agents=all_agents,
+                    available_skills=all_skills,
+                )
+
+                if isinstance(result, GapReport):
+                    logger.info(
+                        f"TeamAssembler meldet Gaps: {len(result.missing_capabilities)} fehlende Capabilities"
+                    )
+                    await self._handle_team_gaps(result)
+                    all_agents = await self._load_all_agents()
+                    all_skills = await self._load_all_skills()
+                    result = await self._team_assembler.assemble_team(
+                        challenge_text=input_data.get("challenge", ""),
+                        available_agents=all_agents,
+                        available_skills=all_skills,
+                    )
+
+                if isinstance(result, TeamPlan):
+                    team_plan = result
+                    logger.info(
+                        f"Team assembled: {len(team_plan.agents)} agents, "
+                        f"strategy='{team_plan.strategy}', "
+                        f"{len(team_plan.execution_waves)} waves"
+                    )
+                else:
+                    logger.warning("Team assembly: Gaps nach Gap-Build noch offen, Fallback")
+
+            except Exception as e:
+                logger.warning(f"Team assembly fehlgeschlagen, Fallback auf Default: {e}")
+                team_plan = None
+
+        # 1b. Topologie laden (team-gefiltert oder default)
+        if team_plan:
+            topology, validation = await self.topology_loader.load_for_team(team_plan)
+        else:
+            topology, validation = await self.topology_loader.reload()
         if not validation.is_valid:
             error_msg = f"Invalid topology: {validation.errors}"
             await self._update_execution_record(
@@ -197,13 +248,11 @@ class HybridOrchestrator:
         # 4. Create executor with topology_loader for skill injection
         # Create intervention orchestrator for self-healing (if enabled)
         intervention = None
-        from app.core.config import settings
         if settings.intra_execution_self_healing_enabled and self.db:
             try:
                 from app.orchestration.intervention.orchestrator import create_intervention_orchestrator
                 intervention = await create_intervention_orchestrator(
-                    db=self.db,
-                    topology_loader=self.topology_loader,
+                    session_factory=self._session_factory,
                 )
             except Exception as e:
                 logger.warning(f"Could not create intervention orchestrator for self-healing: {e}")
@@ -239,7 +288,7 @@ class HybridOrchestrator:
             results[f"wave_{wave_idx + 1}"] = wave_results
 
             # Self-healing: repair and retry failed agents before next wave
-            retry_results = await self._repair_and_retry(
+            topology, retry_results = await self._repair_and_retry(
                 topology, input_data, wave_number=wave_idx + 1,
             )
             if retry_results:
@@ -248,15 +297,202 @@ class HybridOrchestrator:
                     if isinstance(r, dict) and r.get("success"):
                         wave_results[name] = r
 
-        # 7. Clear session artifacts
+        # 7. Verify-Adapt Loop
+        adapt_rounds = 0
+        last_verification = None
+
+        if self._execution_verifier and settings.verify_adapt_enabled:
+            final_output = self._extract_final_output(results)
+            challenge_text = (input_data or {}).get("challenge", "")
+            score_history: list[float] = []
+
+            if final_output and challenge_text:
+                for adapt_round in range(settings.max_adapt_rounds):
+                    verification = await self._execution_verifier.verify(
+                        final_output=final_output,
+                        challenge_text=challenge_text,
+                    )
+                    last_verification = verification
+
+                    if verification.is_complete or verification.score >= settings.verification_completeness_threshold:
+                        logger.info(f"Verification passed (score={verification.score:.2f})")
+                        break
+
+                    score_history.append(verification.score)
+                    if len(score_history) >= 2 and (score_history[-1] - score_history[-2]) < 0.05:
+                        logger.info(
+                            f"Score-Stagnation: {score_history[-2]:.2f} -> {score_history[-1]:.2f}, "
+                            f"Adapt-Loop beendet nach {adapt_round + 1} Runden"
+                        )
+                        break
+
+                    decision = self._adapt_strategy.determine_action(verification, adapt_round)
+                    adapt_rounds = adapt_round + 1
+
+                    logger.info(
+                        f"Verification: score={verification.score:.2f}, "
+                        f"action={decision.action.value}, round {adapt_round + 1}"
+                    )
+
+                    if decision.action == AdaptAction.REPLAN_FEEDBACK:
+                        await self._artifact_pool.write(Artifact(
+                            artifact_type="verification_feedback",
+                            payload=decision.feedback_artifact["payload"],
+                            source_agent_id="execution_verifier",
+                        ))
+
+                        replan_agents = self._get_replan_agents(waves)
+                        replan_results = await self._execute_wave(
+                            agent_ids=replan_agents,
+                            topology=topology,
+                            input_data=input_data,
+                            wave_number=100 + adapt_round,
+                        )
+                        results[f"adapt_feedback_{adapt_round + 1}"] = replan_results
+                        final_output = self._extract_final_output(results)
+
+                    elif decision.action == AdaptAction.REPLAN_NEW_TEAM:
+                        if not self._team_assembler:
+                            logger.warning("REPLAN_NEW_TEAM braucht TeamAssembler, Fallback auf Feedback")
+                            continue
+
+                        await self._artifact_pool.clear()
+
+                        all_agents = await self._load_all_agents()
+                        all_skills = await self._load_all_skills()
+                        new_plan = await self._team_assembler.replan_with_feedback(
+                            challenge_text=challenge_text,
+                            previous_plan=team_plan or TeamPlan(challenge_text=challenge_text, agents=[], rationale="default"),
+                            verification=verification,
+                            available_agents=all_agents,
+                            available_skills=all_skills,
+                        )
+
+                        if isinstance(new_plan, GapReport):
+                            await self._handle_team_gaps(new_plan)
+                            continue
+
+                        team_plan = new_plan
+                        topology, validation = await self.topology_loader.load_for_team(team_plan)
+                        replan_waves = validation.execution_waves or [[]]
+
+                        for w_idx, w_agents in enumerate(replan_waves):
+                            w_results = await self._execute_wave(
+                                agent_ids=w_agents,
+                                topology=topology,
+                                input_data=input_data,
+                                wave_number=200 + adapt_round * 10 + w_idx,
+                            )
+                            results[f"adapt_newteam_{adapt_round + 1}_wave_{w_idx + 1}"] = w_results
+
+                        final_output = self._extract_final_output(results)
+
+                    elif decision.action == AdaptAction.ESCALATE:
+                        logger.info(f"Eskalation: Gap-Building für {decision.gaps_to_build}")
+                        await self._escalate_to_gap_building(
+                            gaps=decision.gaps_to_build or [],
+                            challenge_text=challenge_text,
+                            previous_output=final_output[:500] if final_output else "",
+                            previous_score=verification.score,
+                        )
+
+                        await self._artifact_pool.clear()
+
+                        # Pool aktualisiert — neues Team planen (Phase C)
+                        if self._team_assembler:
+                            all_agents = await self._load_all_agents()
+                            all_skills = await self._load_all_skills()
+                            new_plan = await self._team_assembler.assemble_team(
+                                challenge_text=challenge_text,
+                                available_agents=all_agents,
+                                available_skills=all_skills,
+                            )
+
+                            if isinstance(new_plan, TeamPlan):
+                                team_plan = new_plan
+                                topology, validation = await self.topology_loader.load_for_team(team_plan)
+                                esc_waves = validation.execution_waves or [[]]
+
+                                for w_idx, w_agents in enumerate(esc_waves):
+                                    w_results = await self._execute_wave(
+                                        agent_ids=w_agents,
+                                        topology=topology,
+                                        input_data=input_data,
+                                        wave_number=300 + adapt_round * 10 + w_idx,
+                                    )
+                                    results[f"adapt_escalate_{adapt_round + 1}_wave_{w_idx + 1}"] = w_results
+
+                                final_output = self._extract_final_output(results)
+                            else:
+                                # Fallback: Topologie neu laden, alte Waves re-executen
+                                topology, validation = await self.topology_loader.reload()
+                                for wave_idx, wave_agents in enumerate(waves):
+                                    wave_results = await self._execute_wave(
+                                        agent_ids=wave_agents,
+                                        topology=topology,
+                                        input_data=input_data,
+                                        wave_number=300 + adapt_round * 10 + wave_idx,
+                                    )
+                                    results[f"adapt_escalate_{adapt_round + 1}_wave_{wave_idx + 1}"] = wave_results
+
+                                final_output = self._extract_final_output(results)
+                        else:
+                            topology, validation = await self.topology_loader.reload()
+                            for wave_idx, wave_agents in enumerate(waves):
+                                wave_results = await self._execute_wave(
+                                    agent_ids=wave_agents,
+                                    topology=topology,
+                                    input_data=input_data,
+                                    wave_number=300 + adapt_round * 10 + wave_idx,
+                                )
+                                results[f"adapt_escalate_{adapt_round + 1}_wave_{wave_idx + 1}"] = wave_results
+
+                            final_output = self._extract_final_output(results)
+
+        # 7b. Strategy Memory + Agent Promotion (Phase C)
+        last_score = last_verification.score if last_verification else 0.0
+
+        if self._strategy_memory and team_plan:
+            try:
+                strategy_tokens = sum(
+                    r.get("tokens_total", 0) for w in results.values()
+                    if isinstance(w, dict) for r in w.values() if isinstance(r, dict)
+                )
+                await self._strategy_memory.record_outcome(
+                    team_plan=team_plan,
+                    verification_score=last_score,
+                    duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+                    tokens_total=strategy_tokens,
+                    adapt_rounds=adapt_rounds,
+                    execution_id=self._execution_id or "unknown",
+                    project_id=self._project_id,
+                )
+            except Exception as e:
+                logger.warning(f"Strategy-Memory fehlgeschlagen: {e}")
+
+        if self._agent_promotion and team_plan and last_score >= settings.agent_promotion_min_score:
+            try:
+                promoted = await self._agent_promotion.evaluate_and_promote(
+                    execution_results=results,
+                    verification_score=last_score,
+                    team_plan=team_plan,
+                )
+                if promoted:
+                    logger.info(f"Agents befördert: {promoted}")
+            except Exception as e:
+                logger.warning(f"Agent-Promotion fehlgeschlagen: {e}")
+
+        # 8. Clear session artifacts
         await self._artifact_pool.clear()
 
         end_time = datetime.now(timezone.utc)
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
-        # Derive success from actual agent results
+        # Derive success: Verify-Adapt-Score überschreibt Agent-Fehler
         unresolved = [f for f in self._failure_tracker.values() if not f.resolved]
         overall_success = len(unresolved) == 0
+        if last_verification and last_verification.score >= settings.verification_completeness_threshold:
+            overall_success = True
 
         # Aggregate token usage across all agents and waves
         total_tokens = 0
@@ -353,6 +589,11 @@ class HybridOrchestrator:
         tasks = []
         wave_results: dict[str, Any] = {}
 
+        # Dev-Team Agents nie in Execution-Waves ausfuehren (Fallback-Schutz
+        # wenn TeamAssembler gecrasht und Default-Topologie geladen wurde)
+        _DEV_NAMES = {"product_owner", "control_agent", "prompt_engineer",
+                      "tool_builder", "quality_judge", "execution_analyzer"}
+
         # Pre-fetch all prompts before parallel execution to avoid
         # concurrent DB session access (greenlet_spawn errors)
         agents_to_run: list[AgentNode] = []
@@ -360,6 +601,9 @@ class HybridOrchestrator:
             agent = topology.get_agent(agent_id)
             if not agent:
                 logger.warning(f"Agent {agent_id} not found in topology")
+                continue
+            if agent.name in _DEV_NAMES:
+                logger.info(f"Skipping dev-team agent '{agent.name}' in execution wave")
                 continue
 
             # Check if dependencies are satisfied before dispatching
@@ -438,10 +682,11 @@ class HybridOrchestrator:
                 )
                 if is_failure:
                     agent_node = topology.get_agent(agent_id)
+                    error_msg = self._extract_tool_failure_context(result_dict)
                     self._failure_tracker[agent_id] = AgentFailureRecord(
                         agent_id=agent_id, agent_name=agent_name, wave=wave_number,
                         failure_type=self._classify_failure(result_dict),
-                        error_message=str(result_dict.get("error", result)),
+                        error_message=error_msg,
                         produces_artifacts=list(agent_node.produces_artifacts) if agent_node else [],
                     )
 
@@ -534,6 +779,25 @@ class HybridOrchestrator:
                 return FailureType.LLM_TRANSIENT
         return FailureType.UNKNOWN
 
+    @staticmethod
+    def _extract_tool_failure_context(result: dict) -> str:
+        """Extrahiert fehlgeschlagene Tool-Details für Self-Healing-Kontext."""
+        tool_calls = result.get("tool_calls", [])
+        failed = [
+            t for t in tool_calls
+            if isinstance(t, dict) and not t.get("result", {}).get("success", True)
+        ]
+        if failed:
+            parts = []
+            for t in failed:
+                name = t.get("tool", "unknown")
+                err = t.get("result", {}).get("output", "")
+                if isinstance(err, str) and len(err) > 200:
+                    err = err[:200]
+                parts.append(f"Skill '{name}' fehlgeschlagen: {err}")
+            return "; ".join(parts)
+        return str(result.get("error", result.get("result", "Unknown error")))
+
     async def _should_skip_agent(self, agent: AgentNode, wave_number: int = 1) -> Optional[str]:
         """Check if agent should be skipped due to failed dependencies or missing artifacts."""
         for consumed_type in agent.consumes_artifacts:
@@ -583,8 +847,11 @@ class HybridOrchestrator:
         topology: Topology,
         input_data: Optional[dict],
         wave_number: int,
-    ) -> dict[str, Any]:
-        """Attempt to repair and retry failed agents from a wave."""
+    ) -> tuple[Topology, dict[str, Any]]:
+        """Attempt to repair and retry failed agents from a wave.
+
+        Returns (topology, retry_results) — Topologie kann sich durch Skill-Build aendern.
+        """
         retryable = {
             aid: rec for aid, rec in self._failure_tracker.items()
             if rec.wave == wave_number
@@ -596,7 +863,7 @@ class HybridOrchestrator:
         }
 
         if not retryable:
-            return {}
+            return topology, {}
 
         logger.info(
             f"Wave {wave_number} self-healing: {len(retryable)} agents to retry: "
@@ -636,11 +903,18 @@ class HybridOrchestrator:
                 elif record.failure_type == FailureType.TOOL_ERROR:
                     repair_type = "skill_build"
                     from app.models.schemas.analysis_schemas import CapabilityGap, GapType, GapSeverity
+                    # Fehlgeschlagenen Skill-Namen aus error_message extrahieren
+                    affected = agent_node.capabilities[0] if agent_node.capabilities else agent_node.name
+                    if "Skill '" in record.error_message:
+                        try:
+                            affected = record.error_message.split("Skill '")[1].split("'")[0]
+                        except (IndexError, ValueError):
+                            pass
                     gap = CapabilityGap(
                         gap_type=GapType.MISSING_SKILL,
                         severity=GapSeverity.CRITICAL,
-                        description=record.error_message[:100],
-                        affected_capability=agent_node.capabilities[0] if agent_node.capabilities else agent_node.name,
+                        description=record.error_message[:300],
+                        affected_capability=affected,
                     )
                     builder = self._get_capability_builder()
                     build_result = await builder.build_for_gap(
@@ -651,7 +925,7 @@ class HybridOrchestrator:
                     )
                     if build_result.success:
                         logger.info(f"Skill built for {record.agent_name}: {build_result.artifact_id}")
-                        await self.topology_loader.reload()
+                        topology, _ = await self.topology_loader.reload()
                     else:
                         logger.warning(f"Skill build failed for {record.agent_name}: {build_result.failure_reason}")
 
@@ -663,6 +937,14 @@ class HybridOrchestrator:
 
             except Exception as e:
                 logger.error(f"Repair failed for {record.agent_name}: {e}")
+
+            # AgentNode nach Repair neu laden (skill_ids koennten sich geaendert haben)
+            agent_node = topology.get_agent(agent_id)
+            if not agent_node:
+                continue
+            if agent_node.prompt_id and agent_node.prompt_id not in prompt_cache:
+                fresh = await self._prefetch_prompts([agent_node])
+                prompt_cache.update(fresh)
 
             # Retry the agent
             await self._emit_agent_event(
@@ -691,7 +973,100 @@ class HybridOrchestrator:
                 record.error_message = str(e)
                 retry_results[record.agent_name] = {"success": False, "error": str(e)}
 
-        return retry_results
+        return topology, retry_results
+
+    # --- Team Assembly Hilfsmethoden ---
+
+    async def _load_all_agents(self) -> list:
+        """Alle aktiven Agents aus DB laden."""
+        from app.models.sql.versioned_models import Agent
+        async with self._session_factory() as db:
+            result = await db.execute(select(Agent).where(Agent.is_active == True))
+            return list(result.scalars().all())
+
+    async def _load_all_skills(self) -> list:
+        """Alle aktiven Skills aus DB laden."""
+        from app.models.sql.versioned_models import Skill
+        async with self._session_factory() as db:
+            result = await db.execute(select(Skill).where(Skill.is_active == True))
+            return list(result.scalars().all())
+
+    async def _handle_team_gaps(self, gap_report: "GapReport") -> None:
+        """Delegiert fehlende Capabilities an InterventionOrchestrator."""
+        try:
+            from app.orchestration.intervention.orchestrator import create_intervention_orchestrator
+            intervention = await create_intervention_orchestrator(
+                session_factory=self._session_factory,
+            )
+        except Exception as e:
+            logger.warning(f"Kein InterventionOrchestrator für Gap-Handling verfügbar: {e}")
+            return
+
+        for missing in gap_report.missing_capabilities:
+            try:
+                await intervention.build_on_demand(
+                    capability=missing.capability,
+                    context={
+                        "description": missing.description,
+                        "rationale": missing.rationale,
+                        "suggested_approach": missing.suggested_approach,
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Gap-Build für '{missing.capability}' fehlgeschlagen: {e}")
+
+    # --- Verify-Adapt Hilfsmethoden ---
+
+    def _extract_final_output(self, results: dict) -> str:
+        """Extrahiert den neuesten erfolgreichen Output (nach Einfüge-Reihenfolge)."""
+        for wave_key in reversed(list(results.keys())):
+            wave_data = results[wave_key]
+            if not isinstance(wave_data, dict):
+                continue
+            for agent_name, agent_result in wave_data.items():
+                if isinstance(agent_result, dict) and agent_result.get("success"):
+                    result_text = agent_result.get("result", "")
+                    if result_text:
+                        return str(result_text)[:5000]
+        return ""
+
+    def _get_replan_agents(self, waves: list[list[str]]) -> list[str]:
+        """Bestimmt welche Agents für Feedback-Retry re-executed werden."""
+        if len(waves) <= 1:
+            return waves[0] if waves else []
+        return [aid for wave in waves[-2:] for aid in wave]
+
+    async def _escalate_to_gap_building(
+        self,
+        gaps: list[str],
+        challenge_text: str,
+        previous_output: str = "",
+        previous_score: float = 0.0,
+    ) -> None:
+        """Eskaliert zur Capability-Building-Pipeline bei fundamentalen Gaps."""
+        intervention = None
+        try:
+            from app.orchestration.intervention.orchestrator import create_intervention_orchestrator
+            intervention = await create_intervention_orchestrator(
+                session_factory=self._session_factory,
+            )
+        except Exception as e:
+            logger.warning(f"Kein InterventionOrchestrator für Eskalation verfügbar: {e}")
+            return
+
+        for gap_description in gaps:
+            try:
+                await intervention.build_on_demand(
+                    capability=gap_description,
+                    context={
+                        "challenge_text": challenge_text[:500],
+                        "escalation_reason": "Verify-Adapt Eskalation: Score < 0.1 oder Capability-Gap",
+                        "previous_output": previous_output,
+                        "previous_score": previous_score,
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Eskalations-Build für '{gap_description}' fehlgeschlagen: {e}")
 
     async def _get_prompt(self, prompt_id: Optional[str]) -> Optional[str]:
         """Get prompt content from database. Uses lock to prevent concurrent session access."""

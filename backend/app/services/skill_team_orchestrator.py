@@ -189,7 +189,8 @@ class SkillTeamOrchestrator:
 
             # Phase 2: Architecture (with failure awareness)
             phase_start = time.time()
-            design = await self._architecture_phase(capability, research, failure_context)
+            challenge_context = (hints or {}).get("challenge_context", "")
+            design = await self._architecture_phase(capability, research, failure_context, challenge_context)
             phase_times["architecture"] = int((time.time() - phase_start) * 1000)
             log.info(f"Architecture complete: {len(design.test_cases)} test cases defined")
 
@@ -606,6 +607,7 @@ class SkillTeamOrchestrator:
         capability: str,
         research: ResearchContext,
         failure_context: str = "",
+        challenge_context: str = "",
     ) -> ArchitectureDesign:
         """Execute architecture phase with failure awareness."""
         if not self.config.enable_architect:
@@ -644,6 +646,7 @@ class SkillTeamOrchestrator:
         prompt = get_architect_prompt(
             capability, research_context, failure_context, available_agents,
             infrastructure_context=infra_context,
+            challenge_context=challenge_context,
         )
 
         response = await llm.chat(
@@ -700,7 +703,7 @@ class SkillTeamOrchestrator:
                     ),
                     input_schema=data.get("input_schema", {}),
                     output_schema=data.get("output_schema", {}),
-                    pip_requirements=data.get("pip_requirements", research.pip_packages),
+                    pip_requirements=research.pip_packages,
                     system_requirements=data.get("system_requirements", research.system_packages),
                     test_cases=test_cases or [
                         TestCase(name="basic", expected_output_type="dict", expected_keys=["success"])

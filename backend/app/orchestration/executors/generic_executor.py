@@ -18,7 +18,7 @@ from app.orchestration.executors.tool_calling import (
     ToolResult,
     build_tool_prompt_section,
     format_tool_result_for_llm,
-    MAX_TOOL_CALLS,
+    DEFAULT_MAX_TOOL_CALLS,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -249,7 +249,9 @@ class GenericAgentExecutor:
             for key in tokens_accumulated:
                 tokens_accumulated[key] += usage.get(key, 0)
 
-        while tool_call_count < MAX_TOOL_CALLS:
+        max_calls = agent.config.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
+
+        while tool_call_count < max_calls:
             # Call LLM with Instructor for structured, validated output
             try:
                 agent_response, usage = await self.llm_client.chat_structured_with_usage(
@@ -293,7 +295,7 @@ class GenericAgentExecutor:
                 tool_call = await self._validate_and_fix_arguments(tool_call, skills)
 
                 tool_call_count += 1
-                logger.info(f"Tool call {tool_call_count}/{MAX_TOOL_CALLS}: {tool_call.tool}")
+                logger.info(f"Tool call {tool_call_count}/{max_calls}: {tool_call.tool}")
 
                 # Execute the tool
                 tool_result = await self._execute_tool(
@@ -322,7 +324,7 @@ class GenericAgentExecutor:
                 })
 
         # Max tool calls reached
-        logger.warning(f"Agent {agent.name} reached max tool calls ({MAX_TOOL_CALLS})")
+        logger.warning(f"Agent {agent.name} reached max tool calls ({max_calls})")
         return {
             "result": "Max tool calls reached without final answer",
             "success": False,
@@ -757,8 +759,7 @@ class GenericAgentExecutor:
 
         return "\n".join(sections)
 
-    @staticmethod
-    def _build_system_prompt(agent: AgentNode, planning_context: str) -> str:
+    def _build_system_prompt(self, agent: AgentNode, planning_context: str) -> str:
         """
         System-Prompt für einen Agent zusammensetzen.
 
@@ -778,6 +779,21 @@ class GenericAgentExecutor:
                 "Rundung, keine Auslassung. Wenn ein Wert in der Quelle "
                 "steht, muss er im Output erscheinen."
             )
+
+        # Intra-Agent Reflection: Nur wenn Agent Tool-Calls machen kann
+        if agent.skill_ids:
+            base += (
+                "\n\n## Selbst-Evaluation nach jedem Tool-Ergebnis\n"
+                "Nach jedem Tool-Call: Prüfe ob die bisherigen Ergebnisse AUSREICHEN um die Aufgabe "
+                "VOLLSTÄNDIG zu beantworten. Stelle dir drei Fragen:\n"
+                "1. Habe ich konkrete Daten (Zahlen, Namen, Fakten) oder nur Strukturinformationen?\n"
+                "2. Welche Aspekte der Aufgabe sind noch NICHT durch echte Daten belegt?\n"
+                "3. Welchen gezielten nächsten Schritt mache ich um die Lücke zu schließen?\n\n"
+                "Gib deine finale Antwort ERST wenn alle Aspekte der Aufgabe mit konkreten Daten belegt sind. "
+                "Wenn ein Ansatz nicht funktioniert (leere Ergebnisse, Fehler), probiere eine andere Strategie "
+                "(anderer Query, andere Tabelle, anderer Filter)."
+            )
+
         return base
 
     async def _build_context(

@@ -24,12 +24,12 @@ For each capability, provide:
 - type: Either "knowledge" or "execution"
 
 Classification rules:
-- "execution" = requires running code, creating files, building artifacts, computing results, database operations, data transformations
-  Examples: "build a database", "generate Python code", "create a REST API", "compute statistics", "parse and transform data"
-- "knowledge" = requires reasoning, analyzing text, summarizing, writing reports, explaining concepts
-  Examples: "analyze this transcript", "summarize findings", "extract key points", "write a report", "review code quality"
+- "execution" = requires running code, creating files on disk, building software artifacts, computing results programmatically, database operations, data transformations, API calls
+  Examples: "build a database schema", "generate Python code", "create a REST API", "compute statistics from CSV", "parse and transform data files", "execute SQL queries"
+- "knowledge" = requires reasoning, analyzing text, summarizing, writing reports/documents/protocols, explaining concepts, generating text output
+  Examples: "analyze this transcript", "summarize findings", "extract key points", "write a report", "create a daily report from notes", "generate a defect list", "draft a safety protocol", "review code quality"
 
-Important: If a challenge says "build", "create", "construct", "generate", or "compute" something concrete, those capabilities are type "execution" — even if the system has agents with similar-sounding names. An agent that can WRITE ABOUT databases is not the same as one that can CREATE databases.
+Important: Creating/generating a TEXT DOCUMENT (report, protocol, list, summary) is KNOWLEDGE — the agent reasons over input and produces text. Creating/building a SOFTWARE ARTIFACT (database, API, code, file system structure) is EXECUTION — the agent must run code.
 
 Return 3-7 capabilities. Respond with JSON only, no markdown:
 {{"capabilities": [{{"action": "...", "type": "knowledge|execution"}}]}}"""

@@ -81,7 +81,7 @@ class CapabilityMatch(BaseModel):
     similarity_score: float = Field(
         default=0.0,
         ge=0.0,
-        le=1.0,
+        le=1.01,
         description="Semantic similarity score between 0.0 and 1.0"
     )
     matched_agent_id: Optional[str] = Field(

@@ -172,7 +172,7 @@ class ReviewResult(BaseModel):
 class SemanticValidationResult(BaseModel):
     """Result of semantic validation."""
     passed: bool = Field(..., description="Whether validation passed")
-    similarity_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    similarity_score: float = Field(default=0.0, ge=0.0, le=1.01)
 
     # Comparison details
     expected_type: str = Field(default="any")

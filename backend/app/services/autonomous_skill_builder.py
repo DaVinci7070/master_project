@@ -572,7 +572,7 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
                 {"role": "user", "content": prompt},
             ],
             temperature=0.2,
-            max_tokens=2000,
+            max_tokens=4000,
         )
 
         # Extract code from response
@@ -594,6 +594,51 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
             function_name="execute",
             interface=await self._derive_interface_with_llm(code, capability),
         )
+
+    _LIBRARY_ALTERNATIVES: dict[str, list[tuple[str, str]]] = {
+        "whisper": [
+            ("faster-whisper", "CTranslate2-basiert, weniger RAM, schneller als openai-whisper"),
+            ("speech_recognition", "Wrapper für CMU Sphinx (offline) oder Google STT"),
+        ],
+        "openai-whisper": [
+            ("faster-whisper", "CTranslate2-basiert, weniger RAM, schneller als openai-whisper"),
+            ("speech_recognition", "Wrapper für CMU Sphinx (offline) oder Google STT"),
+        ],
+        "torch": [
+            ("onnxruntime", "Leichtgewichtige Inferenz ohne PyTorch"),
+        ],
+        "tensorflow": [
+            ("onnxruntime", "Leichtgewichtige Inferenz ohne TensorFlow"),
+            ("scikit-learn", "Klassisches ML ohne Deep-Learning-Framework"),
+        ],
+        "pandas": [
+            ("polars", "Schnellere DataFrame-Library ohne C-Dependencies"),
+        ],
+        "psycopg2": [
+            ("psycopg2-binary", "Vorkompiliert, braucht keine Build-Tools"),
+            ("asyncpg", "Async PostgreSQL-Driver"),
+        ],
+        "mysql": [
+            ("pymysql", "Pure-Python MySQL-Driver"),
+        ],
+        "PIL": [
+            ("pillow", "Maintained Fork von PIL"),
+        ],
+        "cv2": [
+            ("opencv-python-headless", "OpenCV ohne GUI-Dependencies"),
+        ],
+        "lxml": [
+            ("beautifulsoup4", "HTML/XML-Parsing ohne C-Compiler"),
+        ],
+    }
+
+    def _find_alternative_libraries(self, failed_lib: str) -> list[tuple[str, str]]:
+        """Liefert alternative Libraries wenn die aktuelle wiederholt scheitert."""
+        normalized = failed_lib.lower().replace("-", "_").replace("openai_whisper", "openai-whisper")
+        for key, alternatives in self._LIBRARY_ALTERNATIVES.items():
+            if normalized in key.lower().replace("-", "_") or key.lower().replace("-", "_") in normalized:
+                return [(pkg, desc) for pkg, desc in alternatives if pkg.lower().replace("-", "_") != normalized]
+        return []
 
     def _detect_libraries(self, code: str) -> list[str]:
         """Detect third-party library names used in code."""
@@ -694,7 +739,19 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
                 repeated_lib, count = lib_counts.most_common(1)[0]
                 if count >= 3:
                     log.info(f"Forcing approach switch: {repeated_lib} failed {count} times")
-                    approach_switch_section = f"""
+
+                    alternatives = self._find_alternative_libraries(repeated_lib)
+                    if alternatives:
+                        alt_text = "\n".join(f"- {pkg}: {desc}" for pkg, desc in alternatives)
+                        approach_switch_section = f"""
+
+CRITICAL: '{repeated_lib}' has failed {count} consecutive times.
+You MUST switch to one of these alternative libraries:
+{alt_text}
+
+Pick the simplest alternative that works. Do NOT import {repeated_lib}."""
+                    else:
+                        approach_switch_section = f"""
 
 CRITICAL: You have tried using '{repeated_lib}' for {count} consecutive attempts and it keeps failing.
 You MUST ABANDON '{repeated_lib}' completely and use a DIFFERENT approach:
@@ -735,7 +792,7 @@ Fix the code to resolve this error. Return ONLY the fixed Python code, no explan
                 {"role": "user", "content": prompt},
             ],
             temperature=0.2,
-            max_tokens=2000,
+            max_tokens=4000,
         )
 
         # Extract fixed code

@@ -40,6 +40,7 @@ from typing import Optional
 import docker
 from docker.errors import ImageNotFound, BuildError, APIError
 from sqlalchemy import select, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sql.cached_container_models import CachedContainerImage
@@ -215,17 +216,41 @@ class ContainerImageManager:
         except ImageNotFound:
             pass  # Need to build
 
-        # Create DB record with "building" status
-        cache_record = CachedContainerImage(
-            id=str(uuid.uuid4()),
-            image_tag=image_tag,
-            pip_packages=pip_requirements,
-            system_packages=system_packages,
-            capability_type=capability_type,
-            status="building",
+        # Prüfen ob Record schon existiert (Race-Condition-sicher mit Fallback)
+        existing = await self.db.execute(
+            select(CachedContainerImage).where(
+                CachedContainerImage.image_tag == image_tag
+            )
         )
-        self.db.add(cache_record)
-        await self.db.commit()
+        cache_record = existing.scalar_one_or_none()
+
+        if cache_record:
+            cache_record.status = "building"
+            cache_record.error_message = None
+            try:
+                await self.db.commit()
+            except Exception:
+                await self.db.rollback()
+        else:
+            cache_record = CachedContainerImage(
+                id=str(uuid.uuid4()),
+                image_tag=image_tag,
+                pip_packages=pip_requirements,
+                system_packages=system_packages,
+                capability_type=capability_type,
+                status="building",
+            )
+            self.db.add(cache_record)
+            try:
+                await self.db.commit()
+            except IntegrityError:
+                await self.db.rollback()
+                result = await self.db.execute(
+                    select(CachedContainerImage).where(
+                        CachedContainerImage.image_tag == image_tag
+                    )
+                )
+                cache_record = result.scalar_one()
 
         # Build the image (with semaphore to limit concurrent builds)
         async with self._build_semaphore:
@@ -438,7 +463,19 @@ class ContainerImageManager:
             usage_count=1,
         )
         self.db.add(record)
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            result = await self.db.execute(
+                select(CachedContainerImage).where(
+                    CachedContainerImage.image_tag == image_tag
+                )
+            )
+            record = result.scalar_one()
+            record.usage_count += 1
+            record.last_used_at = datetime.now(timezone.utc)
+            await self.db.commit()
         return record
 
     async def cleanup_old_images(

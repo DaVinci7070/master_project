@@ -97,6 +97,19 @@ class GapDetector:
         Returns:
             (gaps, confidence_level, factors)
         """
+        # 0. Reine KNOWLEDGE-Tasks koennen immer vom Main-Team geloest werden
+        all_knowledge = all(
+            m.capability_type == CapabilityType.KNOWLEDGE
+            for m in context.capability_matches
+        ) if context.capability_matches else False
+
+        if all_knowledge and context.capability_matches:
+            logger.info(
+                f"Alle {len(context.capability_matches)} Capabilities sind KNOWLEDGE — CAN_DO"
+            )
+            factors = ["All capabilities are knowledge-type (reasoning only)"]
+            return [], ConfidenceLevel.CAN_DO, factors
+
         # 1. Check for immediate CANNOT_DO conditions
         cannot_do_gaps, cannot_do_factors = self._check_cannot_do_conditions(context)
         if cannot_do_gaps:
@@ -143,8 +156,15 @@ class GapDetector:
         factors = []
 
         # Check for very low capability matches
+        # KNOWLEDGE-Caps haben niedrigeren CANNOT_DO-Threshold (Reasoning braucht kein exaktes Match)
+        KNOWLEDGE_CANNOT_DO = float(os.getenv("CAPABILITY_KNOWLEDGE_CANNOT_DO", "0.30"))
         for match in context.capability_matches:
-            if match.similarity_score < MAYBE_THRESHOLD:
+            threshold = (
+                KNOWLEDGE_CANNOT_DO
+                if match.capability_type == CapabilityType.KNOWLEDGE
+                else MAYBE_THRESHOLD
+            )
+            if match.similarity_score < threshold:
                 gap = CapabilityGap(
                     gap_type=GapType.MISSING_SKILL,
                     severity=GapSeverity.CRITICAL,
@@ -184,14 +204,20 @@ class GapDetector:
         if not context.capability_matches:
             return False
 
+        # KNOWLEDGE-Caps brauchen niedrigeren Threshold — kein Tool-Backing noetig
+        KNOWLEDGE_THRESHOLD = float(os.getenv("CAPABILITY_KNOWLEDGE_THRESHOLD", "0.60"))
+
         for match in context.capability_matches:
-            # Apply confidence boost from similar successes (capped at 30% relative increase
-            # to prevent weak matches from being promoted to CAN_DO)
             boosted_score = min(
                 match.similarity_score + context.confidence_boost,
                 match.similarity_score * 1.3,
             )
-            if boosted_score < CAN_DO_THRESHOLD:
+            threshold = (
+                KNOWLEDGE_THRESHOLD
+                if match.capability_type == CapabilityType.KNOWLEDGE
+                else CAN_DO_THRESHOLD
+            )
+            if boosted_score < threshold:
                 return False
 
         # Also check for any topology/schema issues

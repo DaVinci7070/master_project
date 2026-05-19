@@ -78,7 +78,7 @@ class ExecutionConfig:
     # Timeouts
     execution_timeout: int = 600  # 10 Minuten — erste Ausfuehrung kann Model-Downloads enthalten
     pip_timeout: int = 600        # 10 minutes for pip install (large packages need time)
-    apt_timeout: int = 180        # 3 minutes for apt-get (can be slow)
+    apt_timeout: int = 600        # 10 minutes for apt-get (ffmpeg etc. brauchen laenger)
 
     # Pip cache
     pip_cache_volume: str = "lumari-pip-cache"  # Named Docker volume for pip cache
@@ -547,7 +547,7 @@ class DynamicSandboxService:
                 target=self.config.uploads_container_dir,
                 source=str(uploads_dir.resolve()),
                 type="bind",
-                read_only=True,
+                read_only=False,
             ))
         if mounts:
             container_config["mounts"] = mounts

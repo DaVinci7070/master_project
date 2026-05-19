@@ -359,7 +359,8 @@ class CapabilityBuilder:
                         "built_by": "intervention_orchestrator",
                         "gap_type": gap.gap_type.value,
                         "approach": approach,
-                        "provisional": True
+                        "provisional": True,
+                        "affected_capability": gap.affected_capability,
                     },
                     is_active=True
                 )
@@ -463,7 +464,8 @@ class CapabilityBuilder:
                                 prompt_metadata={
                                     "built_by": "intervention_orchestrator",
                                     "for_agent": agent_name,
-                                    "provisional": True
+                                    "provisional": True,
+                                    "affected_capability": gap.affected_capability,
                                 },
                                 is_active=True
                             )
@@ -479,7 +481,6 @@ class CapabilityBuilder:
                             id=str(uuid.uuid4()),
                             name=agent_name,
                             prompt_id=prompt_result.id,
-                            capabilities=[gap.affected_capability],
                             dependencies=[],
                             io_schema={
                                 "input": {"type": "object"},
@@ -491,7 +492,8 @@ class CapabilityBuilder:
                                 "gap_type": gap.gap_type.value,
                                 "approach": approach,
                                 "provisional": True,
-                                "config": agent_config
+                                "config": agent_config,
+                                "capabilities": [gap.affected_capability],
                             },
                             is_active=True
                         )
@@ -592,7 +594,7 @@ if __name__ == "__main__":
         return ' '.join(normalized.split())
 
     async def _get_agent_capabilities(self, agent) -> list[str]:
-        """Derive agent capabilities from assigned skills' applicability fields."""
+        """Derive agent capabilities from assigned skills + agent_metadata."""
         from sqlalchemy import select
         from app.models.sql.versioned_models import Skill
 
@@ -602,6 +604,10 @@ if __name__ == "__main__":
             )).scalars().all()
 
         caps = []
+        # Aus agent_metadata gespeicherte Capabilities
+        agent_meta = getattr(agent, "agent_metadata", None) or {}
+        caps.extend(agent_meta.get("capabilities", []))
+
         for skill in skills:
             meta = skill.skill_metadata or {}
             target = meta.get("target_agent_id") or meta.get("assigned_agent")
@@ -725,13 +731,19 @@ if __name__ == "__main__":
                 )
                 return best_agent.id
 
-        # Add capability to agent
+        # Capability in agent_metadata speichern (Agent hat kein capabilities-Feld)
         async with self.session_factory() as db:
             new_caps = current_caps + [affected_capability]
+            result = await db.execute(
+                select(Agent).where(Agent.id == best_agent.id)
+            )
+            agent = result.scalar_one()
+            current_meta = agent.agent_metadata or {}
+            current_meta["capabilities"] = new_caps
             await db.execute(
                 update(Agent)
                 .where(Agent.id == best_agent.id)
-                .values(capabilities=new_caps)
+                .values(agent_metadata=current_meta)
             )
             await db.commit()
 
@@ -876,13 +888,19 @@ Always be precise and thorough in your {affected_capability} work."""
                 db.add(prompt)
                 await db.flush()
 
+                # max_tool_calls basierend auf Capability-Typ
+                data_keywords = ("sql", "database", "query", "csv", "etl", "data", "pipeline", "batch", "aggregate", "schema")
+                if any(kw in affected_capability.lower() for kw in data_keywords):
+                    max_tool_calls = 30
+                else:
+                    max_tool_calls = 15
+
                 # Create specialist agent
                 agent = Agent(
                     id=str(uuid.uuid4()),
                     name=agent_name,
                     prompt_id=prompt.id,
-                    capabilities=[affected_capability],
-                    dependencies=[],  # Specialist has no dependencies
+                    dependencies=[],
                     io_schema={
                         "input": {"type": "object", "description": f"Input for {affected_capability}"},
                         "output": {"type": "object", "description": f"Output from {affected_capability}"}
@@ -893,7 +911,9 @@ Always be precise and thorough in your {affected_capability} work."""
                         "source_skill_id": skill_id,
                         "provisional": True,
                         "auto_generated": True,
-                        "created_for_capability": affected_capability
+                        "created_for_capability": affected_capability,
+                        "max_tool_calls": max_tool_calls,
+                        "capabilities": [affected_capability],
                     },
                     is_active=True
                 )

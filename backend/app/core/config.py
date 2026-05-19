@@ -104,6 +104,23 @@ class Settings(BaseSettings):
     shared_memory_top_k: int = 5                  # Post-Filter Cap pro Agent (vorher 20)
     shared_memory_score_threshold: float = 0.30   # Mindest-Cosine-Similarity
 
+    # Verify-Adapt Loop (Dynamic Team Assembly Sprint — Phase A)
+    verify_adapt_enabled: bool = True
+    max_adapt_rounds: int = 3
+    verification_completeness_threshold: float = 0.85
+    adapt_threshold_new_team: float = 0.4
+    adapt_threshold_escalate: float = 0.1
+
+    # Team Assembly (Phase B — Flags jetzt schon für Ablation Study)
+    team_assembly_enabled: bool = True
+    team_assembly_timeout: int = 30
+    team_assembly_fallback_to_default: bool = True
+
+    # Agent-Promotion + Strategy-Memory (Phase C)
+    agent_promotion_enabled: bool = True
+    agent_promotion_min_score: float = 0.7
+    strategy_memory_enabled: bool = True
+
     # Sandbox-Infrastruktur (Docker-Hostnamen im lumari-network)
     sandbox_postgres_host: str = "lumari-postgres"
     sandbox_postgres_port: int = 5432
@@ -145,31 +162,51 @@ class Settings(BaseSettings):
         }
 
     def get_sandbox_infrastructure_context(self) -> str:
-        """Infrastruktur-Beschreibung für Architect/Implementer-Prompts."""
+        """Infrastruktur-Beschreibung fuer Architect/Implementer-Prompts."""
         env = self.get_sandbox_env_vars()
         return f"""## Sandbox Infrastructure
-The code runs in a Docker sandbox connected to the 'lumari-network'.
-These services are reachable — use them in test_cases and implementation code:
+The code runs in a Docker container (python:3.11-slim) on the 'lumari-network'.
+The container HAS full network access — pip install and apt-get work at runtime.
 
-### PostgreSQL Database
-- Host: {self.sandbox_postgres_host}
-- Port: {self.sandbox_postgres_port}
-- User: {env['POSTGRES_USER']}
-- Password: {env['POSTGRES_PASSWORD']}
-- Database: {env['POSTGRES_DB']}
-- Connection string: {env['DATABASE_URL']}
-- Also available as env var DATABASE_URL inside the sandbox
+### Base Image & Packages
+- Image: python:3.11-slim (Debian bookworm)
+- Pre-installed: Python 3.11 stdlib ONLY (no third-party packages)
+- pip and apt-get are available (runs as root)
 
-### Qdrant Vector Database
-- URL: {env['QDRANT_URL']}
-- Also available as env var QDRANT_URL inside the sandbox
+### Correct PyPI Package Names (use EXACTLY these):
+- PostgreSQL driver: psycopg2-binary (NOT 'postgresql', NOT bare 'psycopg2')
+- OpenCV: opencv-python (NOT 'opencv', NOT 'cv2')
+- PDF reading: pypdf or pdfplumber (NOT 'PyPDF2')
+- HTTP client: httpx or requests
+- Audio: faster-whisper + apt package ffmpeg
 
-### Rules for test cases:
-- Use the REAL connection strings above, NEVER use localhost or fictional credentials
-- Prefer reading env vars (os.environ["DATABASE_URL"]) over hardcoding credentials
-- Database tests MUST be READ-ONLY: only SELECT, never INSERT/UPDATE/DELETE/DROP/CREATE
+### Reachable Network Hosts:
+- lumari-postgres:5432 — Lumari Hauptdatenbank
+- lumari-qdrant:6333 — Qdrant Vector-DB
+- benchmark-db:5432 — Benchmark-Datenbank (separate DB fuer Evaluationsaufgaben)
+- IMPORTANT: 'host.docker.internal' is NOT available in this network mode
+- If a task references an unreachable host, use the closest matching host from this list
+
+### File Mounts:
+- /data/ — read-only bind mount of the uploads directory (input files)
+- /workspace/ — writable working directory for temporary files
+
+### Services for TEST CASES ONLY:
+- PostgreSQL: {env['DATABASE_URL']}
+- Qdrant: {env['QDRANT_URL']}
+
+### Rules for TEST CASES:
+- Use the connection strings above for test_cases input data
 - For PostgreSQL test_cases, use input like: {{"database_url": "{env['DATABASE_URL']}"}}
-- For Qdrant test_cases, use input like: {{"qdrant_url": "{env['QDRANT_URL']}"}}"""
+- For Qdrant test_cases, use input like: {{"qdrant_url": "{env['QDRANT_URL']}"}}
+- Database tests MUST be READ-ONLY: only SELECT, never INSERT/UPDATE/DELETE/DROP/CREATE
+
+### Rules for IMPLEMENTATION CODE (execute function):
+- All connection URLs, hosts, ports, credentials MUST come from input_data parameters
+- NEVER read os.environ — the caller passes everything via input_data
+- NEVER validate or restrict which hosts/databases the skill connects to
+- NEVER add hostname whitelists, port checks, or allowed-hosts lists
+- The skill is a generic tool — it connects wherever input_data tells it to"""
 
 
 settings = Settings()

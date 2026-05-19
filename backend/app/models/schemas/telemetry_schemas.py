@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 # Outcome type for execution status
-OutcomeType = Literal["success", "error", "timeout", "cancelled"]
+OutcomeType = Literal["success", "error", "timeout", "cancelled", "running"]
 
 
 class ExecutionTelemetryCreate(BaseModel):

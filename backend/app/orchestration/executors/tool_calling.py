@@ -7,7 +7,7 @@ validated by Instructor/Pydantic.
 Design decisions:
 - JSON + Instructor for provider-agnostic, validated outputs
 - SandboxExecutorService for secure execution
-- Max 5 tool calls per agent run
+- Max 15 tool calls per agent run
 """
 import json
 import logging
@@ -16,8 +16,8 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# Maximum tool calls per agent execution to prevent infinite loops
-MAX_TOOL_CALLS = 5
+# Fallback-Default für Tool-Calls pro Agent (konfigurierbar via AgentNode.config)
+DEFAULT_MAX_TOOL_CALLS = 15
 
 
 class ToolCallRequest(BaseModel):

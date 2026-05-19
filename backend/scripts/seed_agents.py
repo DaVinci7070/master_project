@@ -90,6 +90,11 @@ Gib ein JSON-Objekt zurück mit:
 - questions: Offene Fragen oder Bedenken
 - sentiment: Gesamtstimmung der Besprechung (positive/neutral/negative/mixed)
 
+## Bei erneuter Ausführung (Replan)
+Wenn du ein verification_feedback Artifact erhältst, wurde dein vorheriger Output
+als unvollständig bewertet. Das Feedback beschreibt was fehlt. Fokussiere dich
+auf die fehlenden Aspekte und liefere eine verbesserte Version.
+
 {shared_memory}
 
 {input}"""
@@ -177,6 +182,11 @@ Gib ein JSON-Objekt zurück mit:
 - summary: Zusammenfassung (2-3 Sätze, auf Deutsch)
 - word_count: Gesamtwortzahl des Berichts
 - confidence: Konfidenz bzgl. Vollständigkeit des Berichts (high/medium/low)
+
+## Bei erneuter Ausführung (Replan)
+Wenn du ein verification_feedback Artifact erhältst, wurde dein vorheriger Output
+als unvollständig bewertet. Das Feedback beschreibt was fehlt. Fokussiere dich
+auf die fehlenden Aspekte und liefere eine verbesserte Version.
 
 {artifacts}"""
     },
@@ -497,15 +507,30 @@ async def show_status():
 
 
 async def reset_and_seed():
-    """Delete all agents and re-seed."""
+    """Delete all agents, skills, prompts and re-seed."""
     logger.info("Resetting agents...")
 
     async for session in get_db_session():
-        # Delete all agents and prompts
-        await session.execute(delete(Agent))
-        await session.execute(delete(Prompt))
+        # Abhängige Tabellen zuerst (FK-Constraints)
+        from app.models.sql.skill_build_models import SkillBinding, SkillBuildAttempt
+        from app.models.sql.versioned_models import Skill
+        from app.models.sql.telemetry_models import ExecutionTelemetry
+        from app.models.sql.execution_models import Execution
+        from app.models.sql.gap_plan_models import CapabilityGapPlan
+        from app.models.sql.analysis_models import AnalysisFinding
+        from app.models.sql.improvement_models import ImprovementAttempt
+        from app.models.sql.topology_models import TopologyChangeLog
+        from app.models.sql.agent_event_models import AgentExecutionEvent
+
+        for model in [
+            SkillBinding, SkillBuildAttempt, AnalysisFinding,
+            ImprovementAttempt, AgentExecutionEvent, ExecutionTelemetry,
+            Execution, CapabilityGapPlan, TopologyChangeLog,
+            Skill, Agent, Prompt,
+        ]:
+            await session.execute(delete(model))
         await session.commit()
-        logger.info("Deleted all existing agents and prompts")
+        logger.info("Alle Tabellen geleert (Skills, Bindings, Agents, Prompts, Telemetrie, ...)")
 
     # Re-seed
     await seed_agents()

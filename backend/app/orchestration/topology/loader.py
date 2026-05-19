@@ -1,7 +1,7 @@
 """Topology loader from database with validation and caching."""
 import logging
 from datetime import datetime, timezone
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Any
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -136,6 +136,12 @@ class TopologyLoader:
                         agent_skill_ids.append(sid)
                         agent_caps.append(cap)
 
+            # Config aus agent_metadata propagieren
+            agent_config = {}
+            meta = agent.agent_metadata or {}
+            if "max_tool_calls" in meta:
+                agent_config["max_tool_calls"] = meta["max_tool_calls"]
+
             node = AgentNode(
                 agent_id=agent.id,
                 name=agent.name,
@@ -143,7 +149,7 @@ class TopologyLoader:
                 capabilities=agent_caps,
                 dependencies=resolved_deps,
                 skill_ids=list(set(agent_skill_ids)),  # Deduplicate skill IDs
-                config={},
+                config=agent_config,
                 is_active=agent.is_active,
                 input_schema=agent.io_schema.get("input") if agent.io_schema else None,
                 output_schema=agent.io_schema.get("output") if agent.io_schema else None,
@@ -313,6 +319,89 @@ class TopologyLoader:
         Call this between execution runs when topology may have changed.
         """
         return await self.load(force_reload=True)
+
+    async def load_for_team(
+        self,
+        team_plan: Any,
+    ) -> tuple[Topology, ValidationResult]:
+        """
+        Lade Topologie gefiltert auf die Agents im TeamPlan.
+
+        Statt ALLE aktiven Agents zu laden, nur die vom Planner
+        ausgewählten einbeziehen. Dependencies und Waves kommen
+        aus dem TeamPlan.
+        """
+        async with self.session_factory() as db:
+            repo = TopologyRepository(db)
+            agents_with_prompts = await repo.get_agents_with_prompts()
+
+            plan_agent_ids = {a.agent_id for a in team_plan.agents}
+            plan_agent_names = {a.name for a in team_plan.agents}
+
+            filtered = [
+                (agent, prompt) for agent, prompt in agents_with_prompts
+                if agent.id in plan_agent_ids or agent.name in plan_agent_names
+            ]
+
+            plan_deps = {a.name: a.dependencies for a in team_plan.agents}
+            name_to_id = {agent.name: agent.id for agent, _ in filtered}
+
+            capability_to_skills, skill_metadata_map = await self._map_skills_to_capabilities(db=db)
+
+            agent_nodes = []
+            for agent, prompt in filtered:
+                deps = plan_deps.get(agent.name, [])
+                resolved_deps = [name_to_id[d] for d in deps if d in name_to_id]
+
+                agent_skill_ids = []
+                agent_caps = []
+                for cap, sids in capability_to_skills.items():
+                    for sid in sids:
+                        skill_meta = skill_metadata_map.get(sid, {})
+                        target = skill_meta.get("target_agent_id") or skill_meta.get("assigned_agent")
+                        if target and target != agent.id and target != agent.name:
+                            continue
+                        if sid not in agent_skill_ids:
+                            agent_skill_ids.append(sid)
+                            agent_caps.append(cap)
+
+                planned = next((a for a in team_plan.agents if a.agent_id == agent.id), None)
+                consumes = planned.consumes_artifacts if planned else []
+                produces = planned.produces_artifacts if planned else []
+
+                agent_config = {}
+                meta = agent.agent_metadata or {}
+                if "max_tool_calls" in meta:
+                    agent_config["max_tool_calls"] = meta["max_tool_calls"]
+
+                node = AgentNode(
+                    agent_id=agent.id,
+                    name=agent.name,
+                    prompt_id=agent.prompt_id,
+                    capabilities=agent_caps,
+                    dependencies=resolved_deps,
+                    skill_ids=list(set(agent_skill_ids)),
+                    config=agent_config,
+                    is_active=True,
+                    consumes_artifacts=consumes,
+                    produces_artifacts=produces,
+                )
+                agent_nodes.append(node)
+
+            topology = Topology(
+                topology_id=f"team-{team_plan.team_id}",
+                name=f"Team Plan {team_plan.team_id[:8]}",
+                agents=agent_nodes,
+                is_active=True,
+            )
+
+            result = self.validator.validate(topology)
+            if result.is_valid:
+                self._cached_topology = topology
+                self._cached_validation = result
+                await self._load_skills(topology, db)
+
+            return topology, result
 
     def is_loaded(self) -> bool:
         """Check if topology is loaded."""

@@ -1236,7 +1236,72 @@ async def _run_challenge_execution(
             # Initialize orchestrator
             llm = LLMClient()
             embedding_fn = create_embedding_fn()
-            orchestrator = HybridOrchestrator(db=session, llm_client=llm, embedding_fn=embedding_fn, session_factory=AsyncSessionLocal)
+
+            from app.core.config import settings as app_settings
+            from app.orchestration.verification.execution_verifier import ExecutionVerifier
+            from app.orchestration.verification.adapt_strategy import AdaptStrategy
+            from app.services.team_assembler import TeamAssembler
+
+            execution_verifier = ExecutionVerifier(llm_client=llm) if app_settings.verify_adapt_enabled else None
+            adapt_strategy = AdaptStrategy(app_settings) if app_settings.verify_adapt_enabled else None
+
+            # SharedMemory für TeamAssembler + StrategyMemory
+            shared_mem_service = None
+            if app_settings.shared_memory_enabled:
+                try:
+                    from app.orchestration.shared_memory.qdrant_adapter import SharedMemoryQdrantAdapter
+                    from qdrant_client import QdrantClient
+
+                    qdrant_client = QdrantClient(url="http://localhost:6333", timeout=5)
+                    qdrant_adapter = SharedMemoryQdrantAdapter(qdrant_client)
+                    await qdrant_adapter.ensure_collections()
+
+                    from app.orchestration.shared_memory.service import SharedMemoryService
+                    from app.orchestration.context_manager import ContextBudgetManager
+                    shared_mem_service = SharedMemoryService(
+                        db=session,
+                        qdrant_adapter=qdrant_adapter,
+                        context_manager=ContextBudgetManager(),
+                        embedding_fn=embedding_fn,
+                    )
+                except Exception as e:
+                    log.warning(f"SharedMemory Initialisierung fehlgeschlagen: {e}")
+
+            team_assembler = None
+            if app_settings.team_assembly_enabled:
+                team_assembler = TeamAssembler(
+                    session_factory=AsyncSessionLocal,
+                    llm_client=llm,
+                    shared_memory=shared_mem_service,
+                )
+
+            agent_promotion = None
+            if app_settings.agent_promotion_enabled:
+                from app.services.agent_promotion import AgentPromotion
+                agent_promotion = AgentPromotion(
+                    session_factory=AsyncSessionLocal,
+                    min_score=app_settings.agent_promotion_min_score,
+                )
+
+            strategy_memory = None
+            if app_settings.strategy_memory_enabled and shared_mem_service:
+                from app.services.strategy_memory import StrategyMemory
+                strategy_memory = StrategyMemory(
+                    shared_memory=shared_mem_service,
+                    embedding_fn=embedding_fn,
+                )
+
+            orchestrator = HybridOrchestrator(
+                db=session,
+                llm_client=llm,
+                embedding_fn=embedding_fn,
+                session_factory=AsyncSessionLocal,
+                execution_verifier=execution_verifier,
+                adapt_strategy=adapt_strategy,
+                team_assembler=team_assembler,
+                agent_promotion=agent_promotion,
+                strategy_memory=strategy_memory,
+            )
             await orchestrator.initialize()
 
             # Execute via orchestrator
@@ -1270,18 +1335,22 @@ async def _run_challenge_execution(
         except Exception as e:
             log.error(f"Execution failed: challenge_id={challenge_id}, error={e}")
 
-            # Update challenge status to failed
-            stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
-            result = await session.execute(stmt)
-            challenge = result.scalar_one_or_none()
+            # Frische Session — die alte kann durch PendingRollbackError vergiftet sein
+            try:
+                async with AsyncSessionLocal() as err_session:
+                    stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
+                    result = await err_session.execute(stmt)
+                    challenge = result.scalar_one_or_none()
 
-            if challenge:
-                challenge.status = "failed"
-                failure_reasons = challenge.failure_reasons or []
-                failure_reasons.append(str(e))
-                challenge.failure_reasons = failure_reasons
-                challenge.execution_results = {"success": False, "error": str(e)}
-                await session.commit()
+                    if challenge:
+                        challenge.status = "failed"
+                        failure_reasons = challenge.failure_reasons or []
+                        failure_reasons.append(str(e))
+                        challenge.failure_reasons = failure_reasons
+                        challenge.execution_results = {"success": False, "error": str(e)}
+                        await err_session.commit()
+            except Exception as inner_e:
+                log.error(f"Status-Update nach Fehler fehlgeschlagen: {inner_e}")
 
 
 @router.get("/{challenge_id}", response_model=ChallengeStatusResponse)

@@ -86,6 +86,18 @@ CAPABILITY_PACKAGE_HINTS = {
         "pip": ["psycopg2-binary"], "apt": [],
         "approach": "Use psycopg2-binary for PostgreSQL or sqlite3 (stdlib) for embedded databases. Choose based on the task description.",
     },
+    "postgresql": {
+        "pip": ["psycopg2-binary"], "apt": [],
+        "approach": "Use psycopg2-binary (NOT 'postgresql') for PostgreSQL connections.",
+    },
+    "sql": {
+        "pip": ["psycopg2-binary"], "apt": [],
+        "approach": "Use psycopg2-binary for PostgreSQL, sqlite3 (stdlib) for SQLite.",
+    },
+    "etl": {
+        "pip": ["psycopg2-binary", "pandas"], "apt": [],
+        "approach": "Use pandas for CSV/data processing and psycopg2-binary for database loading.",
+    },
     "sqlite": {
         "pip": [], "apt": [], "stdlib": ["sqlite3"],
         "approach": "Use stdlib sqlite3 for local/embedded database operations",
