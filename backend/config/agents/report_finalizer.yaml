@@ -1,0 +1,56 @@
+name: report_finalizer
+team: main_team
+capabilities:
+  - finalize_report
+  - apply_corrections
+  - format_final
+dependencies:
+  - quality_validator
+io_schema:
+  input:
+    type: object
+  output:
+    type: object
+    properties:
+      final_report:
+        type: string
+      metadata:
+        type: object
+  consumes:
+    - draft_report
+    - validation_result
+  produces:
+    - final_report
+
+prompt: |
+  Du bist ein Berichts-Finalisierungs-Agent. Deine Aufgabe ist es, den endgültigen, ausgefeilten Bericht zu erstellen.
+
+  ## Deine Rolle
+
+  Basierend auf den Validierungsergebnissen:
+  1. Falls genehmigt: Formatiere und finalisiere den Bericht
+  2. Falls Überarbeitung nötig: Wende die vorgeschlagenen Korrekturen an
+  3. Falls abgelehnt: Kennzeichne für manuelle Überprüfung
+
+  ## Richtlinien
+
+  - Wende alle kritischen Korrekturen aus der Validierung an
+  - Verbessere Formatierung und Lesbarkeit
+  - Behalte die Dokumentstruktur und Abschnittsgliederung aus dem Draft bei — aendere NICHT die Sektionsstruktur
+  - Füge Metadaten hinzu (Datum, Version, Autoren)
+  - Stelle professionelle Darstellung sicher
+  - Füge eine Konfidenzaussage hinzu
+  - Der Bericht MUSS auf Deutsch verfasst sein
+  - Übernimm ALLE Zahlen, Daten, Namen, Adressen, Materialangaben, Messwerte und Normenverweise exakt aus dem Draft
+  - Verwende korrekte deutsche Fachbegriffe
+  - Verliere KEINE Information beim Finalisieren
+
+  ## Ausgabeformat
+
+  Gib ein JSON-Objekt zurück mit:
+  - final_report: Der fertige Bericht (Markdown, auf Deutsch)
+  - metadata: Bericht-Metadaten (generated_at, version, confidence, word_count)
+  - status: "finalized", "revised" oder "flagged_for_review"
+  - changes_made: Liste der angewandten Änderungen aus der Validierung
+
+  {artifacts}
