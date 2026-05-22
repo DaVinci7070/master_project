@@ -20,8 +20,37 @@ from sqlalchemy import select, func, desc
 from app.models.sql.skill_build_models import SkillBuildAttempt, PackageMapping
 from app.models.schemas.skill_build_schemas import ErrorType, FailurePattern
 from app.core.llm_client import LLMClient
+from app.core.config import settings as default_settings
 
 log = logging.getLogger(__name__)
+
+FAILURE_REFLECTION_PROMPT = """Reflektiere über diesen fehlgeschlagenen Skill-Build-Versuch.
+
+## Capability
+{capability}
+
+## Code (Ausschnitt)
+```python
+{code_excerpt}
+```
+
+## Fehler
+Typ: {error_type}
+Nachricht: {error_message}
+
+## Programmatische Analyse
+Root Cause: {root_cause}
+Vorgeschlagene Fixes: {suggested_fixes}
+
+## Reflexions-Aufgabe
+Schreibe eine KONKRETE Reflexion (2-3 Sätze) die dem nächsten Build-Versuch hilft.
+Fokussiere auf:
+1. Was war die EIGENTLICHE Ursache (nicht nur das Symptom)?
+2. Was sollte der nächste Versuch ANDERS machen?
+3. Welche ALTERNATIVE Strategie wäre besser gewesen?
+
+Schreibe die Reflexion in der Ich-Form, als würde der Builder aus seinem Fehler lernen.
+Keine Wiederholung der Fehlermeldung — die kennt der nächste Builder schon."""
 
 
 @dataclass
@@ -136,16 +165,11 @@ class FailureAnalyzer:
         self,
         session_factory,
         llm_client: Optional[LLMClient] = None,
+        settings=None,
     ):
-        """
-        Initialize the failure analyzer.
-
-        Args:
-            session_factory: Async session factory for DB access
-            llm_client: Optional LLM for deeper analysis
-        """
         self.session_factory = session_factory
         self.llm = llm_client
+        self._settings = settings or default_settings
 
     def classify_error(self, error_message: str, stderr: str = "") -> ErrorType:
         """
@@ -242,10 +266,11 @@ class FailureAnalyzer:
 
         # Set coarse classification and lesson learned
         analysis.error_type_classified = self.classify_error_coarse(error_type)
-        analysis.lesson_learned = (
-            f"{analysis.error_type_classified}: {analysis.root_cause[:150]}. "
-            f"Fix: {analysis.suggested_fixes[0]}" if analysis.suggested_fixes
-            else f"{analysis.error_type_classified}: {analysis.root_cause[:200]}"
+        analysis.lesson_learned = await self._generate_reflection(
+            capability=capability,
+            code=code,
+            error_message=error_message,
+            analysis=analysis,
         )
 
         # Find similar past failures
@@ -452,6 +477,49 @@ class FailureAnalyzer:
         analysis.confidence = 0.5
 
         return analysis
+
+    async def _generate_reflection(
+        self,
+        capability: str,
+        code: str,
+        error_message: str,
+        analysis: FailureAnalysis,
+    ) -> str:
+        """LLM-basierte Reflexion über einen fehlgeschlagenen Build-Versuch."""
+        if not self.llm or not self._settings.failure_reflection_enabled:
+            return self._format_programmatic_lesson(analysis)
+
+        prompt = FAILURE_REFLECTION_PROMPT.format(
+            capability=capability,
+            code_excerpt=code[:1500],
+            error_type=analysis.error_type.value,
+            error_message=error_message[:300],
+            root_cause=analysis.root_cause,
+            suggested_fixes=", ".join(analysis.suggested_fixes[:3]),
+        )
+
+        try:
+            response = await self.llm.chat(
+                messages=[
+                    {"role": "system", "content": "Du reflektierst über Build-Fehler. Kurz, konkret, hilfreich."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                max_tokens=200,
+            )
+            return response.content.strip()
+        except Exception as e:
+            log.warning(f"Reflexion-Generation fehlgeschlagen: {e}")
+            return self._format_programmatic_lesson(analysis)
+
+    def _format_programmatic_lesson(self, analysis: FailureAnalysis) -> str:
+        """Fallback: Mechanische lesson_learned."""
+        if analysis.suggested_fixes:
+            return (
+                f"{analysis.error_type_classified}: {analysis.root_cause[:150]}. "
+                f"Fix: {analysis.suggested_fixes[0]}"
+            )
+        return f"{analysis.error_type_classified}: {analysis.root_cause[:200]}"
 
     async def _find_similar_failures(
         self,

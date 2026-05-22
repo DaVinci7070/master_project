@@ -37,10 +37,12 @@ class TeamAssembler:
     Nutzt SharedMemory für Strategie-Erfahrungen aus vergangenen Runs.
     """
 
-    def __init__(self, session_factory, llm_client=None, shared_memory=None):
+    def __init__(self, session_factory, llm_client=None, shared_memory=None, settings=None):
+        from app.core.config import settings as default_settings
         self.session_factory = session_factory
         self.llm = llm_client
         self.shared_memory = shared_memory
+        self._settings = settings or default_settings
 
     async def assemble_team(
         self,
@@ -324,31 +326,47 @@ class TeamAssembler:
         return result
 
     async def _load_past_experiences(self, challenge_text: str) -> str | None:
-        """Lädt relevante Erfahrungen aus SharedMemory."""
+        """Lädt relevante Erfahrungen + Reflexionen aus SharedMemory."""
         if not self.shared_memory:
             return None
 
         try:
             from app.models.schemas.shared_memory_schemas import SharedMemoryQuery
 
-            query = SharedMemoryQuery(
+            outcome_query = SharedMemoryQuery(
                 query_text=f"team_plan execution strategy: {challenge_text[:200]}",
-                max_items=5,
+                max_items=3,
                 score_threshold=0.3,
             )
+            outcome_context = await self.shared_memory.retrieve_context(outcome_query)
 
-            context = await self.shared_memory.retrieve_context(query)
-
-            facts = context.get("facts", [])
-            if not facts:
-                return None
+            reflection_query = SharedMemoryQuery(
+                query_text=f"execution reflection lesson: {challenge_text[:200]}",
+                max_items=self._settings.reflection_memory_max_items,
+                score_threshold=0.3,
+                min_confidence=0.3,
+                tags=["execution_reflection"],
+            )
+            reflection_context = await self.shared_memory.retrieve_context(reflection_query)
 
             lines = []
-            for fact in facts:
-                payload = fact.get("text", "") if isinstance(fact, dict) else str(fact)
-                lines.append(f"- {payload}")
 
-            return "\n".join(lines)
+            outcomes = outcome_context.get("facts", [])
+            if outcomes:
+                lines.append("### Frühere Ergebnisse")
+                for fact in outcomes[:3]:
+                    payload = fact.get("text", "") if isinstance(fact, dict) else str(fact)
+                    lines.append(f"- {payload}")
+
+            reflections = reflection_context.get("facts", [])
+            if reflections:
+                lines.append("\n### Reflexionen aus gescheiterten Versuchen (BEACHTE DIESE!)")
+                for fact in reflections[:3]:
+                    payload = fact.get("text", "") if isinstance(fact, dict) else str(fact)
+                    lines.append(f"- {payload}")
+
+            return "\n".join(lines) if lines else None
+
         except Exception as e:
             logger.warning(f"SharedMemory-Abfrage fehlgeschlagen: {e}")
             return None

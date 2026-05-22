@@ -296,6 +296,10 @@ async def run_task(
         "duration_ms": 0,
         "agents_executed": 0,
         "tokens_total": 0,
+        "cot_verification_used": False,
+        "self_reflection_triggered": False,
+        "self_reflection_correction": 0.0,
+        "reflection_tokens_verifier": 0,
         "missing_keywords": [],
         "missing_sections": [],
         "started_at": started_at.isoformat(),
@@ -460,6 +464,13 @@ async def run_task(
         result["tokens_total"] = exec_results.get("tokens_total", 0)
         result["tokens_input"] = exec_results.get("tokens_input", 0)
         result["tokens_output"] = exec_results.get("tokens_output", 0)
+
+        # Reflexion-Metriken (Sprint 5)
+        ref_m = exec_results.get("reflexion_metrics") or {}
+        result["cot_verification_used"] = ref_m.get("cot_verification_used", False)
+        result["self_reflection_triggered"] = ref_m.get("self_reflection_triggered", False)
+        result["self_reflection_correction"] = ref_m.get("self_reflection_correction", 0.0)
+        result["reflection_tokens_verifier"] = ref_m.get("reflection_tokens_verifier", 0)
 
         # 6. Evaluate Pass@1
         if status == "resolved":
@@ -641,6 +652,8 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
             "run_id", "suite", "seed", "task_id", "level", "status",
             "pass", "score", "duration_ms", "agents_executed", "tokens_total",
             "missing_keywords", "missing_sections", "error",
+            "cot_verification", "self_reflection", "reflection_correction",
+            "reflection_tokens",
         ])
         for r in task_results:
             writer.writerow([
@@ -651,6 +664,10 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
                 ";".join(r["missing_keywords"]),
                 ";".join(r["missing_sections"]),
                 r["error"] or "",
+                r.get("cot_verification_used", ""),
+                r.get("self_reflection_triggered", ""),
+                r.get("self_reflection_correction", ""),
+                r.get("reflection_tokens_verifier", ""),
             ])
     print(f"CSV  written to {csv_path}")
 

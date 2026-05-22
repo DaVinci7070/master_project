@@ -7,7 +7,7 @@ from typing import Any, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct,
-    Filter, FieldCondition, Range, MatchValue,
+    Filter, FieldCondition, Range, MatchValue, MatchAny,
     PayloadSchemaType
 )
 
@@ -182,6 +182,10 @@ class SharedMemoryQdrantAdapter:
         if project_id:
             must_conditions.append(
                 FieldCondition(key="project_id", match=MatchValue(value=project_id))
+            )
+        if tags:
+            must_conditions.append(
+                FieldCondition(key="tags", match=MatchAny(any=tags))
             )
 
         query_filter = Filter(must=must_conditions) if must_conditions else None

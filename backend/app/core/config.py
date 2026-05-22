@@ -121,6 +121,18 @@ class Settings(BaseSettings):
     agent_promotion_min_score: float = 0.7
     strategy_memory_enabled: bool = True
 
+    # Reflexion Sprint — Phase 1: CoT Verification
+    cot_verification_enabled: bool = True
+    self_reflection_enabled: bool = True
+    self_reflection_margin: float = 0.1
+
+    # Reflexion Sprint — Phase 2: Failure Reflexion
+    failure_reflection_enabled: bool = True
+
+    # Reflexion Sprint — Phase 4: Episodic Reflection Memory
+    execution_reflection_enabled: bool = True
+    reflection_memory_max_items: int = 3
+
     # Sandbox-Infrastruktur (Docker-Hostnamen im lumari-network)
     sandbox_postgres_host: str = "lumari-postgres"
     sandbox_postgres_port: int = 5432

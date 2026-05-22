@@ -314,6 +314,21 @@ class HybridOrchestrator:
                     )
                     last_verification = verification
 
+                    # SSE-Event bei Self-Reflection (Sprint 5: Observability)
+                    if verification.score_corrected:
+                        await self._emit_agent_event(
+                            event_type="reflexion",
+                            agent_id="execution_verifier",
+                            agent_name="ExecutionVerifier",
+                            wave=adapt_round,
+                            data={
+                                "phase": "self_reflection",
+                                "score_before": verification.original_score,
+                                "score_after": verification.score,
+                                "tokens_used": self._execution_verifier._reflection_token_count,
+                            },
+                        )
+
                     if verification.is_complete or verification.score >= settings.verification_completeness_threshold:
                         logger.info(f"Verification passed (score={verification.score:.2f})")
                         break
@@ -466,6 +481,7 @@ class HybridOrchestrator:
                     adapt_rounds=adapt_rounds,
                     execution_id=self._execution_id or "unknown",
                     project_id=self._project_id,
+                    verification_feedback=last_verification.feedback_for_retry if last_verification else "",
                 )
             except Exception as e:
                 logger.warning(f"Strategy-Memory fehlgeschlagen: {e}")
@@ -506,6 +522,9 @@ class HybridOrchestrator:
                         total_input += agent_result.get("tokens_input", 0) or 0
                         total_output += agent_result.get("tokens_output", 0) or 0
 
+        # Reflexion-Metriken aggregieren (Sprint 5: Observability)
+        reflexion_metrics = self._collect_reflexion_metrics(last_verification)
+
         result = {
             "success": overall_success,
             "execution_id": self._execution_id,
@@ -526,6 +545,7 @@ class HybridOrchestrator:
                 }
                 for f in unresolved
             ],
+            "reflexion_metrics": reflexion_metrics,
         }
 
         # Update execution record with honest status
@@ -1014,6 +1034,29 @@ class HybridOrchestrator:
                 )
             except Exception as e:
                 logger.warning(f"Gap-Build für '{missing.capability}' fehlgeschlagen: {e}")
+
+    # --- Reflexion Observability (Sprint 5) ---
+
+    def _collect_reflexion_metrics(self, last_verification) -> dict:
+        """Sammelt Reflexion-Metriken für Thesis-Auswertung und Ablation."""
+        metrics: dict = {
+            "cot_verification_used": settings.cot_verification_enabled,
+            "self_reflection_triggered": False,
+            "self_reflection_correction": 0.0,
+            "reflection_tokens_verifier": 0,
+            "execution_reflection_enabled": settings.execution_reflection_enabled,
+        }
+        if last_verification:
+            metrics["self_reflection_triggered"] = last_verification.score_corrected
+            if last_verification.score_corrected and last_verification.original_score is not None:
+                metrics["self_reflection_correction"] = round(
+                    last_verification.original_score - last_verification.score, 4
+                )
+            metrics["verification_score"] = last_verification.score
+            metrics["aspect_scores"] = last_verification.aspect_scores
+        if self._execution_verifier:
+            metrics["reflection_tokens_verifier"] = self._execution_verifier._reflection_token_count
+        return metrics
 
     # --- Verify-Adapt Hilfsmethoden ---
 

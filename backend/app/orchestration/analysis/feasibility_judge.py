@@ -34,21 +34,32 @@ Capabilities declared: {agent_capabilities}
 ## Available Tools/Skills bound to this agent:
 {skill_list}
 
-Can this agent perform the EXACT required action using its available tools?
+## Analysis Steps (execute EACH step before judging)
 
-Rules:
-1. If the action can be accomplished purely through REASONING and TEXT GENERATION (analyzing, summarizing, writing reports, extracting information, generating documents), the agent IS feasible if its prompt covers this domain — no tools needed.
-2. If the action requires RUNNING CODE, DATABASE ACCESS, FILE I/O, API CALLS, or DATA COMPUTATION, the agent MUST have an executable skill/tool that SPECIFICALLY covers this operation.
-3. Match the SPECIFIC operation, not the general domain:
-   - "read CSV files from directory" requires a FILE READING skill — a DATABASE skill does NOT cover this
-   - "execute SQL queries" requires a DATABASE skill — a FILE READING skill does NOT cover this
-   - "call external API" requires an API/HTTP skill — a DATABASE skill does NOT cover this
-   - "transform and load data" requires BOTH reading the source AND writing to the target — check BOTH ends
-4. A skill that operates on databases CANNOT read files from the filesystem (and vice versa).
-5. If no tool/skill in the list can perform the EXACT I/O operation required, the agent is NOT feasible.
+### Step 1: Decompose the action
+Break the required action into individual operations.
+Example: "Read CSV and write to database" → [1. Read file, 2. Parse data, 3. Write to DB]
+
+### Step 2: I/O type per operation
+For each operation: What I/O type is needed?
+- REASONING (text analysis, summarization) → no tool needed if prompt covers domain
+- FILE_IO (read/write files) → needs File skill
+- DATABASE (SQL, queries) → needs DB skill
+- API_CALL (external services) → needs HTTP/API skill
+- CODE_EXECUTION (computations) → needs Execution skill
+
+### Step 3: Tool matching
+For each operation that needs a tool: Is there a SPECIFIC tool in the list?
+- A DB tool does NOT cover file I/O (and vice versa)
+- A "general" skill is not enough — the skill must cover the SPECIFIC operation
+- "Transform and load data" requires BOTH reading the source AND writing to the target
+
+### Step 4: Verdict
+- Feasible ONLY if ALL operations are covered
+- Infeasible if even ONE operation has no matching tool
 
 Respond with JSON only, no markdown:
-{{"feasible": true/false, "tool_name": "name of the specific tool/skill or null", "reason": "brief explanation"}}"""
+{{"reasoning_steps": ["Step 1: ...", "Step 2: ...", "Step 3: ...", "Step 4: ..."], "feasible": true/false, "tool_name": "name of specific tool or null", "reason": "brief conclusion"}}"""
 
 
 class FeasibilityJudge:
@@ -168,6 +179,7 @@ class FeasibilityJudge:
                 feasible=parsed.feasible,
                 tool_name=parsed.tool_name,
                 reason=parsed.reason,
+                reasoning_steps=parsed.reasoning_steps,
             )
 
         except Exception as e:

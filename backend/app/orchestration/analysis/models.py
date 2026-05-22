@@ -25,6 +25,7 @@ class CapabilityType(str, Enum):
 
 class FeasibilityLLMResponse(BaseModel):
     """Instructor response model for feasibility verification."""
+    reasoning_steps: list[str] = []
     feasible: bool
     tool_name: Optional[str] = None
     reason: str = ""
@@ -55,6 +56,7 @@ class FeasibilityResult(BaseModel):
     feasible: bool = False
     tool_name: Optional[str] = None
     reason: str = ""
+    reasoning_steps: list[str] = []
 
 
 class CapabilityMatch(BaseModel):

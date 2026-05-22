@@ -1242,7 +1242,7 @@ async def _run_challenge_execution(
             from app.orchestration.verification.adapt_strategy import AdaptStrategy
             from app.orchestration.execution.team_assembler import TeamAssembler
 
-            execution_verifier = ExecutionVerifier(llm_client=llm) if app_settings.verify_adapt_enabled else None
+            execution_verifier = ExecutionVerifier(llm_client=llm, settings=app_settings) if app_settings.verify_adapt_enabled else None
             adapt_strategy = AdaptStrategy(app_settings) if app_settings.verify_adapt_enabled else None
 
             # SharedMemory für TeamAssembler + StrategyMemory
@@ -1273,6 +1273,7 @@ async def _run_challenge_execution(
                     session_factory=AsyncSessionLocal,
                     llm_client=llm,
                     shared_memory=shared_mem_service,
+                    settings=app_settings,
                 )
 
             agent_promotion = None
@@ -1289,6 +1290,8 @@ async def _run_challenge_execution(
                 strategy_memory = StrategyMemory(
                     shared_memory=shared_mem_service,
                     embedding_fn=embedding_fn,
+                    llm_client=llm,
+                    settings=app_settings,
                 )
 
             orchestrator = HybridOrchestrator(
