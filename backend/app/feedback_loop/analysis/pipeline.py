@@ -19,9 +19,9 @@ from app.models.schemas.analysis_schemas import (
 )
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.telemetry_repository import TelemetryRepository
-from app.services.analyzer_service import AnalyzerService
-from app.services.product_owner_service import ProductOwnerService
-from app.services.telemetry_service import TelemetryService
+from app.feedback_loop.analysis.analyzer import AnalyzerService
+from app.feedback_loop.decisions.product_owner import ProductOwnerService
+from app.core.telemetry import TelemetryService
 
 log = logging.getLogger(__name__)
 

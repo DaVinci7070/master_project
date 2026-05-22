@@ -494,7 +494,7 @@ Output ONLY the prompt text."""}
     ) -> None:
         """Log prompt improvement in topology change log."""
         try:
-            from app.services.topology_service import TopologyService
+            from app.orchestration.topology.service import TopologyService
             async with self.session_factory() as db:
                 topology_service = TopologyService(db)
                 await topology_service.log_agent_updated(

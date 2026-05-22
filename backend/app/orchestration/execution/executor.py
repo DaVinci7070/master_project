@@ -37,8 +37,8 @@ from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.dynamic_sandbox_service import DynamicSandboxService, SandboxResult
-from app.services.container_image_manager import ContainerImageManager
+from app.skills.testing.docker_sandbox import DynamicSandboxService, SandboxResult
+from app.skills.testing.container_manager import ContainerImageManager
 
 log = logging.getLogger(__name__)
 
@@ -406,7 +406,7 @@ class AutonomousExecutorService:
 
         # Lazy initialize skill builder
         if self._skill_builder is None:
-            from app.services.autonomous_skill_builder import AutonomousSkillBuilder
+            from app.skills.building.autonomous_builder import AutonomousSkillBuilder
             self._skill_builder = AutonomousSkillBuilder(
                 db=self.db,
                 sandbox=self._sandbox,

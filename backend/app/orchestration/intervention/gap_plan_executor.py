@@ -12,11 +12,11 @@ from typing import Optional
 
 from app.models.schemas.intervention_schemas import BuildResult
 from app.models.sql.gap_plan_models import GapStatus
-from app.services.gap_plan_service import GapPlanService
-from app.services.failure_analyzer import FailureAnalyzer
+from app.orchestration.execution.gap_plan import GapPlanService
+from app.feedback_loop.analysis.failure_analyzer import FailureAnalyzer
 from app.orchestration.intervention.capability_builder import CapabilityBuilder
 from app.orchestration.intervention.injector import CapabilityInjector
-from app.services.agent_prompt_improver import AgentPromptImprover
+from app.feedback_loop.improvement.prompt_improver import AgentPromptImprover
 
 logger = logging.getLogger(__name__)
 

@@ -36,10 +36,10 @@ from app.models.schemas.intervention_schemas import (
     BuildPlanApprovalRequest,
     UserSettings as UserSettingsSchema,
 )
-from app.services.build_plan_service import BuildPlanService
-from app.services.gap_verification_service import GapVerificationService
-from app.services.autonomous_skill_builder import AutonomousSkillBuilder
-from app.services.autonomous_executor_service import AutonomousExecutorService, get_executor
+from app.orchestration.execution.build_plan import BuildPlanService
+from app.orchestration.execution.gap_verification import GapVerificationService
+from app.skills.building.autonomous_builder import AutonomousSkillBuilder
+from app.orchestration.execution.executor import AutonomousExecutorService, get_executor
 
 router = APIRouter(prefix="/challenges", tags=["challenges"])
 
@@ -1240,7 +1240,7 @@ async def _run_challenge_execution(
             from app.core.config import settings as app_settings
             from app.orchestration.verification.execution_verifier import ExecutionVerifier
             from app.orchestration.verification.adapt_strategy import AdaptStrategy
-            from app.services.team_assembler import TeamAssembler
+            from app.orchestration.execution.team_assembler import TeamAssembler
 
             execution_verifier = ExecutionVerifier(llm_client=llm) if app_settings.verify_adapt_enabled else None
             adapt_strategy = AdaptStrategy(app_settings) if app_settings.verify_adapt_enabled else None
@@ -1277,7 +1277,7 @@ async def _run_challenge_execution(
 
             agent_promotion = None
             if app_settings.agent_promotion_enabled:
-                from app.services.agent_promotion import AgentPromotion
+                from app.orchestration.agents.promotion import AgentPromotion
                 agent_promotion = AgentPromotion(
                     session_factory=AsyncSessionLocal,
                     min_score=app_settings.agent_promotion_min_score,
@@ -1285,7 +1285,7 @@ async def _run_challenge_execution(
 
             strategy_memory = None
             if app_settings.strategy_memory_enabled and shared_mem_service:
-                from app.services.strategy_memory import StrategyMemory
+                from app.orchestration.execution.strategy_memory import StrategyMemory
                 strategy_memory = StrategyMemory(
                     shared_memory=shared_mem_service,
                     embedding_fn=embedding_fn,
@@ -1851,7 +1851,7 @@ async def _run_autonomous_skill_building(
     5. Cache successful container images for future use
     """
     from app.dependencies.dependencies import AsyncSessionLocal
-    from app.services.autonomous_skill_builder import AutonomousSkillBuilder
+    from app.skills.building.autonomous_builder import AutonomousSkillBuilder
     import os
     import re
 
@@ -2180,7 +2180,7 @@ async def get_system_health(
 
     Checks Docker, database, and executor status.
     """
-    from app.services.dynamic_sandbox_service import DynamicSandboxService
+    from app.skills.testing.docker_sandbox import DynamicSandboxService
 
     # Check Docker
     sandbox = DynamicSandboxService()

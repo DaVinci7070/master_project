@@ -15,12 +15,12 @@ from app.models.schemas.skill_build_schemas import SkillTeamConfig
 from app.models.sql.versioned_models import Skill, Prompt, Agent
 from app.models.sql.skill_build_models import SkillBinding
 from app.orchestration.intervention.retry_strategy import ApproachSelector
-from app.services.developer_team_orchestrator import DeveloperTeamOrchestrator
+from app.orchestration.agents.developer_team import DeveloperTeamOrchestrator
 
 # Lazy import to avoid circular dependencies
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from app.services.skill_team_orchestrator import SkillTeamOrchestrator
+    from app.skills.building.team_orchestrator import SkillTeamOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class CapabilityBuilder:
     def get_skill_team(self) -> "SkillTeamOrchestrator":
         """Get or create the Skill Team Orchestrator."""
         if self._skill_team is None:
-            from app.services.skill_team_orchestrator import SkillTeamOrchestrator
+            from app.skills.building.team_orchestrator import SkillTeamOrchestrator
             self._skill_team = SkillTeamOrchestrator(
                 session_factory=self.session_factory,
                 config=self._skill_team_config,
@@ -502,7 +502,7 @@ class CapabilityBuilder:
                         await db.refresh(agent)
 
                         # Log topology change
-                        from app.services.topology_service import TopologyService
+                        from app.orchestration.topology.service import TopologyService
                         topology_service = TopologyService(db)
                         await topology_service.log_agent_created(
                             agent=agent,
@@ -574,7 +574,7 @@ if __name__ == "__main__":
     print(f"OK: execute{{sig}}")
     exit(0)
 """
-            from app.services.dynamic_sandbox_service import DynamicSandboxService
+            from app.skills.testing.docker_sandbox import DynamicSandboxService
             sandbox = DynamicSandboxService()
             result = await sandbox.execute(
                 code=test_code,
@@ -923,7 +923,7 @@ Always be precise and thorough in your {affected_capability} work."""
 
                 # Log topology change
                 try:
-                    from app.services.topology_service import TopologyService
+                    from app.orchestration.topology.service import TopologyService
                     topology_service = TopologyService(db)
                     await topology_service.log_agent_created(
                         agent=agent,

@@ -31,7 +31,7 @@ from typing import List, Optional
 from opentelemetry import trace
 
 from app.models.schemas.developer_team_schemas import AgentStatus
-from app.services.runtime_agent_registry import RuntimeAgentRegistry
+from app.orchestration.agents.registry import RuntimeAgentRegistry
 from app.core.observability import get_agent_tracer, get_agent_metrics
 
 log = logging.getLogger(__name__)

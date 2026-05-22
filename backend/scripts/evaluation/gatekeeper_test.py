@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from app.services.code_validator_service import CodeValidatorService
+from app.skills.testing.code_validator import CodeValidatorService
 
 DATASETS_DIR = Path(__file__).parent / "datasets"
 

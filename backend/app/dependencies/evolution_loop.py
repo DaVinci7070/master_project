@@ -19,22 +19,22 @@ from app.repositories.improvement_repository import ImprovementRepository
 from app.repositories.prompt_repository import PromptRepository
 from app.repositories.skill_repository import SkillRepository
 from app.repositories.telemetry_repository import TelemetryRepository
-from app.services.ab_test_service import ABTestService
-from app.services.analysis_pipeline import AnalysisPipeline
-from app.services.analyzer_service import AnalyzerService
-from app.services.code_validator_service import CodeValidatorService
-from app.services.control_agent_service import ControlAgentService
-from app.services.evolution_loop_service import EvolutionLoopService
-from app.services.improvement_orchestrator import ImprovementOrchestrator
-from app.services.product_owner_service import ProductOwnerService
-from app.services.prompt_engineer_service import PromptEngineerService
-from app.services.quality_judge_service import QualityJudgeService
-from app.services.rollback_service import RollbackService
-from app.services.sandbox_executor_service import SandboxExecutorService
-from app.services.statistical_analyzer import StatisticalAnalyzer
-from app.services.telemetry_service import TelemetryService
-from app.services.tool_builder_service import ToolBuilderService
-from app.services.version_service import VersionService
+from app.feedback_loop.improvement.ab_testing import ABTestService
+from app.feedback_loop.analysis.pipeline import AnalysisPipeline
+from app.feedback_loop.analysis.analyzer import AnalyzerService
+from app.skills.testing.code_validator import CodeValidatorService
+from app.feedback_loop.decisions.control_agent import ControlAgentService
+from app.feedback_loop.loop import EvolutionLoopService
+from app.feedback_loop.improvement.orchestrator import ImprovementOrchestrator
+from app.feedback_loop.decisions.product_owner import ProductOwnerService
+from app.feedback_loop.improvement.prompt_engineer import PromptEngineerService
+from app.feedback_loop.decisions.quality_judge import QualityJudgeService
+from app.feedback_loop.improvement.rollback import RollbackService
+from app.skills.testing.sandbox_executor import SandboxExecutorService
+from app.feedback_loop.analysis.statistical import StatisticalAnalyzer
+from app.core.telemetry import TelemetryService
+from app.feedback_loop.improvement.tool_builder import ToolBuilderService
+from app.core.versioning import VersionService
 
 log = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ import yaml
 from functools import lru_cache
 from pathlib import Path
 
-AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "agents"
+AGENTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "config" / "agents"
 
 
 def load_agent(name: str) -> dict:

@@ -12,7 +12,7 @@ from app.models.schemas.skill_build_schemas import (
     ComparisonResult,
     TestSuiteResult,
 )
-from app.services.dynamic_sandbox_service import DynamicSandboxService
+from app.skills.testing.docker_sandbox import DynamicSandboxService
 
 logger = logging.getLogger(__name__)
 

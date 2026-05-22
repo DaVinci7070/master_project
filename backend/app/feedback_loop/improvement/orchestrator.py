@@ -30,10 +30,10 @@ from app.models.schemas.tool_builder_schemas import ToolModificationRequest
 from app.repositories.improvement_repository import ImprovementRepository
 from app.repositories.prompt_repository import PromptRepository
 from app.repositories.skill_repository import SkillRepository
-from app.services.prompt_engineer_service import PromptEngineerService
-from app.services.ab_test_service import ABTestService
-from app.services.tool_builder_service import ToolBuilderService
-from app.services.sandbox_executor_service import SandboxExecutorService
+from app.feedback_loop.improvement.prompt_engineer import PromptEngineerService
+from app.feedback_loop.improvement.ab_testing import ABTestService
+from app.feedback_loop.improvement.tool_builder import ToolBuilderService
+from app.skills.testing.sandbox_executor import SandboxExecutorService
 
 log = logging.getLogger(__name__)
 

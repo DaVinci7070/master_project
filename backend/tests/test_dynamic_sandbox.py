@@ -5,7 +5,7 @@ Run with: pytest tests/test_dynamic_sandbox.py -v
 """
 
 import pytest
-from app.services.dynamic_sandbox_service import DynamicSandboxService, SandboxResult
+from app.skills.testing.docker_sandbox import DynamicSandboxService, SandboxResult
 
 
 @pytest.fixture

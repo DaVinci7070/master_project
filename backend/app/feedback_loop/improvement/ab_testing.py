@@ -19,9 +19,9 @@ from app.models.schemas.ab_test_schemas import ABTestCreate, ABTestSampleCreate
 from app.models.sql.ab_test_models import ABTest, ABTestSample
 from app.repositories.ab_test_repository import ABTestRepository
 from app.repositories.improvement_repository import ImprovementRepository
-from app.services.quality_judge_service import QualityJudgeService
-from app.services.rollback_service import RollbackService
-from app.services.statistical_analyzer import StatisticalAnalyzer
+from app.feedback_loop.decisions.quality_judge import QualityJudgeService
+from app.feedback_loop.improvement.rollback import RollbackService
+from app.feedback_loop.analysis.statistical import StatisticalAnalyzer
 
 log = logging.getLogger(__name__)
 

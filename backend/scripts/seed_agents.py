@@ -23,7 +23,7 @@ from sqlalchemy import select, delete
 
 from app.core.config import settings
 from app.models.sql.versioned_models import Agent, Prompt
-from app.agents.agent_definitions import load_agents_by_team
+from app.orchestration.agents.definitions import load_agents_by_team
 
 logging.basicConfig(
     level=logging.INFO,

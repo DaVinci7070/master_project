@@ -817,7 +817,7 @@ class HybridOrchestrator:
     def _get_prompt_improver(self) -> Any:
         """Lazy-init AgentPromptImprover for retry repairs."""
         if not self._prompt_improver:
-            from app.services.agent_prompt_improver import AgentPromptImprover
+            from app.feedback_loop.improvement.prompt_improver import AgentPromptImprover
 
             async def llm_wrapper(messages: list[dict]) -> str:
                 response = await self.llm_client.chat(messages)
@@ -830,9 +830,9 @@ class HybridOrchestrator:
         """Lazy-init CapabilityBuilder for skill repair."""
         if not self._capability_builder:
             from app.orchestration.intervention.builder import CapabilityBuilder
-            from app.services.developer_team_orchestrator import DeveloperTeamOrchestrator
-            from app.services.agent_spawner_service import AgentSpawnerService
-            from app.services.runtime_agent_registry import RuntimeAgentRegistry
+            from app.orchestration.agents.developer_team import DeveloperTeamOrchestrator
+            from app.orchestration.agents.spawner import AgentSpawnerService
+            from app.orchestration.agents.registry import RuntimeAgentRegistry
 
             registry = RuntimeAgentRegistry(max_concurrent_agents=5)
             spawner = AgentSpawnerService(registry, self.llm_client)
@@ -1175,7 +1175,7 @@ class HybridOrchestrator:
         This is required for self-improving capabilities like audio transcription.
         """
         try:
-            from app.services.autonomous_executor_service import AutonomousExecutorService
+            from app.orchestration.execution.executor import AutonomousExecutorService
 
             # Use the new autonomous executor which wraps DynamicSandboxService
             executor = AutonomousExecutorService(
@@ -1361,7 +1361,7 @@ async def _run_evolution_loop_safely(
     from app.dependencies.dependencies import AsyncSessionLocal
     from app.dependencies.evolution_loop import build_evolution_loop_service
     from app.repositories.telemetry_repository import TelemetryRepository
-    from app.services.telemetry_service import TelemetryService
+    from app.core.telemetry import TelemetryService
 
     async with AsyncSessionLocal() as session:
         # Telemetrie-Row erstellen, damit AnalysisPipeline Findings generiert

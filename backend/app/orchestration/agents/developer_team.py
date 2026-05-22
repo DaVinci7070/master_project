@@ -44,8 +44,8 @@ from app.prompts.task_decomposition_prompt import (
     TASK_DECOMPOSITION_SYSTEM_PROMPT,
     build_decomposition_prompt,
 )
-from app.services.agent_spawner_service import AgentSpawnerService
-from app.services.runtime_agent_registry import RuntimeAgentRegistry
+from app.orchestration.agents.spawner import AgentSpawnerService
+from app.orchestration.agents.registry import RuntimeAgentRegistry
 
 log = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)

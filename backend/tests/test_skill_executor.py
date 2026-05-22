@@ -10,7 +10,7 @@ Covers:
 - Error scenarios
 """
 import pytest
-from app.services.skill_executor import (
+from app.skills.runtime.executor import (
     SkillExecutor,
     ExecutionResult,
     TestResult,

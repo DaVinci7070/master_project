@@ -31,9 +31,9 @@ from app.models.schemas.control_schemas import ControlDecision
 from app.models.schemas.evolution_schemas import EvolutionReport
 from app.models.sql.agent_event_models import AgentExecutionEvent
 from app.repositories.improvement_repository import ImprovementRepository
-from app.services.analysis_pipeline import AnalysisPipeline
-from app.services.control_agent_service import ControlAgentService
-from app.services.improvement_orchestrator import ImprovementOrchestrator
+from app.feedback_loop.analysis.pipeline import AnalysisPipeline
+from app.feedback_loop.decisions.control_agent import ControlAgentService
+from app.feedback_loop.improvement.orchestrator import ImprovementOrchestrator
 
 log = logging.getLogger(__name__)
 

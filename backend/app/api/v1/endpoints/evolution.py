@@ -16,7 +16,7 @@ from app.dependencies.evolution_loop import get_evolution_loop_service
 from app.models.schemas.evolution_schemas import EvolutionReport
 from app.models.sql.agent_event_models import AgentExecutionEvent
 from app.models.sql.improvement_models import ImprovementAttempt
-from app.services.evolution_loop_service import EvolutionLoopService
+from app.feedback_loop.loop import EvolutionLoopService
 
 router = APIRouter(prefix="/evolution", tags=["evolution"])
 

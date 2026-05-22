@@ -181,7 +181,7 @@ async def lifespan(app: FastAPI):
     # Initialize Skill Registry (Hot-Reload) if enabled
     from app.core.config import settings
     if settings.hot_reload_enabled:
-        from app.services.skill_registry import SkillRegistry
+        from app.skills.runtime.registry import SkillRegistry
         from app.dependencies.dependencies import AsyncSessionLocal
 
         registry = SkillRegistry.get_instance()

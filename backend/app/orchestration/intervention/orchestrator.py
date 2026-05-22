@@ -27,9 +27,9 @@ from app.orchestration.intervention.injector import CapabilityInjector
 from app.orchestration.intervention.retry_strategy import RetryStrategy, ApproachSelector
 from app.orchestration.intervention.gap_plan_executor import GapPlanExecutor
 from app.orchestration.analysis.orchestrator import PreExecutionOrchestrator
-from app.services.gap_plan_service import GapPlanService
-from app.services.agent_prompt_improver import AgentPromptImprover
-from app.services.gap_verification_service import GapVerificationService
+from app.orchestration.execution.gap_plan import GapPlanService
+from app.feedback_loop.improvement.prompt_improver import AgentPromptImprover
+from app.orchestration.execution.gap_verification import GapVerificationService
 
 logger = logging.getLogger(__name__)
 
@@ -611,9 +611,9 @@ async def create_intervention_orchestrator(
     from app.orchestration.shared_memory.qdrant_adapter import SharedMemoryQdrantAdapter
     from app.orchestration.context_manager import ContextBudgetManager
     from app.orchestration.analysis.orchestrator import PreExecutionOrchestrator
-    from app.services.developer_team_orchestrator import DeveloperTeamOrchestrator
-    from app.services.agent_spawner_service import AgentSpawnerService
-    from app.services.runtime_agent_registry import RuntimeAgentRegistry
+    from app.orchestration.agents.developer_team import DeveloperTeamOrchestrator
+    from app.orchestration.agents.spawner import AgentSpawnerService
+    from app.orchestration.agents.registry import RuntimeAgentRegistry
 
     if session_factory is None:
         session_factory = AsyncSessionLocal
@@ -674,7 +674,7 @@ async def create_intervention_orchestrator(
 
     prompt_improver = AgentPromptImprover(session_factory, llm_fn=llm_wrapper)
 
-    from app.services.failure_analyzer import FailureAnalyzer
+    from app.feedback_loop.analysis.failure_analyzer import FailureAnalyzer
     failure_analyzer = FailureAnalyzer(session_factory, llm_client)
 
     gap_plan_executor = GapPlanExecutor(

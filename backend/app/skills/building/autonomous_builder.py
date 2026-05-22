@@ -27,10 +27,10 @@ from typing import Optional, Any
 from sqlalchemy import select
 
 from app.core.llm_client import LLMClient
-from app.services.dynamic_sandbox_service import DynamicSandboxService, SandboxResult
-from app.services.failure_analyzer import FailureAnalyzer, FailureAnalysis
-from app.services.package_resolver import PackageResolver
-from app.services.semantic_validator import SemanticValidator
+from app.skills.testing.docker_sandbox import DynamicSandboxService, SandboxResult
+from app.feedback_loop.analysis.failure_analyzer import FailureAnalyzer, FailureAnalysis
+from app.skills.testing.package_resolver import PackageResolver
+from app.skills.testing.semantic_validator import SemanticValidator
 from app.models.sql.versioned_models import Skill
 from app.models.schemas.skill_build_schemas import ErrorType, SemanticValidationResult
 from pydantic import BaseModel
@@ -93,7 +93,7 @@ class SkillBuildResult:
 
 
 # Import shared package hints — single source of truth in research_service
-from app.services.research_service import CAPABILITY_PACKAGE_HINTS
+from app.skills.building.research import CAPABILITY_PACKAGE_HINTS
 
 
 class AutonomousSkillBuilder:
@@ -687,7 +687,7 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
                     p for p in draft.pip_requirements if p != bad_package
                 ]
                 # Try to find the correct package via mapping
-                from app.services.package_resolver import HARDCODED_MAPPINGS
+                from app.skills.testing.package_resolver import HARDCODED_MAPPINGS
                 corrected = HARDCODED_MAPPINGS.get(bad_package)
                 if corrected and corrected not in draft.pip_requirements:
                     log.info(f"Replacing with correct package: {corrected}")
@@ -1221,7 +1221,7 @@ Mark parameters as required if the code does not provide a default value (i.e. u
     ) -> list[str]:
         """Convert import names to pip package names (sync fallback)."""
         # Use hardcoded mappings for sync context
-        from app.services.package_resolver import HARDCODED_MAPPINGS, STDLIB_MODULES
+        from app.skills.testing.package_resolver import HARDCODED_MAPPINGS, STDLIB_MODULES
 
         packages = []
 
@@ -1248,7 +1248,7 @@ Mark parameters as required if the code does not provide a default value (i.e. u
 
     def _module_to_package(self, module: str) -> Optional[str]:
         """Convert a module name to its pip package name (sync fallback)."""
-        from app.services.package_resolver import HARDCODED_MAPPINGS
+        from app.skills.testing.package_resolver import HARDCODED_MAPPINGS
 
         if module in HARDCODED_MAPPINGS:
             return HARDCODED_MAPPINGS[module]

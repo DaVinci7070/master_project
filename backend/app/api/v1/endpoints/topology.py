@@ -16,7 +16,7 @@ from app.dependencies.dependencies import get_db_session
 from app.repositories.topology_repository import TopologyRepository
 from app.models.sql.versioned_models import Agent
 from app.models.sql.topology_models import TopologyChangeLog
-from app.services.topology_service import TopologyService
+from app.orchestration.topology.service import TopologyService
 
 router = APIRouter(prefix="/topology", tags=["topology"])
 log = logging.getLogger(__name__)

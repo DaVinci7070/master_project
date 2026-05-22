@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.models.sql.versioned_models import Skill
 from app.repositories.skill_repository import SkillRepository
-from app.services.skill_executor import SkillExecutor, TestResult
+from app.skills.runtime.executor import SkillExecutor, TestResult
 
 log = logging.getLogger(__name__)
 
@@ -392,7 +392,7 @@ class SkillService:
             ValueError: If skill not found or not active
             SkillExecutionError: If execution fails
         """
-        from app.services.skill_executor import SkillExecutionError
+        from app.skills.runtime.executor import SkillExecutionError
 
         log.info(f"Executing skill id={skill_id}")
 

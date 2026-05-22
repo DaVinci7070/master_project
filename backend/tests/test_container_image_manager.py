@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone, timedelta
 
-from app.services.container_image_manager import (
+from app.skills.testing.container_manager import (
     ContainerImageManager,
     ImageBuildResult,
     CAPABILITY_DETECTION,

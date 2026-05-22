@@ -22,7 +22,7 @@ from typing import Optional
 
 import epicbox
 
-from app.services.code_validator_service import CodeValidatorService, ValidationResult
+from app.skills.testing.code_validator import CodeValidatorService, ValidationResult
 
 log = logging.getLogger(__name__)
 
@@ -735,8 +735,8 @@ except Exception as e:
 
         try:
             # Import and use DynamicSandboxService with container image cache
-            from app.services.dynamic_sandbox_service import DynamicSandboxService
-            from app.services.container_image_manager import ContainerImageManager
+            from app.skills.testing.docker_sandbox import DynamicSandboxService
+            from app.skills.testing.container_manager import ContainerImageManager
             from app.dependencies.dependencies import AsyncSessionLocal
 
             # Create image manager for container cache lookup

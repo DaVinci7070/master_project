@@ -11,7 +11,7 @@ from typing import Optional
 
 from app.models.sql.improvement_models import ImprovementAttempt
 from app.repositories.improvement_repository import ImprovementRepository
-from app.services.version_service import VersionService
+from app.core.versioning import VersionService
 
 log = logging.getLogger(__name__)
 

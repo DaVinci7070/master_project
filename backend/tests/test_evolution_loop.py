@@ -24,7 +24,7 @@ from app.models.schemas.control_schemas import ControlDecision
 from app.models.sql.agent_event_models import AgentExecutionEvent
 from app.models.sql.improvement_models import ImprovementAttempt
 from app.repositories.improvement_repository import ImprovementRepository
-from app.services.evolution_loop_service import EvolutionLoopService
+from app.feedback_loop.loop import EvolutionLoopService
 
 
 # ---------------------------------------------------------------------------

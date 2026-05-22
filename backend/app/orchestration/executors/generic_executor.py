@@ -525,7 +525,7 @@ class GenericAgentExecutor:
 
         # Fallback: Use SkillExecutor (AST-based) if no sandbox or sandbox failed
         try:
-            from app.services.skill_executor import SkillExecutor
+            from app.skills.runtime.executor import SkillExecutor
             executor = SkillExecutor(timeout_seconds=5.0)
             result = await executor.execute_code(
                 code=code,
@@ -1230,7 +1230,7 @@ class GenericAgentExecutor:
         """
         try:
             from app.repositories.skill_repository import SkillRepository
-            from app.services.skill_service import SkillService
+            from app.skills.runtime.crud import SkillService
             import re
 
             code = output.get("code", "")

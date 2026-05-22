@@ -13,7 +13,7 @@ from app.repositories.topology_repository import TopologyRepository
 from app.models.sql.versioned_models import Agent, Skill, Prompt
 
 if TYPE_CHECKING:
-    from app.services.ab_test_service import ABTestService
+    from app.feedback_loop.improvement.ab_testing import ABTestService
 
 logger = logging.getLogger(__name__)
 

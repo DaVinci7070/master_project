@@ -24,13 +24,13 @@ from sqlalchemy import select
 
 from app.core.llm_client import LLMClient
 from app.core.config import settings
-from app.services.dynamic_sandbox_service import DynamicSandboxService
-from app.services.failure_analyzer import FailureAnalyzer
-from app.services.semantic_validator import SemanticValidator
-from app.services.code_validator_service import CodeValidatorService
-from app.services.research_service import ResearchService
-from app.services.skill_directory_service import SkillDirectoryService
-from app.services.skill_registry import SkillRegistry
+from app.skills.testing.docker_sandbox import DynamicSandboxService
+from app.feedback_loop.analysis.failure_analyzer import FailureAnalyzer
+from app.skills.testing.semantic_validator import SemanticValidator
+from app.skills.testing.code_validator import CodeValidatorService
+from app.skills.building.research import ResearchService
+from app.skills.runtime.directory import SkillDirectoryService
+from app.skills.runtime.registry import SkillRegistry
 from app.models.sql.versioned_models import Skill
 from app.models.sql.skill_build_models import SkillBuildAttempt
 from app.models.schemas.skill_build_schemas import (
@@ -297,7 +297,7 @@ class SkillTeamOrchestrator:
             existing_skill = await self._find_existing_skill(capability)
             if existing_skill and existing_skill.code:
                 phase_start = time.time()
-                from app.services.skill_validator import SkillValidator
+                from app.skills.runtime.validator import SkillValidator
                 validator = SkillValidator(self.session_factory, self.sandbox)
 
                 # Build a temporary Skill-like object for the new code
@@ -781,7 +781,7 @@ class SkillTeamOrchestrator:
 
     def _detect_libraries(self, code: str) -> list[str]:
         """Third-Party-Libraries im Code erkennen."""
-        from app.services.package_resolver import STDLIB_MODULES
+        from app.skills.testing.package_resolver import STDLIB_MODULES
         all_imports = self._extract_imports(code)
         return [imp for imp in all_imports if imp not in STDLIB_MODULES]
 
@@ -789,7 +789,7 @@ class SkillTeamOrchestrator:
         self, imports: list[str], current_pip: list[str]
     ) -> list[str]:
         """Findet neue Packages die im Code importiert aber noch nicht installiert sind."""
-        from app.services.package_resolver import HARDCODED_MAPPINGS, STDLIB_MODULES
+        from app.skills.testing.package_resolver import HARDCODED_MAPPINGS, STDLIB_MODULES
         new_packages = []
         current_names = {p.lower().replace("-", "_") for p in current_pip}
         for imp in imports:
@@ -802,7 +802,7 @@ class SkillTeamOrchestrator:
 
     def _module_to_package(self, module: str) -> Optional[str]:
         """Einzelnes Modul → pip-Package."""
-        from app.services.package_resolver import HARDCODED_MAPPINGS
+        from app.skills.testing.package_resolver import HARDCODED_MAPPINGS
         return HARDCODED_MAPPINGS.get(module, module)
 
     def _extract_missing_module(self, error: str) -> Optional[str]:
@@ -1102,7 +1102,7 @@ class SkillTeamOrchestrator:
                         bad_pkg = self._extract_bad_package(error_msg)
                         if bad_pkg and bad_pkg in current_pip:
                             current_pip.remove(bad_pkg)
-                            from app.services.package_resolver import HARDCODED_MAPPINGS
+                            from app.skills.testing.package_resolver import HARDCODED_MAPPINGS
                             correct = HARDCODED_MAPPINGS.get(bad_pkg)
                             if correct:
                                 current_pip.append(correct)

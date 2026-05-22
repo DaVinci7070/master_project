@@ -40,7 +40,7 @@ from app.models.sql import (  # noqa: F401
     intervention_models,
     topology_models,
 )
-from app.services.skill_executor import SkillExecutor
+from app.skills.runtime.executor import SkillExecutor
 
 
 # Configure pytest-asyncio

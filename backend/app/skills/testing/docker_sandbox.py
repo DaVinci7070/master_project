@@ -40,7 +40,7 @@ from docker.types import Mount
 # Conditional import for image manager (to avoid circular imports)
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from app.services.container_image_manager import ContainerImageManager
+    from app.skills.testing.container_manager import ContainerImageManager
 
 log = logging.getLogger(__name__)
 

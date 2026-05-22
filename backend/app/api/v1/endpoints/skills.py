@@ -502,7 +502,7 @@ async def get_registry_stats() -> RegistryStatsResponse:
             skills=[],
         )
 
-    from app.services.skill_registry import SkillRegistry
+    from app.skills.runtime.registry import SkillRegistry
 
     registry = SkillRegistry.get_instance()
     stats = registry.stats()

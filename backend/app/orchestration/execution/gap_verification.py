@@ -22,7 +22,7 @@ from app.models.schemas.verification_schemas import (
     PlanVerificationResult,
     CapabilityExistsResult,
 )
-from app.services.gap_plan_service import GapPlanService
+from app.orchestration.execution.gap_plan import GapPlanService
 
 logger = logging.getLogger(__name__)
 

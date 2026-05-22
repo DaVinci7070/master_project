@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 SessionFactory = Callable[..., AsyncSession]
 
 from app.core.config import settings
-from app.services.template_service import TemplateService
+from app.adapters.templates import TemplateService
 from app.repositories.qdrant_repository import QdrantReportsRepository
 
 async_engine = create_async_engine(
@@ -68,7 +68,7 @@ def get_telemetry_service(
 ):
     """Factory for TelemetryService."""
     from app.repositories.telemetry_repository import TelemetryRepository
-    from app.services.telemetry_service import TelemetryService
+    from app.core.telemetry import TelemetryService
 
     repository = TelemetryRepository(session)
     return TelemetryService(repository)

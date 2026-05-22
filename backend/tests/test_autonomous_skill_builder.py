@@ -7,7 +7,7 @@ Run with: pytest tests/test_autonomous_skill_builder.py -v
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.services.autonomous_skill_builder import (
+from app.skills.building.autonomous_builder import (
     AutonomousSkillBuilder,
     SkillDraft,
     ResearchResult,

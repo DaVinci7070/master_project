@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.dependencies import get_db_session, AsyncSessionLocal
-from app.services.gap_plan_service import GapPlanService
+from app.orchestration.execution.gap_plan import GapPlanService
 from app.models.sql.gap_plan_models import GapPlanStatus, GapStatus
 
 router = APIRouter(prefix="/gap-plans", tags=["gap-plans"])
@@ -322,14 +322,14 @@ async def _rebuild_single_gap(
     Background task to rebuild a single gap.
     """
     from app.dependencies.dependencies import AsyncSessionLocal
-    from app.services.gap_plan_service import GapPlanService
+    from app.orchestration.execution.gap_plan import GapPlanService
     from app.orchestration.intervention.capability_builder import CapabilityBuilder
     from app.orchestration.intervention.injector import CapabilityInjector
     from app.orchestration.topology.loader import TopologyLoader
-    from app.services.developer_team_orchestrator import DeveloperTeamOrchestrator
-    from app.services.agent_spawner_service import AgentSpawnerService
-    from app.services.runtime_agent_registry import RuntimeAgentRegistry
-    from app.services.agent_prompt_improver import AgentPromptImprover
+    from app.orchestration.agents.developer_team import DeveloperTeamOrchestrator
+    from app.orchestration.agents.spawner import AgentSpawnerService
+    from app.orchestration.agents.registry import RuntimeAgentRegistry
+    from app.feedback_loop.improvement.prompt_improver import AgentPromptImprover
     from app.core.llm_client import LLMClient
     from app.models.schemas.analysis_schemas import CapabilityGap, GapType, GapSeverity
 

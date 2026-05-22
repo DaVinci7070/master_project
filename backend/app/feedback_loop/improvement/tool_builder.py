@@ -29,7 +29,7 @@ from app.models.schemas.tool_builder_schemas import (
 )
 from app.models.sql.versioned_models import Skill
 from app.repositories.skill_repository import SkillRepository
-from app.services.code_validator_service import CodeValidatorService
+from app.skills.testing.code_validator import CodeValidatorService
 from app.prompts.tool_builder_prompt import (
     TOOL_BUILDER_SYSTEM_PROMPT,
     TOOL_MODIFICATION_SYSTEM_PROMPT,

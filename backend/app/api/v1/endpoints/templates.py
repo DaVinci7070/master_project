@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.api.template_models import TemplateUploadRequest, TemplateUploadResponse, TemplateDetail, TemplateResponse
 from app.dependencies.dependencies import get_db_session
-from app.services.template_service import TemplateService
+from app.adapters.templates import TemplateService
 from app.dependencies.dependencies import get_template_service
 from app.dependencies.auth import get_current_user_id
 
