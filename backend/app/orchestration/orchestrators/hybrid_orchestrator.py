@@ -1039,12 +1039,13 @@ class HybridOrchestrator:
 
     def _collect_reflexion_metrics(self, last_verification) -> dict:
         """Sammelt Reflexion-Metriken für Thesis-Auswertung und Ablation."""
+        from app.core.config import settings as _cfg
         metrics: dict = {
-            "cot_verification_used": settings.cot_verification_enabled,
+            "cot_verification_used": _cfg.cot_verification_enabled,
             "self_reflection_triggered": False,
             "self_reflection_correction": 0.0,
             "reflection_tokens_verifier": 0,
-            "execution_reflection_enabled": settings.execution_reflection_enabled,
+            "execution_reflection_enabled": _cfg.execution_reflection_enabled,
         }
         if last_verification:
             metrics["self_reflection_triggered"] = last_verification.score_corrected
