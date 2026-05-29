@@ -1,0 +1,8 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+1989830f-0539-4693-862e-a1653f05f090,l5_autonomous,1,L5_schema_discovery_report,L5,resolved,False,0.111,264708,5,327620,Projekt 'Neubau Wohnanlage Bergstraße 12' wird identifiziert;Projekt 'Sanierung Grundschule Am Park' wird identifiziert;Rohbau-Fortschritt wird korrekt mit ca. 85% angegeben;Verzögerung im Gewerk Elektro wird erkannt und benannt;Mindestens 3 offene kritische Mängel werden aufgelistet;Gesamtkosten werden als Summe berechnet und dem Budget gegenübergestellt;Mindestens ein konkreter Mangel mit Beschreibung wird genannt;Fortschritt von mindestens 4 Gewerken wird einzeln ausgewiesen,,
+1989830f-0539-4693-862e-a1653f05f090,l5_autonomous,1,L5_etl_quarterly_report,L5,failed,False,0.0,239754,12,143019,,,
+1989830f-0539-4693-862e-a1653f05f090,l5_autonomous,1,L5_audio_tagesbericht_rohbau,L5,resolved,True,0.857,48627,5,35357,Datum 14. Oktober wird genannt,,
+1989830f-0539-4693-862e-a1653f05f090,l5_autonomous,1,L5_audio_begehung_maengel,L5,resolved,True,1.0,53586,5,36385,,,
+1989830f-0539-4693-862e-a1653f05f090,l5_autonomous,1,L5_audio_bauleitungssitzung,L5,resolved,False,0.833,57550,5,39481,Ein naechster Termin oder Folgetermin wird erwaehnt,,
+1989830f-0539-4693-862e-a1653f05f090,l5_autonomous,1,L5_audio_telefonat_statiker,L5,resolved,True,1.0,60640,5,40806,,,
+1989830f-0539-4693-862e-a1653f05f090,l5_autonomous,1,L5_audio_sicherheitsbericht,L5,resolved,True,1.0,66774,5,38446,,,

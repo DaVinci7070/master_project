@@ -1,0 +1,8 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+28903c91-3363-4efa-9944-08e73f3cb6e7,l5_autonomous,1,L5_schema_discovery_report,L5,resolved,False,0.667,473930,5,834175,Mindestens 3 offene kritische Mängel werden aufgelistet;Gesamtkosten werden als Summe berechnet und dem Budget gegenübergestellt;Mindestens ein konkreter Mangel mit Beschreibung wird genannt,,
+28903c91-3363-4efa-9944-08e73f3cb6e7,l5_autonomous,1,L5_etl_quarterly_report,L5,error,False,0.0,0,0,0,,,
+28903c91-3363-4efa-9944-08e73f3cb6e7,l5_autonomous,1,L5_audio_tagesbericht_rohbau,L5,resolved,False,0.571,48895,5,31254,Datum 14. Oktober wird genannt;Baustelle Bergstrasse 12 oder Neubau Wohnanlage wird identifiziert;8 Arbeiter waren auf der Baustelle,,
+28903c91-3363-4efa-9944-08e73f3cb6e7,l5_autonomous,1,L5_audio_begehung_maengel,L5,resolved,True,1.0,85952,5,38134,,,
+28903c91-3363-4efa-9944-08e73f3cb6e7,l5_autonomous,1,L5_audio_bauleitungssitzung,L5,resolved,True,1.0,55965,5,35147,,,
+28903c91-3363-4efa-9944-08e73f3cb6e7,l5_autonomous,1,L5_audio_telefonat_statiker,L5,resolved,True,1.0,62219,5,34783,,,
+28903c91-3363-4efa-9944-08e73f3cb6e7,l5_autonomous,1,L5_audio_sicherheitsbericht,L5,resolved,True,1.0,87537,5,39394,,,

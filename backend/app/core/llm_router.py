@@ -161,6 +161,31 @@ class LLMRouter:
         self._task_models[task_type] = model
         log.info(f"Updated model for {task_type.value}: {model}")
 
+    def bulk_update(self, models: dict[str, str]) -> dict[str, str]:
+        """
+        Setzt alle Modelle auf einmal und invalidiert den Client-Cache.
+
+        Args:
+            models: Mapping task_type_name -> model_id
+                    (z.B. {"research": "gemini/gemini-2.5-flash", ...})
+
+        Returns:
+            Vorherige Modell-Zuordnung (für Rollback).
+        """
+        previous = self.get_all_models()
+
+        for type_name, model_id in models.items():
+            try:
+                task_type = TaskType(type_name)
+            except ValueError:
+                log.warning(f"Unbekannter TaskType '{type_name}', übersprungen")
+                continue
+            self._task_models[task_type] = model_id
+
+        self._llm_clients.clear()
+        log.info(f"Bulk-Update: alle Modelle aktualisiert, Client-Cache geleert → {self.get_all_models()}")
+        return previous
+
     def get_all_models(self) -> dict[str, str]:
         """Get all task type -> model mappings."""
         return {t.value: m for t, m in self._task_models.items()}

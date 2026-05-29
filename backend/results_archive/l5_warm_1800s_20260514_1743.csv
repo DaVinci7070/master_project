@@ -1,0 +1,13 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+f1825bc6-272d-41d5-8480-1049667ee8d6,l5_autonomous,1,L5_schema_discovery_report,L5,timeout,False,0.0,1800000,0,0,,,
+f1825bc6-272d-41d5-8480-1049667ee8d6,l5_autonomous,1,L5_etl_quarterly_report,L5,timeout,False,0.0,1800000,0,0,,,
+f1825bc6-272d-41d5-8480-1049667ee8d6,l5_autonomous,1,L5_audio_tagesbericht_rohbau,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/14e27a20-a287-44d3-acb2-ed385ec09bdf'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+f1825bc6-272d-41d5-8480-1049667ee8d6,l5_autonomous,1,L5_audio_begehung_maengel,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/upload'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+f1825bc6-272d-41d5-8480-1049667ee8d6,l5_autonomous,1,L5_audio_bauleitungssitzung,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/upload'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+f1825bc6-272d-41d5-8480-1049667ee8d6,l5_autonomous,1,L5_audio_telefonat_statiker,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/upload'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+f1825bc6-272d-41d5-8480-1049667ee8d6,l5_autonomous,1,L5_audio_sicherheitsbericht,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/upload'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"

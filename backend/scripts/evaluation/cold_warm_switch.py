@@ -71,6 +71,7 @@ COLD_TRUNCATION_TABLES = [
     "relations",
     "skill_bindings",
     "skill_build_attempts",
+    "orchestration_telemetry",
     "execution_telemetry",
     # Shared memory
     "facts",
@@ -240,17 +241,14 @@ def _clear_qdrant_collections(qdrant_url: str) -> list[str]:
 
 async def _seed_from_default(engine) -> int:
     """Re-seed initial agents and prompts from seed_agents.py definitions."""
-    from scripts.seed_agents import (
-        MAIN_TEAM_AGENTS,
-        DEVELOPER_TEAM_AGENTS,
-        create_agent_with_prompt,
-    )
+    from scripts.seed_agents import create_agent_with_prompt
+    from app.orchestration.agents.definitions import load_agents_by_team
 
     async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
     count = 0
 
     async with async_session() as session:
-        for agent_data in MAIN_TEAM_AGENTS:
+        for agent_data in load_agents_by_team("main_team"):
             try:
                 _, status = await create_agent_with_prompt(session, agent_data, "main_team")
                 if status == "created":
@@ -259,7 +257,7 @@ async def _seed_from_default(engine) -> int:
                 logger.warning("Seed skipped %s: %s", agent_data["name"], e)
                 await session.rollback()
 
-        for agent_data in DEVELOPER_TEAM_AGENTS:
+        for agent_data in load_agents_by_team("developer_team"):
             try:
                 _, status = await create_agent_with_prompt(session, agent_data, "developer_team")
                 if status == "created":

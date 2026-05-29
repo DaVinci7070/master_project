@@ -1,0 +1,11 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L1_simple_daily_report,L1,build_failed,False,0.0,10000,0,0,,,
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L1_defect_list,L1,resolved,True,1.0,32685,5,33089,,,
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L1_safety_protocol,L1,resolved,True,1.0,21885,5,26376,,,
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L1_material_delivery_log,L1,resolved,True,1.0,81889,12,169320,,,
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L1_weather_delay_report,L1,build_failed,False,0.0,40000,0,0,,,
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L1_daily_workforce_report,L1,resolved,True,0.9,24335,5,33295,Arbeitszeit ab 07:00 wird erwaehnt,,
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L1_concrete_pour_protocol,L1,resolved,True,1.0,83530,5,100448,,,
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L1_site_handover_note,L1,resolved,True,1.0,26735,5,34065,,,
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L2_combined_defect_safety,L2,resolved,True,1.0,36720,5,37775,,,
+8f59dd7b-0968-4d61-8d64-129397095859,pilot_sprint8,1,L2_daily_with_supplements,L2,resolved,True,1.0,26588,5,35124,,,

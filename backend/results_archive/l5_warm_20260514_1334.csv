@@ -1,0 +1,8 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+cb6bc842-840e-4e3a-b2c1-33c7fa028a42,l5_autonomous,1,L5_schema_discovery_report,L5,timeout,False,0.0,600000,0,0,,,
+cb6bc842-840e-4e3a-b2c1-33c7fa028a42,l5_autonomous,1,L5_etl_quarterly_report,L5,timeout,False,0.0,600000,0,0,,,
+cb6bc842-840e-4e3a-b2c1-33c7fa028a42,l5_autonomous,1,L5_audio_tagesbericht_rohbau,L5,timeout,False,0.0,600000,0,0,,,
+cb6bc842-840e-4e3a-b2c1-33c7fa028a42,l5_autonomous,1,L5_audio_begehung_maengel,L5,timeout,False,0.0,600000,0,0,,,
+cb6bc842-840e-4e3a-b2c1-33c7fa028a42,l5_autonomous,1,L5_audio_bauleitungssitzung,L5,timeout,False,0.0,600000,0,0,,,
+cb6bc842-840e-4e3a-b2c1-33c7fa028a42,l5_autonomous,1,L5_audio_telefonat_statiker,L5,timeout,False,0.0,600000,0,0,,,
+cb6bc842-840e-4e3a-b2c1-33c7fa028a42,l5_autonomous,1,L5_audio_sicherheitsbericht,L5,timeout,False,0.0,600000,0,0,,,

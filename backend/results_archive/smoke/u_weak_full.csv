@@ -1,0 +1,8 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,tokens_input,tokens_output,tokens_thinking,tokens_assembly,tokens_execution,tokens_verification,tokens_adapt,tokens_self_healing,cost_usd,model_config_id,missing_keywords,missing_sections,error,cot_verification,self_reflection,reflection_correction,reflection_tokens
+64b9801d-decf-441b-9309-96eabae1dd5d,progressive_complexity,1,L3_acceptance_protocol,L3,resolved,True,1.0,174501,5,107172,98074,9098,0,2251,107172,2998,0,0,0.013447,U-WEAK-FULL,,,,True,False,0.0,0
+64b9801d-decf-441b-9309-96eabae1dd5d,progressive_complexity,1,L3_progress_with_cost_comparison,L3,resolved,True,1.0,60840,5,35894,30346,5548,0,4196,35894,2176,0,0,0.005254,U-WEAK-FULL,,,,True,False,0.0,0
+64b9801d-decf-441b-9309-96eabae1dd5d,progressive_complexity,1,L3_safety_incident_report,L3,resolved,True,1.0,75505,5,42140,33954,8186,0,2948,42140,2387,0,0,0.00667,U-WEAK-FULL,,,,True,False,0.0,0
+64b9801d-decf-441b-9309-96eabae1dd5d,progressive_complexity,1,L3_structural_assessment,L3,resolved,True,1.0,114168,5,47045,38649,8396,0,3805,47045,3217,0,0,0.007223,U-WEAK-FULL,,,,True,True,-0.12,613
+64b9801d-decf-441b-9309-96eabae1dd5d,progressive_complexity,1,L3_environmental_compliance,L3,resolved,True,1.0,66066,5,24476,19809,4667,0,8689,24476,2553,0,0,0.003848,U-WEAK-FULL,,,,True,False,0.0,0
+64b9801d-decf-441b-9309-96eabae1dd5d,progressive_complexity,1,L3_schedule_variance_analysis,L3,resolved,True,1.0,60929,5,41521,35318,6203,0,4149,41521,2388,0,0,0.006013,U-WEAK-FULL,,,,True,False,0.0,0
+64b9801d-decf-441b-9309-96eabae1dd5d,progressive_complexity,1,L3_warranty_claim_report,L3,build_failed,False,0.0,35000,0,0,0,0,0,0,0,0,0,0,0.0,U-WEAK-FULL,,,,False,False,0.0,0

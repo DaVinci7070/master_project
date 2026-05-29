@@ -1,0 +1,13 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error,cot_verification,self_reflection,reflection_correction,reflection_tokens
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L1_code_review_summary,L1,resolved,False,0.667,23264,5,18453,Code-Review,Aenderungsuebersicht;Review-Ergebnis,,True,False,0.0,0
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L1_release_notes,L1,resolved,False,0.889,22792,5,18848,,Features,,True,False,0.0,0
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L1_bug_report,L1,resolved,False,0.727,28565,5,20795,,Erwartetes Verhalten;Tatsaechliches Verhalten;Prioritaet,,True,False,0.0,0
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L2_incident_postmortem,L2,error,False,0.0,0,0,0,,,,False,False,0.0,0
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L2_api_documentation,L2,resolved,False,0.75,62160,5,19118,,Endpoints;Authentication;Rate Limiting,,True,False,0.0,0
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L2_technical_debt_assessment,L2,resolved,False,0.917,37499,5,28397,Technical Debt,,,True,False,0.0,0
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L3_architecture_decision_record,L3,resolved,True,1.0,27511,5,15337,,,,True,True,0.07,602
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L3_performance_analysis,L3,resolved,False,0.818,49885,5,26960,,Testkonfiguration;Ergebnisse,,True,False,0.0,0
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L3_migration_runbook,L3,resolved,False,0.769,51716,5,26749,,Migrationsschritte;Zeitplan;Verantwortlichkeiten,,True,True,0.1,634
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L4_security_audit_report,L4,resolved,False,0.846,39159,5,24630,Penetrationstest,Scope,,True,False,0.0,0
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L4_soc2_readiness,L4,resolved,False,0.812,30658,5,26754,Trust Service,Scope;Empfehlungen,,True,False,0.0,0
+62dd7cc1-4f46-47ef-b20f-b96c8086e4a2,swe_bench_subset,1,SE_L4_capacity_forecast_model,L4,error,False,0.0,0,0,0,,,,False,False,0.0,0

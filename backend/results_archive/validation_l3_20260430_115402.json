@@ -1,0 +1,33 @@
+{
+  "run_id": "93817d71-d83f-4126-bab6-d29af2be1da5",
+  "suite": "validation_l3_acceptance_protocol",
+  "seed": 1,
+  "started_at": "2026-04-30T09:54:04.849818+00:00",
+  "completed_at": "2026-04-30T09:56:58.015108+00:00",
+  "base_url": "http://localhost:8000/api/v1",
+  "total_tasks": 1,
+  "passed": 1,
+  "failed": 0,
+  "pass_at_1": 1.0,
+  "tasks": [
+    {
+      "task_id": "L3_acceptance_protocol",
+      "level": "L3",
+      "challenge_id": "4e257d41-a3d1-4638-a0dc-331ec7d7517b",
+      "execution_id": "76f2a865-9546-41cc-87d4-b598a65fc323",
+      "status": "resolved",
+      "pass": true,
+      "score": 1.0,
+      "duration_ms": 75684,
+      "agents_executed": 11,
+      "tokens_total": 56198,
+      "missing_keywords": [],
+      "missing_sections": [],
+      "started_at": "2026-04-30T09:54:05.034353+00:00",
+      "completed_at": "2026-04-30T09:56:58.013581+00:00",
+      "error": null,
+      "tokens_input": 50792,
+      "tokens_output": 5406
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+fab1639f-2cc2-480c-ad42-d859cc7bec74,l5_autonomous,1,L5_schema_discovery_report,L5,build_failed,False,0.0,55000,0,0,,,
+fab1639f-2cc2-480c-ad42-d859cc7bec74,l5_autonomous,1,L5_etl_quarterly_report,L5,resolved,True,1.0,17285,11,39100,,,
+fab1639f-2cc2-480c-ad42-d859cc7bec74,l5_autonomous,1,L5_audio_tagesbericht_rohbau,L5,resolved,True,1.0,22961,11,47776,,,
+fab1639f-2cc2-480c-ad42-d859cc7bec74,l5_autonomous,1,L5_audio_begehung_maengel,L5,resolved,True,1.0,18557,11,46629,,,
+fab1639f-2cc2-480c-ad42-d859cc7bec74,l5_autonomous,1,L5_audio_bauleitungssitzung,L5,resolved,False,0.833,26412,11,42499,Ein naechster Termin oder Folgetermin wird erwaehnt,,
+fab1639f-2cc2-480c-ad42-d859cc7bec74,l5_autonomous,1,L5_audio_telefonat_statiker,L5,resolved,True,1.0,22273,11,46366,,,
+fab1639f-2cc2-480c-ad42-d859cc7bec74,l5_autonomous,1,L5_audio_sicherheitsbericht,L5,resolved,True,1.0,17792,11,47395,,,

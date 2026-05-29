@@ -174,6 +174,15 @@ class HybridOrchestrator:
         self._failure_tracker = {}
         start_time = datetime.now(timezone.utc)
 
+        # Phase-Token-Accumulator (Sprint C: Telemetrie)
+        phase_tokens = {
+            "assembly": 0,
+            "execution": 0,
+            "verification": 0,
+            "adapt": 0,
+            "self_healing": 0,
+        }
+
         logger.info(f"Starting execution: {self._execution_id}")
 
         from app.core.config import settings
@@ -193,6 +202,7 @@ class HybridOrchestrator:
                     available_agents=all_agents,
                     available_skills=all_skills,
                 )
+                phase_tokens["assembly"] += self._team_assembler._last_tokens_used
 
                 if isinstance(result, GapReport):
                     logger.info(
@@ -206,6 +216,7 @@ class HybridOrchestrator:
                         available_agents=all_agents,
                         available_skills=all_skills,
                     )
+                    phase_tokens["assembly"] += self._team_assembler._last_tokens_used
 
                 if isinstance(result, TeamPlan):
                     team_plan = result
@@ -287,6 +298,11 @@ class HybridOrchestrator:
 
             results[f"wave_{wave_idx + 1}"] = wave_results
 
+            # Execution-Tokens akkumulieren
+            for _ar in wave_results.values():
+                if isinstance(_ar, dict):
+                    phase_tokens["execution"] += _ar.get("tokens_total", 0) or 0
+
             # Self-healing: repair and retry failed agents before next wave
             topology, retry_results = await self._repair_and_retry(
                 topology, input_data, wave_number=wave_idx + 1,
@@ -312,6 +328,7 @@ class HybridOrchestrator:
                         final_output=final_output,
                         challenge_text=challenge_text,
                     )
+                    phase_tokens["verification"] += self._execution_verifier._last_tokens_used
                     last_verification = verification
 
                     # SSE-Event bei Self-Reflection (Sprint 5: Observability)
@@ -364,6 +381,9 @@ class HybridOrchestrator:
                             wave_number=100 + adapt_round,
                         )
                         results[f"adapt_feedback_{adapt_round + 1}"] = replan_results
+                        for _ar in replan_results.values():
+                            if isinstance(_ar, dict):
+                                phase_tokens["adapt"] += _ar.get("tokens_total", 0) or 0
                         final_output = self._extract_final_output(results)
 
                     elif decision.action == AdaptAction.REPLAN_NEW_TEAM:
@@ -382,6 +402,7 @@ class HybridOrchestrator:
                             available_agents=all_agents,
                             available_skills=all_skills,
                         )
+                        phase_tokens["adapt"] += self._team_assembler._last_tokens_used
 
                         if isinstance(new_plan, GapReport):
                             await self._handle_team_gaps(new_plan)
@@ -399,6 +420,9 @@ class HybridOrchestrator:
                                 wave_number=200 + adapt_round * 10 + w_idx,
                             )
                             results[f"adapt_newteam_{adapt_round + 1}_wave_{w_idx + 1}"] = w_results
+                            for _ar in w_results.values():
+                                if isinstance(_ar, dict):
+                                    phase_tokens["adapt"] += _ar.get("tokens_total", 0) or 0
 
                         final_output = self._extract_final_output(results)
 
@@ -422,6 +446,7 @@ class HybridOrchestrator:
                                 available_agents=all_agents,
                                 available_skills=all_skills,
                             )
+                            phase_tokens["adapt"] += self._team_assembler._last_tokens_used
 
                             if isinstance(new_plan, TeamPlan):
                                 team_plan = new_plan
@@ -525,6 +550,18 @@ class HybridOrchestrator:
         # Reflexion-Metriken aggregieren (Sprint 5: Observability)
         reflexion_metrics = self._collect_reflexion_metrics(last_verification)
 
+        # Phase-Tokens: Gesamt berechnen (Assembly + Execution + Verification + Adapt + SelfHealing)
+        phase_tokens_total = sum(phase_tokens.values())
+
+        # OrchestrationTelemetry schreiben (Sprint C)
+        await self._write_orchestration_telemetry(
+            phase_tokens=phase_tokens,
+            phase_tokens_total=phase_tokens_total,
+            adapt_rounds=adapt_rounds,
+            verification_score=last_verification.score if last_verification else 0.0,
+            created_at=start_time,
+        )
+
         result = {
             "success": overall_success,
             "execution_id": self._execution_id,
@@ -535,6 +572,11 @@ class HybridOrchestrator:
             "tokens_total": total_tokens,
             "tokens_input": total_input,
             "tokens_output": total_output,
+            "tokens_assembly": phase_tokens["assembly"],
+            "tokens_execution": phase_tokens["execution"],
+            "tokens_verification": phase_tokens["verification"],
+            "tokens_adapt": phase_tokens["adapt"],
+            "tokens_self_healing": phase_tokens["self_healing"],
             "failed_agents": [
                 {
                     "agent_id": f.agent_id,
@@ -1034,6 +1076,44 @@ class HybridOrchestrator:
                 )
             except Exception as e:
                 logger.warning(f"Gap-Build für '{missing.capability}' fehlgeschlagen: {e}")
+
+    # --- Phase-Token-Telemetrie (Sprint C) ---
+
+    async def _write_orchestration_telemetry(
+        self,
+        phase_tokens: dict[str, int],
+        phase_tokens_total: int,
+        adapt_rounds: int,
+        verification_score: float,
+        created_at: datetime,
+    ) -> None:
+        """OrchestrationTelemetry-Record schreiben (ein INSERT pro Execution)."""
+        try:
+            from app.models.sql.orchestration_telemetry import OrchestrationTelemetry
+            from app.dependencies.dependencies import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                record = OrchestrationTelemetry(
+                    execution_id=self._execution_id,
+                    tokens_assembly=phase_tokens["assembly"],
+                    tokens_execution=phase_tokens["execution"],
+                    tokens_verification=phase_tokens["verification"],
+                    tokens_adapt=phase_tokens["adapt"],
+                    tokens_self_healing=phase_tokens["self_healing"],
+                    tokens_total=phase_tokens_total,
+                    adapt_rounds=adapt_rounds,
+                    verification_score=round(verification_score * 100),
+                    created_at=created_at,
+                )
+                session.add(record)
+                await session.commit()
+                logger.info(
+                    f"OrchestrationTelemetry: assembly={phase_tokens['assembly']} "
+                    f"execution={phase_tokens['execution']} "
+                    f"verification={phase_tokens['verification']} "
+                    f"adapt={phase_tokens['adapt']} total={phase_tokens_total}"
+                )
+        except Exception as e:
+            logger.warning(f"OrchestrationTelemetry schreiben fehlgeschlagen: {e}")
 
     # --- Reflexion Observability (Sprint 5) ---
 

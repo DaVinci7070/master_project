@@ -1,0 +1,4 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+d90e38d9-960e-4112-87ab-3be2ab6eed4b,dummy_smoke_test,1,L1_simple_daily_report,L1,resolved,True,1.0,102939,5,33158,,,
+d90e38d9-960e-4112-87ab-3be2ab6eed4b,dummy_smoke_test,1,L2_defect_safety_combined,L2,resolved,True,1.0,71532,5,33368,,,
+d90e38d9-960e-4112-87ab-3be2ab6eed4b,dummy_smoke_test,1,L3_progress_report_with_costs,L3,resolved,True,1.0,65792,5,25579,,,

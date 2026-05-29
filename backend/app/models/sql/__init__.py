@@ -3,6 +3,7 @@ from app.models.sql.base import Base
 from app.models.sql.sql_models import Report
 from app.models.sql.versioned_models import Prompt, Agent, Skill
 from app.models.sql.telemetry_models import ExecutionTelemetry
+from app.models.sql.orchestration_telemetry import OrchestrationTelemetry
 from app.models.sql.analysis_models import AnalysisFinding
 from app.models.sql.improvement_models import ImprovementAttempt
 from app.models.sql.ab_test_models import ABTest, ABTestSample
@@ -21,6 +22,7 @@ __all__ = [
     # Non-versioned models
     "Report",
     "ExecutionTelemetry",
+    "OrchestrationTelemetry",
     # Analysis models
     "AnalysisFinding",
     # Control/Safety models

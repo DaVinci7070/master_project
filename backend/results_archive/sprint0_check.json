@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-05-26T10:59:06",
+  "models": [
+    {
+      "model_id": "gemini/gemini-2.0-flash",
+      "tier": "T-Weak",
+      "available": true,
+      "latency_ms": 1301,
+      "tokens": {
+        "prompt": 34,
+        "completion": 66,
+        "total": 100,
+        "thinking": null
+      },
+      "error": null
+    },
+    {
+      "model_id": "gemini/gemini-2.5-flash",
+      "tier": "T-Medium",
+      "available": true,
+      "latency_ms": 1700,
+      "tokens": {
+        "prompt": 35,
+        "completion": 252,
+        "total": 287,
+        "thinking": 241
+      },
+      "error": null
+    },
+    {
+      "model_id": "gemini/gemini-3.5-flash",
+      "tier": "T-Strong",
+      "available": true,
+      "latency_ms": 2140,
+      "tokens": {
+        "prompt": 35,
+        "completion": 252,
+        "total": 287,
+        "thinking": 242
+      },
+      "error": null
+    }
+  ],
+  "judge": {
+    "model_id": "gemini/gemini-3.5-flash",
+    "available": true,
+    "latency_ms": 1887
+  },
+  "verdict": "GO"
+}

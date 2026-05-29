@@ -1,0 +1,8 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+f4053869-2b85-4f07-bfa6-b02c903d693f,l5_autonomous,1,L5_schema_discovery_report,L5,build_failed,False,0.0,55000,0,0,,,
+f4053869-2b85-4f07-bfa6-b02c903d693f,l5_autonomous,1,L5_etl_quarterly_report,L5,resolved,False,0.6,17490,11,39182,"5 Subunternehmer werden korrekt identifiziert (Müller, Schmidt, Weber, Krause, Hoffmann);Gesamtstunden Rohbau Schmidt werden mit ca. 680h angegeben;Gesamtstunden Elektro Müller werden mit ca. 420h angegeben;Mindestens 3 der Top-5 Materialposten werden korrekt genannt",,
+f4053869-2b85-4f07-bfa6-b02c903d693f,l5_autonomous,1,L5_audio_tagesbericht_rohbau,L5,build_timeout,False,0.0,510000,0,0,,,
+f4053869-2b85-4f07-bfa6-b02c903d693f,l5_autonomous,1,L5_audio_begehung_maengel,L5,resolved,False,0.0,168251,11,38286,Mehrere Maengel werden identifiziert (mindestens 3);Ein Problem mit einer Abwasserleitung oder Sanitaerinstallation wird erwaehnt;Ein Riss oder kosmetischer Mangel wird dokumentiert;Schweregrade oder Priorisierung der Maengel werden angegeben;Zustaendige Firmen oder Personen werden benannt;Eine Frist zur Maengelbeseitigung wird genannt,,
+f4053869-2b85-4f07-bfa6-b02c903d693f,l5_autonomous,1,L5_audio_bauleitungssitzung,L5,error,False,0.0,0,0,0,,,
+f4053869-2b85-4f07-bfa6-b02c903d693f,l5_autonomous,1,L5_audio_telefonat_statiker,L5,timeout,False,0.0,600000,0,0,,,
+f4053869-2b85-4f07-bfa6-b02c903d693f,l5_autonomous,1,L5_audio_sicherheitsbericht,L5,error,False,0.0,0,0,0,,,Server disconnected without sending a response.

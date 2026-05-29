@@ -133,6 +133,7 @@ class ExecutionVerifier:
         self.llm = llm_client
         self._settings = settings or default_settings
         self._reflection_token_count: int = 0
+        self._last_tokens_used: int = 0
 
     async def verify(
         self,
@@ -147,6 +148,7 @@ class ExecutionVerifier:
         2. LLM-Bewertung: CoT oder Single-Shot je nach Config
         """
         self._reflection_token_count = 0
+        self._last_tokens_used = 0
 
         gap_indicators = self._detect_capability_gaps(final_output)
         if gap_indicators:
@@ -178,6 +180,7 @@ class ExecutionVerifier:
             temperature=0.1,
             max_tokens=800,
         )
+        self._last_tokens_used += response.usage.get("total_tokens", 0)
 
         result = self._parse_result(response.content)
 
@@ -214,7 +217,8 @@ class ExecutionVerifier:
             max_tokens=400,
         )
 
-        self._reflection_token_count = getattr(response, "usage", {}).get("total_tokens", 0)
+        self._reflection_token_count = response.usage.get("total_tokens", 0)
+        self._last_tokens_used += self._reflection_token_count
 
         match = re.search(r"\{.*\}", response.content, re.DOTALL)
         if not match:

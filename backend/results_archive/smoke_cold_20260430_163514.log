@@ -1,0 +1,25 @@
+Benchmark Runner — suite=progressive_complexity, seeds=2, base_seed=1, mode=cold
+
+=== Seed 1/2 (seed=1) ===
+  Auto-apply enabled for developer-team builds
+  Running L1_simple_daily_report (L1)... 
+    [L1_simple_daily_report] Phase 1 ANALYZE: 3569ms → route=developer_team
+
+    [BUILD] Build timeout (216s)
+FAIL (225.4s)
+  Running L1_defect_list (L1)... 
+    [L1_defect_list] Phase 1 ANALYZE: 2247ms → route=developer_team
+
+    [BUILD] Build timeout (216s)
+FAIL (224.6s)
+  Running L1_safety_protocol (L1)... 
+    [L1_safety_protocol] Phase 1 ANALYZE: 3529ms → route=developer_team
+
+    [BUILD] Build timeout (216s)
+FAIL (226.2s)
+  Running L1_material_delivery_log (L1)... 
+    [L1_material_delivery_log] Phase 1 ANALYZE: 3578ms → route=developer_team
+
+    [BUILD] Build timeout (216s)
+FAIL (226.6s)
+  Running L1_weather_delay_report (L1)... 

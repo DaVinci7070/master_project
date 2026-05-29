@@ -1,0 +1,13 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error,cot_verification,self_reflection,reflection_correction,reflection_tokens
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L1_code_review_summary,L1,resolved,False,0.667,42668,5,23158,,Aenderungsuebersicht;Review-Ergebnis;Empfehlung,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L1_release_notes,L1,resolved,False,0.889,34375,5,19762,,Breaking Changes,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L1_bug_report,L1,resolved,False,0.727,85215,5,17369,,Erwartetes Verhalten;Tatsaechliches Verhalten;Prioritaet,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L2_incident_postmortem,L2,resolved,False,0.909,105987,5,25376,,Timeline,,True,True,0.08,664
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L2_api_documentation,L2,resolved,False,0.75,28621,5,16810,,Endpoints;Authentication;Rate Limiting,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L2_technical_debt_assessment,L2,resolved,False,0.917,31923,5,24962,,Aufwandschaetzung,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L3_architecture_decision_record,L3,resolved,False,0.923,21853,5,15781,,Bewertung,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L3_performance_analysis,L3,resolved,False,0.818,30925,5,24161,,Testkonfiguration;Empfehlungen,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L3_migration_runbook,L3,resolved,False,0.769,43348,5,29485,,Migrationsschritte;Rollback-Plan;Verantwortlichkeiten,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L4_security_audit_report,L4,resolved,False,0.692,39795,5,28416,,Scope;Methodik;Findings;Bewertung,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L4_soc2_readiness,L4,resolved,False,0.875,30775,5,25820,,Scope;Empfehlungen,,True,False,0.0,0
+7882b56e-bbe8-4f02-9f46-ac7aaacaa896,swe_bench_subset,1,SE_L4_capacity_forecast_model,L4,error,False,0.0,0,0,0,,,,False,False,0.0,0

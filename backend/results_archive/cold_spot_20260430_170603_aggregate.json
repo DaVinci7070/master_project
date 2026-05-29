@@ -1,0 +1,110 @@
+{
+  "suite": "progressive_complexity",
+  "seeds": 1,
+  "seed_run_ids": [
+    "886efd1e-fc7c-4416-becb-42ecb35a4d17"
+  ],
+  "pass_at_1_per_seed": [
+    0.9
+  ],
+  "pass_at_1_mean": 0.9,
+  "pass_at_1_std": 0.0,
+  "tokens_total_per_seed": [
+    1217673
+  ],
+  "duration_ms_per_seed": [
+    995157
+  ],
+  "task_pass_matrix": {
+    "L1_simple_daily_report": [
+      0
+    ],
+    "L1_defect_list": [
+      1
+    ],
+    "L1_safety_protocol": [
+      1
+    ],
+    "L1_material_delivery_log": [
+      1
+    ],
+    "L1_weather_delay_report": [
+      1
+    ],
+    "L1_daily_workforce_report": [
+      1
+    ],
+    "L1_concrete_pour_protocol": [
+      1
+    ],
+    "L1_site_handover_note": [
+      1
+    ],
+    "L2_combined_defect_safety": [
+      1
+    ],
+    "L2_daily_with_supplements": [
+      1
+    ],
+    "L2_multi_trade_inspection": [
+      1
+    ],
+    "L2_subcontractor_coordination": [
+      1
+    ],
+    "L2_weekly_progress_summary": [
+      1
+    ],
+    "L2_quality_audit_report": [
+      1
+    ],
+    "L2_rework_documentation": [
+      1
+    ],
+    "L2_site_meeting_minutes": [
+      1
+    ],
+    "L3_acceptance_protocol": [
+      1
+    ],
+    "L3_progress_with_cost_comparison": [
+      1
+    ],
+    "L3_safety_incident_report": [
+      1
+    ],
+    "L3_structural_assessment": [
+      0
+    ],
+    "L3_environmental_compliance": [
+      1
+    ],
+    "L3_schedule_variance_analysis": [
+      1
+    ],
+    "L3_warranty_claim_report": [
+      1
+    ],
+    "L4_fire_safety_audit": [
+      1
+    ],
+    "L4_energy_evaluation": [
+      1
+    ],
+    "L4_procurement_documentation": [
+      1
+    ],
+    "L4_noise_protection_assessment": [
+      1
+    ],
+    "L4_facade_inspection_report": [
+      1
+    ],
+    "L4_demolition_planning_report": [
+      0
+    ],
+    "L4_accessibility_audit": [
+      1
+    ]
+  }
+}

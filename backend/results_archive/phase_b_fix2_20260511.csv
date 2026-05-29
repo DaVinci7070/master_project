@@ -1,0 +1,11 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L1_simple_daily_report,L1,build_failed,False,0.0,10000,0,0,,,
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L1_defect_list,L1,resolved,True,1.0,22706,4,49621,,,
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L1_safety_protocol,L1,resolved,True,1.0,19158,4,47534,,,
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L1_material_delivery_log,L1,failed,False,0.0,34870,4,54866,,,
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L1_weather_delay_report,L1,build_failed,False,0.0,80000,0,0,,,
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L1_daily_workforce_report,L1,failed,False,0.0,10244,3,10654,,,
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L1_concrete_pour_protocol,L1,failed,False,0.0,17799,3,15525,,,
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L1_site_handover_note,L1,failed,False,0.0,10056,3,10755,,,
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L2_combined_defect_safety,L2,resolved,True,1.0,28767,4,55802,,,
+7c738cd7-d605-4948-8bf7-e9bebc7515eb,pilot_sprint8,1,L2_daily_with_supplements,L2,resolved,True,1.0,24714,4,53415,,,

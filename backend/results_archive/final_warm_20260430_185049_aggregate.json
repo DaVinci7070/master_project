@@ -1,0 +1,178 @@
+{
+  "suite": "progressive_complexity",
+  "seeds": 3,
+  "seed_run_ids": [
+    "53b3be73-7cd3-4480-af9c-7c21aeb28552",
+    "e7bd5239-f6ef-4aae-8863-fae8138fa42f",
+    "3b51bba3-d2e2-46b3-833f-304de9d53de4"
+  ],
+  "pass_at_1_per_seed": [
+    0.4,
+    0.0,
+    0.0
+  ],
+  "pass_at_1_mean": 0.1333,
+  "pass_at_1_std": 0.1886,
+  "tokens_total_per_seed": [
+    603313,
+    0,
+    0
+  ],
+  "duration_ms_per_seed": [
+    2554208,
+    0,
+    85000
+  ],
+  "task_pass_matrix": {
+    "L1_simple_daily_report": [
+      1,
+      0,
+      0
+    ],
+    "L1_defect_list": [
+      1,
+      0,
+      0
+    ],
+    "L1_safety_protocol": [
+      1,
+      0,
+      0
+    ],
+    "L1_material_delivery_log": [
+      1,
+      0,
+      0
+    ],
+    "L1_weather_delay_report": [
+      1,
+      0,
+      0
+    ],
+    "L1_daily_workforce_report": [
+      1,
+      0,
+      0
+    ],
+    "L1_concrete_pour_protocol": [
+      1,
+      0,
+      0
+    ],
+    "L1_site_handover_note": [
+      1,
+      0,
+      0
+    ],
+    "L2_combined_defect_safety": [
+      1,
+      0,
+      0
+    ],
+    "L2_daily_with_supplements": [
+      0,
+      0,
+      0
+    ],
+    "L2_multi_trade_inspection": [
+      1,
+      0,
+      0
+    ],
+    "L2_subcontractor_coordination": [
+      1,
+      0,
+      0
+    ],
+    "L2_weekly_progress_summary": [
+      0,
+      0,
+      0
+    ],
+    "L2_quality_audit_report": [
+      0,
+      0,
+      0
+    ],
+    "L2_rework_documentation": [
+      1,
+      0,
+      0
+    ],
+    "L2_site_meeting_minutes": [
+      0,
+      0,
+      0
+    ],
+    "L3_acceptance_protocol": [
+      0,
+      0,
+      0
+    ],
+    "L3_progress_with_cost_comparison": [
+      0,
+      0,
+      0
+    ],
+    "L3_safety_incident_report": [
+      0,
+      0,
+      0
+    ],
+    "L3_structural_assessment": [
+      0,
+      0,
+      0
+    ],
+    "L3_environmental_compliance": [
+      0,
+      0,
+      0
+    ],
+    "L3_schedule_variance_analysis": [
+      0,
+      0,
+      0
+    ],
+    "L3_warranty_claim_report": [
+      0,
+      0,
+      0
+    ],
+    "L4_fire_safety_audit": [
+      0,
+      0,
+      0
+    ],
+    "L4_energy_evaluation": [
+      0,
+      0,
+      0
+    ],
+    "L4_procurement_documentation": [
+      0,
+      0,
+      0
+    ],
+    "L4_noise_protection_assessment": [
+      0,
+      0,
+      0
+    ],
+    "L4_facade_inspection_report": [
+      0,
+      0,
+      0
+    ],
+    "L4_demolition_planning_report": [
+      0,
+      0,
+      0
+    ],
+    "L4_accessibility_audit": [
+      0,
+      0,
+      0
+    ]
+  }
+}

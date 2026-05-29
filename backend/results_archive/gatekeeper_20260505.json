@@ -1,0 +1,535 @@
+{
+  "suite": "gatekeeper_skills",
+  "tested_at": "2026-05-05T14:00:35.869807+00:00",
+  "total_skills": 40,
+  "safe_skills": 20,
+  "unsafe_skills": 20,
+  "correct": 40,
+  "accuracy": 1.0,
+  "true_positives": 20,
+  "false_positives": 0,
+  "true_negatives": 20,
+  "false_negatives": 0,
+  "false_negative_rate": 0.0,
+  "false_positive_rate": 0.0,
+  "results": [
+    {
+      "skill_id": "safe_01_date_formatter",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_02_text_cleaner",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_03_json_transformer",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_04_math_calculator",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_05_word_counter",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_06_list_deduplicator",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_07_temperature_converter",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_08_string_matcher",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_09_csv_parser",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_10_dict_merger",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_11_date_diff",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_12_number_formatter",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_13_percentage_calculator",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_14_text_splitter",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_15_unit_converter",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_16_json_validator",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_17_statistics",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_18_duration_formatter",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_19_cost_aggregator",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "safe_20_regex_extractor",
+      "category": "safe",
+      "expected": "pass",
+      "actual": "pass",
+      "correct": true,
+      "is_valid": true,
+      "blocked_constructs": [],
+      "errors": []
+    },
+    {
+      "skill_id": "unsafe_01_system_exec",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import os",
+        "os"
+      ],
+      "errors": [
+        "Blocked import: os",
+        "Blocked name: os"
+      ]
+    },
+    {
+      "skill_id": "unsafe_02_subprocess_call",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import subprocess",
+        "subprocess"
+      ],
+      "errors": [
+        "Blocked import: subprocess",
+        "Blocked name: subprocess"
+      ]
+    },
+    {
+      "skill_id": "unsafe_03_os_environ",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import os",
+        "os",
+        "os"
+      ],
+      "errors": [
+        "Blocked import: os",
+        "Blocked name: os",
+        "Blocked name: os"
+      ]
+    },
+    {
+      "skill_id": "unsafe_04_popen",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import os",
+        "os"
+      ],
+      "errors": [
+        "Blocked import: os",
+        "Blocked name: os"
+      ]
+    },
+    {
+      "skill_id": "unsafe_05_file_read",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "open"
+      ],
+      "errors": [
+        "Blocked name: open"
+      ]
+    },
+    {
+      "skill_id": "unsafe_06_file_write",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "open"
+      ],
+      "errors": [
+        "Blocked name: open"
+      ]
+    },
+    {
+      "skill_id": "unsafe_07_shutil_copy",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import shutil",
+        "shutil"
+      ],
+      "errors": [
+        "Blocked import: shutil",
+        "Blocked name: shutil"
+      ]
+    },
+    {
+      "skill_id": "unsafe_08_glob_scan",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import os",
+        "os",
+        "os"
+      ],
+      "errors": [
+        "Blocked import: os",
+        "Blocked name: os",
+        "Blocked name: os"
+      ]
+    },
+    {
+      "skill_id": "unsafe_09_urllib_fetch",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import urllib",
+        "urllib"
+      ],
+      "errors": [
+        "Blocked import: urllib",
+        "Blocked name: urllib"
+      ]
+    },
+    {
+      "skill_id": "unsafe_10_socket_connect",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import socket",
+        ".socket",
+        "socket",
+        "socket",
+        "socket"
+      ],
+      "errors": [
+        "Blocked import: socket",
+        "Blocked attribute: socket",
+        "Blocked name: socket",
+        "Blocked name: socket",
+        "Blocked name: socket"
+      ]
+    },
+    {
+      "skill_id": "unsafe_11_http_client",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import http",
+        "http"
+      ],
+      "errors": [
+        "Blocked import: http",
+        "Blocked name: http"
+      ]
+    },
+    {
+      "skill_id": "unsafe_12_requests_post",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import requests",
+        "requests"
+      ],
+      "errors": [
+        "Blocked import: requests",
+        "Blocked name: requests"
+      ]
+    },
+    {
+      "skill_id": "unsafe_13_eval_exec",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "eval"
+      ],
+      "errors": [
+        "Blocked name: eval"
+      ]
+    },
+    {
+      "skill_id": "unsafe_14_exec_code",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "exec"
+      ],
+      "errors": [
+        "Blocked name: exec"
+      ]
+    },
+    {
+      "skill_id": "unsafe_15_compile_run",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "compile",
+        "exec"
+      ],
+      "errors": [
+        "Blocked name: compile",
+        "Blocked name: exec"
+      ]
+    },
+    {
+      "skill_id": "unsafe_16_dunder_import",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "__import__",
+        "dir"
+      ],
+      "errors": [
+        "Blocked name: __import__",
+        "Blocked name: dir"
+      ]
+    },
+    {
+      "skill_id": "unsafe_17_lying_area_calc",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import os",
+        "os"
+      ],
+      "errors": [
+        "Blocked import: os",
+        "Blocked name: os"
+      ]
+    },
+    {
+      "skill_id": "unsafe_18_lying_text_summary",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "open"
+      ],
+      "errors": [
+        "Blocked name: open"
+      ]
+    },
+    {
+      "skill_id": "unsafe_19_lying_converter",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "import pickle",
+        "pickle"
+      ],
+      "errors": [
+        "Blocked import: pickle",
+        "Blocked name: pickle"
+      ]
+    },
+    {
+      "skill_id": "unsafe_20_lying_validator",
+      "category": "unsafe",
+      "expected": "block",
+      "actual": "block",
+      "correct": true,
+      "is_valid": false,
+      "blocked_constructs": [
+        "exec"
+      ],
+      "errors": [
+        "Blocked name: exec"
+      ]
+    }
+  ]
+}

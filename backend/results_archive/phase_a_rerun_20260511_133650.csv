@@ -1,0 +1,11 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L1_simple_daily_report,L1,failed,False,0.0,148967,11,123949,,,
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L1_defect_list,L1,resolved,True,1.0,37039,11,64512,,,
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L1_safety_protocol,L1,resolved,True,1.0,34223,11,60530,,,
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L1_material_delivery_log,L1,resolved,True,1.0,28507,11,60745,,,
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L1_weather_delay_report,L1,resolved,True,1.0,39059,11,61369,,,
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L1_daily_workforce_report,L1,resolved,True,1.0,54451,11,67003,,,
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L1_concrete_pour_protocol,L1,resolved,True,1.0,166255,11,67436,,,
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L1_site_handover_note,L1,failed,False,0.0,196409,11,128756,,,
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L2_combined_defect_safety,L2,resolved,True,1.0,120922,11,82697,,,
+de089a32-fb06-4db6-95ad-f41960115d09,pilot_sprint8,1,L2_daily_with_supplements,L2,resolved,True,1.0,33300,11,65343,,,

@@ -1,0 +1,71 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L1_simple_daily_report,L1,failed,False,0.0,344994,5,6649,,,
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L1_defect_list,L1,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/a336fd0e-d7fb-4ad2-bda0-8b02235c1e07'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L1_safety_protocol,L1,error,False,0.0,0,0,0,,,
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L1_material_delivery_log,L1,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L1_weather_delay_report,L1,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L1_daily_workforce_report,L1,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L1_concrete_pour_protocol,L1,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L1_site_handover_note,L1,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L2_combined_defect_safety,L2,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L2_daily_with_supplements,L2,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L2_multi_trade_inspection,L2,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L2_subcontractor_coordination,L2,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L2_weekly_progress_summary,L2,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L2_quality_audit_report,L2,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L2_rework_documentation,L2,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L2_site_meeting_minutes,L2,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L3_acceptance_protocol,L3,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L3_progress_with_cost_comparison,L3,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L3_safety_incident_report,L3,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L3_structural_assessment,L3,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L3_environmental_compliance,L3,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L3_schedule_variance_analysis,L3,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L3_warranty_claim_report,L3,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L4_fire_safety_audit,L4,error,False,0.0,0,0,0,,,
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L4_energy_evaluation,L4,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L4_procurement_documentation,L4,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L4_noise_protection_assessment,L4,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L4_facade_inspection_report,L4,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L4_demolition_planning_report,L4,error,False,0.0,0,0,0,,,
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L4_accessibility_audit,L4,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L5_schema_discovery_report,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L5_etl_quarterly_report,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/analyze'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L5_audio_tagesbericht_rohbau,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/upload'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L5_audio_begehung_maengel,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/upload'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L5_audio_bauleitungssitzung,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/upload'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L5_audio_telefonat_statiker,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/upload'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+c01572fd-35e7-438c-9cc7-bf01156f924c,progressive_complexity,1,L5_audio_sicherheitsbericht,L5,error,False,0.0,0,0,0,,,"Server error '500 Internal Server Error' for url 'http://localhost:8000/api/v1/challenges/upload'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"

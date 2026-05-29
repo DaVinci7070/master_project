@@ -9,6 +9,15 @@ Usage:
         --suite dummy_smoke_test \
         --output results/run.json \
         --base-url http://localhost:8000/api/v1
+
+    # Modellvergleich (Sprint 2):
+    python -m scripts.evaluation.benchmark_runner \
+        --suite progressive_complexity \
+        --model-config u_medium_l3l5 \
+        --levels L3,L4,L5 \
+        --judge-model "gemini/gemini-3.5-flash" \
+        --seeds 3 --mode cold \
+        --output results/modellvergleich/u_medium_l3l5.json
 """
 from __future__ import annotations
 
@@ -296,6 +305,8 @@ async def run_task(
         "duration_ms": 0,
         "agents_executed": 0,
         "tokens_total": 0,
+        "tokens_thinking": 0,
+        "cost_usd": 0.0,
         "cot_verification_used": False,
         "self_reflection_triggered": False,
         "self_reflection_correction": 0.0,
@@ -465,6 +476,16 @@ async def run_task(
         result["tokens_input"] = exec_results.get("tokens_input", 0)
         result["tokens_output"] = exec_results.get("tokens_output", 0)
 
+        # Phase-Token-Telemetrie (Sprint C)
+        result["tokens_assembly"] = exec_results.get("tokens_assembly", 0)
+        result["tokens_execution"] = exec_results.get("tokens_execution", 0)
+        result["tokens_verification"] = exec_results.get("tokens_verification", 0)
+        result["tokens_adapt"] = exec_results.get("tokens_adapt", 0)
+        result["tokens_self_healing"] = exec_results.get("tokens_self_healing", 0)
+
+        # Thinking-Tokens (Sprint 2 Modellvergleich)
+        result["tokens_thinking"] = exec_results.get("tokens_thinking", 0)
+
         # Reflexion-Metriken (Sprint 5)
         ref_m = exec_results.get("reflexion_metrics") or {}
         result["cot_verification_used"] = ref_m.get("cot_verification_used", False)
@@ -511,6 +532,77 @@ async def run_task(
 
 
 # ---------------------------------------------------------------------------
+# Model-Config + Kosten (Sprint 2)
+# ---------------------------------------------------------------------------
+
+async def _apply_model_config(base_url: str, config) -> dict:
+    """Setzt Modelle + Ablation per Settings-API und gibt Originalzustand zurück."""
+    async with httpx.AsyncClient() as client:
+        # Originalzustand holen
+        resp = await client.get(f"{base_url}/settings/current", timeout=10)
+        resp.raise_for_status()
+        original = resp.json()
+
+        # Modelle setzen
+        resp = await client.put(
+            f"{base_url}/settings/models",
+            json={"models": config.models},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        print(f"  Modelle gesetzt: {config.primary_model()} (uniform={config.is_uniform()})")
+
+        # Ablation-Flags setzen
+        resp = await client.put(
+            f"{base_url}/settings/ablation",
+            json=config.ablation.model_dump(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        flags = config.ablation
+        print(f"  Ablation: evo={flags.autonomous_evolution_enabled}, "
+              f"mem={flags.shared_memory_enabled}, reuse={flags.skill_reuse_enabled}")
+
+    return original
+
+
+async def _restore_settings(base_url: str, original: dict) -> None:
+    """Stellt den Originalzustand der Settings wieder her."""
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.put(
+                f"{base_url}/settings/models",
+                json={"models": original["models"]},
+                timeout=10,
+            )
+            await client.put(
+                f"{base_url}/settings/ablation",
+                json=original["ablation"],
+                timeout=10,
+            )
+            print("  Settings auf Originalzustand zurückgesetzt")
+        except Exception as e:
+            print(f"  [WARN] Settings-Restore fehlgeschlagen: {e}")
+
+
+def _calculate_task_cost(task_result: dict, pricing: dict) -> float:
+    """Berechnet USD-Kosten eines Tasks basierend auf Token-Counts und Pricing."""
+    input_tokens = task_result.get("tokens_input", 0) or 0
+    output_tokens = task_result.get("tokens_output", 0) or 0
+    thinking_tokens = task_result.get("tokens_thinking", 0) or 0
+
+    # Text-Output = completion - thinking
+    text_tokens = max(0, output_tokens - thinking_tokens)
+
+    cost = (
+        (input_tokens / 1_000_000) * pricing.get("input", 0)
+        + (text_tokens / 1_000_000) * pricing.get("output", 0)
+        + (thinking_tokens / 1_000_000) * pricing.get("thinking", 0)
+    )
+    return round(cost, 6)
+
+
+# ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
 
@@ -518,10 +610,40 @@ async def run_suite(args: argparse.Namespace) -> dict:
     suite = load_suite(args.suite)
     tasks = suite["tasks"]
 
+    # ── Model-Config laden (Sprint 2) ────────────────────────────────
+    model_config = None
+    if args.model_config:
+        from scripts.evaluation.model_configs.schema import load_model_config
+        model_config = load_model_config(args.model_config)
+        print(f"Model-Config: {model_config.config_id} ({model_config.primary_model()})")
+
+        # Levels aus Config übernehmen wenn nicht per CLI gesetzt
+        if not args.levels and model_config.levels:
+            args.levels = ",".join(model_config.levels)
+
+        # Judge-Modell aus Config übernehmen wenn nicht per CLI gesetzt
+        if not args.judge_model and model_config.judge_model:
+            args.judge_model = model_config.judge_model
+
+    # ── Level-Filter anwenden ─────────────────────────────────────────
+    if args.levels:
+        allowed = {l.strip() for l in args.levels.split(",")}
+        before = len(tasks)
+        tasks = [t for t in tasks if t["level"] in allowed]
+        print(f"Level-Filter: {allowed} → {len(tasks)}/{before} Tasks")
+        if not tasks:
+            raise ValueError(f"Keine Tasks nach Level-Filter {allowed}")
+        suite["tasks"] = tasks
+
     if args.dry_run:
         print(f"Suite: {suite.get('suite', args.suite)}")
         print(f"Description: {suite.get('description', '-')}")
         print(f"Tasks: {len(tasks)}")
+        if model_config:
+            print(f"Model-Config: {model_config.config_id}")
+            print(f"  Models: {model_config.models}")
+            print(f"  Ablation: {model_config.ablation.model_dump()}")
+        print(f"Judge: {args.judge_model or '(system default)'}")
         for t in tasks:
             gt = t["ground_truth"]
             if "required_claims" in gt:
@@ -532,6 +654,11 @@ async def run_suite(args: argparse.Namespace) -> dict:
                 print(f"  - {t['task_id']} ({t['level']}) — {kw} keywords, {sec} sections")
         return {}
 
+    # ── Modelle + Ablation per Settings-API setzen ────────────────────
+    original_settings: dict | None = None
+    if model_config:
+        original_settings = await _apply_model_config(args.base_url, model_config)
+
     # Multi-Seed-Loop: bei seeds==1 Verhalten unverändert, bei n>1 pro Seed
     # eigener Output und am Ende Aggregat-Datei für Wilcoxon-Auswertung.
     seeds = max(1, int(getattr(args, "seeds", 1)))
@@ -539,36 +666,42 @@ async def run_suite(args: argparse.Namespace) -> dict:
     suite_name = suite.get("suite", args.suite)
 
     seed_outputs: list[dict] = []
-    for i in range(seeds):
-        current_seed = base_seed + i
-        seed_args = argparse.Namespace(**vars(args))
-        seed_args.seed = current_seed
+    try:
+        for i in range(seeds):
+            current_seed = base_seed + i
+            seed_args = argparse.Namespace(**vars(args))
+            seed_args.seed = current_seed
+            seed_args._model_config = model_config
 
-        # Per-Seed-Output-Pfade ableiten — bei seeds==1 unverändert
-        if seeds > 1:
-            base_out = Path(args.output)
-            seed_args.output = str(
-                base_out.with_name(f"{base_out.stem}_seed{current_seed}{base_out.suffix}")
-            )
-            if args.csv:
-                base_csv = Path(args.csv)
-                seed_args.csv = str(
-                    base_csv.with_name(f"{base_csv.stem}_seed{current_seed}{base_csv.suffix}")
+            # Per-Seed-Output-Pfade ableiten — bei seeds==1 unverändert
+            if seeds > 1:
+                base_out = Path(args.output)
+                seed_args.output = str(
+                    base_out.with_name(f"{base_out.stem}_seed{current_seed}{base_out.suffix}")
                 )
-            print(f"\n=== Seed {i + 1}/{seeds} (seed={current_seed}) ===")
+                if args.csv:
+                    base_csv = Path(args.csv)
+                    seed_args.csv = str(
+                        base_csv.with_name(f"{base_csv.stem}_seed{current_seed}{base_csv.suffix}")
+                    )
+                print(f"\n=== Seed {i + 1}/{seeds} (seed={current_seed}) ===")
 
-            # Cold-Reset zwischen Seeds (nicht vor dem ersten Seed —
-            # Annahme: User hat State vor dem Run vorbereitet).
-            if args.mode == "cold" and i > 0:
-                print(f"  Cold-Reset vor Seed {current_seed}...")
-                from scripts.evaluation.cold_warm_switch import cold_reset
-                reset_summary = await cold_reset()
-                print(f"  Reset: tables={reset_summary.get('tables_truncated')} "
-                      f"qdrant={len(reset_summary.get('qdrant_cleared', []))} "
-                      f"agents={reset_summary.get('agents_seeded')}")
+                # Cold-Reset zwischen Seeds (nicht vor dem ersten Seed —
+                # Annahme: User hat State vor dem Run vorbereitet).
+                if args.mode == "cold" and i > 0:
+                    print(f"  Cold-Reset vor Seed {current_seed}...")
+                    from scripts.evaluation.cold_warm_switch import cold_reset
+                    reset_summary = await cold_reset()
+                    print(f"  Reset: tables={reset_summary.get('tables_truncated')} "
+                          f"qdrant={len(reset_summary.get('qdrant_cleared', []))} "
+                          f"agents={reset_summary.get('agents_seeded')}")
 
-        seed_output = await _run_single_seed(seed_args, suite, tasks)
-        seed_outputs.append(seed_output)
+            seed_output = await _run_single_seed(seed_args, suite, tasks)
+            seed_outputs.append(seed_output)
+    finally:
+        # Originalzustand wiederherstellen (auch bei Abbruch)
+        if original_settings:
+            await _restore_settings(args.base_url, original_settings)
 
     # Aggregat nur wenn n>1
     if seeds > 1:
@@ -584,8 +717,15 @@ async def run_suite(args: argparse.Namespace) -> dict:
 
 async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
     """Führt eine einzelne Seed-Iteration aus (Original-Run-Logic)."""
-    # Create LLM client for claim-based evaluation
-    llm_client = LLMClient()
+    # Judge-Modell: explizit gesetzt → separater Client, sonst System-Default
+    judge_model = getattr(args, "judge_model", None)
+    if judge_model:
+        llm_client = LLMClient(model=judge_model)
+        print(f"  Judge-Modell: {judge_model} (unabhängig vom System-Modell)")
+    else:
+        llm_client = LLMClient()
+
+    model_config = getattr(args, "_model_config", None)
 
     run_id = str(uuid4())
     started_at = datetime.now(timezone.utc)
@@ -623,6 +763,16 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
     passed = sum(1 for r in task_results if r["pass"])
     total = len(task_results)
 
+    # Kosten pro Task und aggregiert berechnen
+    total_cost = 0.0
+    if model_config:
+        from scripts.evaluation.model_configs.schema import MODEL_PRICING
+        pricing = MODEL_PRICING.get(model_config.primary_model(), {})
+        for r in task_results:
+            cost = _calculate_task_cost(r, pricing)
+            r["cost_usd"] = cost
+            total_cost += cost
+
     run_output = {
         "run_id": run_id,
         "suite": suite.get("suite", args.suite),
@@ -634,6 +784,12 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
         "passed": passed,
         "failed": total - passed,
         "pass_at_1": round(passed / total, 3) if total else 0.0,
+        # Config-Metadaten (Sprint 2)
+        "model_config_id": model_config.config_id if model_config else None,
+        "models_used": model_config.models if model_config else None,
+        "ablation_flags": model_config.ablation.model_dump() if model_config else None,
+        "judge_model": judge_model,
+        "cost_usd_total": round(total_cost, 6),
         "tasks": task_results,
     }
 
@@ -651,16 +807,31 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
         writer.writerow([
             "run_id", "suite", "seed", "task_id", "level", "status",
             "pass", "score", "duration_ms", "agents_executed", "tokens_total",
+            "tokens_input", "tokens_output", "tokens_thinking",
+            "tokens_assembly", "tokens_execution", "tokens_verification",
+            "tokens_adapt", "tokens_self_healing",
+            "cost_usd", "model_config_id",
             "missing_keywords", "missing_sections", "error",
             "cot_verification", "self_reflection", "reflection_correction",
             "reflection_tokens",
         ])
+        config_id = model_config.config_id if model_config else ""
         for r in task_results:
             writer.writerow([
                 run_id, suite.get("suite", args.suite), args.seed,
                 r["task_id"], r["level"], r["status"],
                 r["pass"], r["score"], r["duration_ms"],
                 r["agents_executed"], r["tokens_total"],
+                r.get("tokens_input", 0),
+                r.get("tokens_output", 0),
+                r.get("tokens_thinking", 0),
+                r.get("tokens_assembly", 0),
+                r.get("tokens_execution", 0),
+                r.get("tokens_verification", 0),
+                r.get("tokens_adapt", 0),
+                r.get("tokens_self_healing", 0),
+                r.get("cost_usd", 0.0),
+                config_id,
                 ";".join(r["missing_keywords"]),
                 ";".join(r["missing_sections"]),
                 r["error"] or "",
@@ -673,6 +844,8 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
 
     # Summary
     print(f"\n{total} tasks: {passed} passed, {total - passed} failed, Pass@1 = {run_output['pass_at_1'] * 100:.1f}%")
+    if total_cost > 0:
+        print(f"Kosten: ${total_cost:.4f} ({run_output.get('model_config_id', '-')})")
 
     return run_output
 
@@ -743,13 +916,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Anzahl Seed-Iterationen (n>1 erzeugt Aggregat-JSON)")
     parser.add_argument("--mode", choices=["warm", "cold"], default="warm",
                         help="cold: zwischen Seeds System-State zurücksetzen")
+    parser.add_argument("--model-config", default=None,
+                        help="Model-Config Name oder Pfad (z.B. 'u_medium_l3l5'). "
+                             "Setzt Modelle + Ablation-Flags per Settings-API.")
+    parser.add_argument("--judge-model", default=None,
+                        help="Festes Judge-Modell für LLM-as-Judge (default: System-Modell). "
+                             "Wird aus --model-config übernommen falls dort gesetzt.")
+    parser.add_argument("--levels", default=None,
+                        help="Komma-separierte Level-Filter (z.B. 'L3,L4,L5'). "
+                             "Wird aus --model-config übernommen falls dort gesetzt.")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None):
     args = parse_args(argv)
+    config_info = f", config={args.model_config}" if args.model_config else ""
+    judge_info = f", judge={args.judge_model}" if args.judge_model else ""
+    levels_info = f", levels={args.levels}" if args.levels else ""
     print(f"Benchmark Runner — suite={args.suite}, seeds={args.seeds}, "
-          f"base_seed={args.seed}, mode={args.mode}")
+          f"base_seed={args.seed}, mode={args.mode}{config_info}{judge_info}{levels_info}")
     asyncio.run(run_suite(args))
 
 

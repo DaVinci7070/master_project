@@ -1,0 +1,2 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,missing_keywords,missing_sections,error
+93817d71-d83f-4126-bab6-d29af2be1da5,validation_l3_acceptance_protocol,1,L3_acceptance_protocol,L3,resolved,True,1.0,75684,11,56198,,,

@@ -43,6 +43,7 @@ class TeamAssembler:
         self.llm = llm_client
         self.shared_memory = shared_memory
         self._settings = settings or default_settings
+        self._last_tokens_used: int = 0
 
     async def assemble_team(
         self,
@@ -60,6 +61,7 @@ class TeamAssembler:
         5. Capabilities fehlen → GapReport
         6. Alles da → TeamPlan mit berechneten Waves
         """
+        self._last_tokens_used = 0
         available_agents = self._filter_execution_agents(available_agents)
         skills_by_agent = self._group_skills_by_agent(available_agents, available_skills)
 
@@ -94,6 +96,7 @@ class TeamAssembler:
         available_skills: list,
     ) -> TeamPlan | GapReport:
         """Neuer Plan nach gescheitertem Versuch mit anderer Strategie."""
+        self._last_tokens_used = 0
         available_agents = self._filter_execution_agents(available_agents)
         skills_by_agent = self._group_skills_by_agent(available_agents, available_skills)
         past_experiences = await self._load_past_experiences(challenge_text)
@@ -118,6 +121,7 @@ class TeamAssembler:
             temperature=0.4,
             max_tokens=2000,
         )
+        self._last_tokens_used += response.usage.get("total_tokens", 0)
 
         result = self._parse_response(response.content, challenge_text, available_agents)
         if isinstance(result, TeamPlan):
@@ -154,6 +158,7 @@ class TeamAssembler:
             temperature=0.2,
             max_tokens=2000,
         )
+        self._last_tokens_used += response.usage.get("total_tokens", 0)
 
         return self._parse_response(response.content, challenge_text, agents)
 

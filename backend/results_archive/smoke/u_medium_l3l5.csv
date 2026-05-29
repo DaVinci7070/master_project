@@ -1,0 +1,8 @@
+run_id,suite,seed,task_id,level,status,pass,score,duration_ms,agents_executed,tokens_total,tokens_input,tokens_output,tokens_thinking,tokens_assembly,tokens_execution,tokens_verification,tokens_adapt,tokens_self_healing,cost_usd,model_config_id,missing_keywords,missing_sections,error,cot_verification,self_reflection,reflection_correction,reflection_tokens
+1098cfc3-f359-41be-9247-d917cd0a8f8f,progressive_complexity,1,L3_acceptance_protocol,L3,resolved,True,1.0,156425,5,84450,76759,7691,0,2350,84450,2277,0,0,0.016128,U-MEDIUM-L3L5,,,,True,False,0.0,0
+1098cfc3-f359-41be-9247-d917cd0a8f8f,progressive_complexity,1,L3_progress_with_cost_comparison,L3,resolved,True,1.0,78957,5,37220,31021,6199,0,4044,37220,2247,0,0,0.008373,U-MEDIUM-L3L5,,,,True,False,0.0,0
+1098cfc3-f359-41be-9247-d917cd0a8f8f,progressive_complexity,1,L3_safety_incident_report,L3,resolved,True,1.0,79028,5,47024,38862,8162,0,3156,47024,2503,0,0,0.010726,U-MEDIUM-L3L5,,,,True,False,0.0,0
+1098cfc3-f359-41be-9247-d917cd0a8f8f,progressive_complexity,1,L3_structural_assessment,L3,resolved,True,1.0,200805,5,71163,58205,12958,0,3200,34146,3447,3425,0,0.016506,U-MEDIUM-L3L5,,,,True,False,0.0,0
+1098cfc3-f359-41be-9247-d917cd0a8f8f,progressive_complexity,1,L3_environmental_compliance,L3,resolved,True,1.0,63546,5,18738,15236,3502,0,5053,18738,2121,0,0,0.004387,U-MEDIUM-L3L5,,,,True,False,0.0,0
+1098cfc3-f359-41be-9247-d917cd0a8f8f,progressive_complexity,1,L3_schedule_variance_analysis,L3,resolved,True,1.0,76973,5,42475,35341,7134,0,2506,42475,2454,0,0,0.009582,U-MEDIUM-L3L5,,,,True,False,0.0,0
+1098cfc3-f359-41be-9247-d917cd0a8f8f,progressive_complexity,1,L3_warranty_claim_report,L3,build_failed,False,0.0,80000,0,0,0,0,0,0,0,0,0,0,0.0,U-MEDIUM-L3L5,,,,False,False,0.0,0

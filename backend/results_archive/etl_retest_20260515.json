@@ -1,0 +1,33 @@
+{
+  "run_id": "5ad69a22-e09c-487f-9cd0-36c7d7ba4541",
+  "suite": "etl_only",
+  "seed": 1,
+  "started_at": "2026-05-15T14:04:18.237541+00:00",
+  "completed_at": "2026-05-15T14:18:37.522585+00:00",
+  "base_url": "http://localhost:8000/api/v1",
+  "total_tasks": 1,
+  "passed": 0,
+  "failed": 1,
+  "pass_at_1": 0.0,
+  "tasks": [
+    {
+      "task_id": "L5_etl_quarterly_report",
+      "level": "L5",
+      "challenge_id": "9abf14b0-43ec-4688-b847-99efec7c6757",
+      "execution_id": "3eb61ee6-f12e-4911-89a7-63a34bc50f2b",
+      "status": "failed",
+      "pass": false,
+      "score": 0.0,
+      "duration_ms": 844661,
+      "agents_executed": 12,
+      "tokens_total": 140348,
+      "missing_keywords": [],
+      "missing_sections": [],
+      "started_at": "2026-05-15T14:04:18.557878+00:00",
+      "completed_at": "2026-05-15T14:18:37.517210+00:00",
+      "error": null,
+      "tokens_input": 128427,
+      "tokens_output": 11921
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "a": {
+    "label": "cold_n1",
+    "seeds": 1,
+    "pass_at_1_mean": 0.9,
+    "pass_at_1_std": 0.0,
+    "pass_at_1_per_seed": [
+      0.9
+    ],
+    "tokens_total_per_seed": [
+      1217673
+    ],
+    "duration_ms_per_seed": [
+      995157
+    ]
+  },
+  "b": {
+    "label": "warm_n3",
+    "seeds": 3,
+    "pass_at_1_mean": 0.811,
+    "pass_at_1_std": 0.1372,
+    "pass_at_1_per_seed": [
+      0.833,
+      0.967,
+      0.633
+    ],
+    "tokens_total_per_seed": [
+      1489857,
+      1644711,
+      1217629
+    ],
+    "duration_ms_per_seed": [
+      849228,
+      919510,
+      931491
+    ]
+  },
+  "common_tasks": 30,
+  "wilcoxon": {
+    "statistic": 25.5,
+    "p_value": 0.08048886528888752,
+    "interpretation": "nicht signifikant"
+  },
+  "effect_size_rank_biserial": 0.5238
+}
