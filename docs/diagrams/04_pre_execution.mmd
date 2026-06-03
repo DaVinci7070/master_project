@@ -1,0 +1,72 @@
+%%{init: {'theme':'base', 'fontFamily':'Arial, Helvetica, sans-serif', 'themeVariables': {
+  'fontFamily': 'Arial, Helvetica, sans-serif',
+  'fontSize': '14px',
+  'lineColor': '#9AA7C7',
+  'primaryTextColor': '#26344D',
+  'clusterBorder': '#DCE3F2'
+}}}%%
+flowchart TB
+    subgraph Legende[" Legende "]
+        direction LR
+        K1("Analyse")
+        K2("Datenquelle")
+        K3("Entscheidung")
+        K4("Routing")
+        K1 ~~~ K2 ~~~ K3 ~~~ K4
+    end
+
+    START(["Challenge / Aufgabe"])
+
+    subgraph Pre["Pre-Execution Analyse"]
+        direction TB
+        CA("ChallengeAnalyzer<br/>extrahiert benötigte Capabilities")
+        CM("CapabilityMatcher<br/>Cosine-Similarity vs. Agent-Pool")
+        GD("GapDetector<br/>ConfidenceLevel-Verdikt")
+        CA --> CM --> GD
+    end
+
+    subgraph Quellen["Datenquellen"]
+        direction LR
+        PG[("PostgreSQL<br/>Topologie / Agent-Pool")]
+        QD[("Qdrant<br/>Embeddings + History")]
+    end
+
+    DEC{"ConfidenceLevel?<br/>(Execution / Knowledge)"}
+    FJ("FeasibilityJudge<br/>verifiziert: feasible = bool")
+
+    MAIN(["Main Team — Ausführung"])
+    INTV(["Intervention — Gap-Building"])
+
+    Legende ~~~ START
+    START --> CA
+    PG -.->|"Topologie"| CM
+    QD -.->|"EmbeddingSuche"| CM
+    QD -.->|"frühere Erfolge"| GD
+    GD --> DEC
+
+    DEC -->|"CAN_DO (≥ 0.90 · Knowledge ≥ 0.60)"| FJ
+    DEC -->|"MAYBE (≥ 0.50 · Knowledge ≥ 0.30)"| INTV
+    DEC -->|"CANNOT_DO"| INTV
+    FJ -->|"feasible"| MAIN
+    FJ -->|"nicht feasible"| INTV
+
+    classDef io fill:#E0E7FF,stroke:#7C8CE4,stroke-width:1.5px,color:#26344D;
+    classDef teal fill:#D2F0EC,stroke:#46B5A8,stroke-width:1.5px,color:#26344D;
+    classDef rose fill:#FBDCE6,stroke:#E5759B,stroke-width:1.5px,color:#26344D;
+    classDef peach fill:#FBE3D2,stroke:#EE9F62,stroke-width:1.5px,color:#26344D;
+    classDef green fill:#D8F1DF,stroke:#5BB97D,stroke-width:1.5px,color:#26344D;
+
+    class START io;
+    class CA,CM,GD teal;
+    class PG,QD rose;
+    class DEC,FJ peach;
+    class MAIN,INTV green;
+
+    class K1 teal;
+    class K2 rose;
+    class K3 peach;
+    class K4 green;
+
+    style Pre fill:#ECFAF8,stroke:#BFE9E2;
+    style Quellen fill:#FEF0F4,stroke:#F6CEDC;
+    style Legende fill:#FBFCFE,stroke:#DCE3F2;

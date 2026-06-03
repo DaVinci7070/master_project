@@ -1,8 +1,3 @@
-"""
-API endpoints for topology visualization.
-
-Provides topology data in React Flow compatible format.
-"""
 import logging
 from datetime import datetime
 from typing import Optional
@@ -22,7 +17,6 @@ router = APIRouter(prefix="/topology", tags=["topology"])
 log = logging.getLogger(__name__)
 
 
-# React Flow compatible response models
 class ReactFlowPosition(BaseModel):
     """Position for React Flow node."""
     x: float = 0.0
@@ -82,7 +76,7 @@ class AgentNodeResponse(BaseModel):
     output_schema: Optional[dict] = None
     consumes_artifacts: list[str] = Field(default_factory=list)
     produces_artifacts: list[str] = Field(default_factory=list)
-    source: str = "initial"  # initial, system_generated, manual
+    source: str = "initial"
     agent_metadata: Optional[dict] = None
     created_at: Optional[str] = None
 
@@ -107,13 +101,13 @@ class TopologyHistoryEntry(BaseModel):
     """
     id: str
     timestamp: str
-    change_type: str  # agent_added, agent_removed, dependency_changed, prompt_updated
+    change_type: str
     description: str
     affected_agents: list[str] = Field(default_factory=list)
-    entity_type: Optional[str] = None  # agent | skill | prompt
+    entity_type: Optional[str] = None
     entity_id: Optional[str] = None
     entity_name: Optional[str] = None
-    source: Optional[str] = None  # system | manual | migration
+    source: Optional[str] = None
     triggered_by: Optional[str] = None
     change_details: Optional[dict] = None
     previous_state: Optional[dict] = None
@@ -132,32 +126,26 @@ def _compute_auto_layout(agents: list, edges: list) -> dict[str, ReactFlowPositi
 
     Uses topological ordering to arrange nodes in waves (layers).
     """
-    # Build adjacency for dependency graph
     deps = {a.id: a.dependencies or [] for a in agents}
     agent_ids = {a.id for a in agents}
 
-    # Compute waves (topological layers)
     waves = []
     remaining = set(agent_ids)
 
     while remaining:
-        # Find agents with no remaining dependencies
         wave = []
         for agent_id in remaining:
             agent_deps = set(deps.get(agent_id, []))
-            # Only count deps that are in remaining (haven't been assigned to wave yet)
             unsatisfied = agent_deps & remaining
             if not unsatisfied:
                 wave.append(agent_id)
 
         if not wave:
-            # Cycle detected - just add remaining
             wave = list(remaining)
 
         waves.append(wave)
         remaining -= set(wave)
 
-    # Compute positions
     positions = {}
     x_spacing = 250
     y_spacing = 150
@@ -166,7 +154,6 @@ def _compute_auto_layout(agents: list, edges: list) -> dict[str, ReactFlowPositi
         y = wave_idx * y_spacing
         for node_idx, agent_id in enumerate(wave):
             x = node_idx * x_spacing
-            # Center the wave
             x -= (len(wave) - 1) * x_spacing / 2
             positions[agent_id] = ReactFlowPosition(x=x, y=y)
 
@@ -187,7 +174,6 @@ async def get_topology(
 
     repo = TopologyRepository(session)
 
-    # Get agents
     if include_inactive:
         result = await session.execute(select(Agent))
         agents = list(result.scalars().all())
@@ -205,20 +191,16 @@ async def get_topology(
             version=1,
         )
 
-    # Build name-to-id mapping for dependency resolution
     name_to_id = {agent.name: agent.id for agent in agents}
 
-    # Build agent nodes for frontend
     agent_nodes = []
     for agent in agents:
         io_schema = agent.io_schema or {}
-        # Resolve dependency names to IDs
         resolved_deps = []
         for dep in (agent.dependencies or []):
             if dep in name_to_id:
                 resolved_deps.append(name_to_id[dep])
             else:
-                # If it's already an ID or not found, keep as-is
                 resolved_deps.append(dep)
 
         agent_nodes.append(AgentNodeResponse(
@@ -227,8 +209,8 @@ async def get_topology(
             prompt_id=agent.prompt_id,
             capabilities=[],
             dependencies=resolved_deps,
-            skill_ids=[],  # Agent model doesn't have skill_ids
-            config={},  # Agent model doesn't have config
+            skill_ids=[],
+            config={},
             is_active=agent.is_active,
             input_schema=io_schema.get("input"),
             output_schema=io_schema.get("output"),
@@ -239,7 +221,6 @@ async def get_topology(
             created_at=agent.created_at.isoformat() if agent.created_at else None,
         ))
 
-    # Generate topology ID from current state
     topology_id = f"db-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
 
     return FrontendTopologyResponse(
@@ -267,7 +248,6 @@ async def get_topology_reactflow(
 
     repo = TopologyRepository(session)
 
-    # Get agents
     if include_inactive:
         result = await session.execute(select(Agent))
         agents = list(result.scalars().all())
@@ -285,21 +265,18 @@ async def get_topology_reactflow(
             created_at=datetime.utcnow().isoformat(),
         )
 
-    # Compute edges from dependencies
     agent_ids = {a.id for a in agents}
     edges = []
     for agent in agents:
         for dep_id in (agent.dependencies or []):
-            if dep_id in agent_ids:  # Only add edge if dependency exists in topology
+            if dep_id in agent_ids:
                 edges.append({
                     "source": dep_id,
                     "target": agent.id,
                 })
 
-    # Compute auto-layout positions
     positions = _compute_auto_layout(agents, edges)
 
-    # Build React Flow nodes
     nodes = []
     for agent in agents:
         pos = positions.get(agent.id, ReactFlowPosition(x=0, y=0))
@@ -317,7 +294,6 @@ async def get_topology_reactflow(
             ),
         ))
 
-    # Build React Flow edges
     rf_edges = []
     for i, edge in enumerate(edges):
         rf_edges.append(ReactFlowEdge(
@@ -328,7 +304,6 @@ async def get_topology_reactflow(
             animated=False,
         ))
 
-    # Generate topology ID from current state
     topology_id = f"db-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
 
     return TopologyResponse(
@@ -359,17 +334,15 @@ async def get_topology_history(
 
     topology_service = TopologyService(session)
     changes = await topology_service.get_recent_changes(
-        limit=limit + offset,  # Get enough for pagination
+        limit=limit + offset,
         entity_type=entity_type,
         source=source
     )
 
-    # Apply offset
     paginated = changes[offset:offset + limit]
 
     entries = []
     for change in paginated:
-        # Build description from change type and details
         description = f"{change.change_type.replace('_', ' ').title()}"
         if change.entity_name:
             description += f": {change.entity_name}"

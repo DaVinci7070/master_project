@@ -1,4 +1,3 @@
-"""Pre-execution analysis module for capability assessment."""
 from app.orchestration.analysis.models import (
     CapabilityMatch,
     CapabilityType,
@@ -22,21 +21,17 @@ from app.orchestration.analysis.orchestrator import (
 )
 
 __all__ = [
-    # Models
     "CapabilityMatch",
     "CapabilityType",
     "FeasibilityResult",
     "TopologyCapabilities",
     "AssessmentContext",
-    # Services
     "CapabilityMatcher",
     "ChallengeAnalyzer",
     "FeasibilityJudge",
     "GapDetector",
     "PreExecutionOrchestrator",
-    # Factory
     "create_pre_execution_orchestrator",
-    # Constants
     "CAN_DO_THRESHOLD",
     "MAYBE_THRESHOLD",
     "ROUTE_EXECUTE",

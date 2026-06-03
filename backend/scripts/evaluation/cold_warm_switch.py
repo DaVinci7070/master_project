@@ -1,22 +1,3 @@
-"""
-F18 — Cold/Warm DB Switch for Evaluation Runs.
-
-Transactional cold reset (truncate all + re-seed) and warm snapshot
-save/restore (pg_dump/pg_restore + Qdrant snapshots) for reproducible
-evaluation pipelines.
-
-Usage:
-    # Cold reset: truncate everything, re-seed initial agents
-    python -m scripts.evaluation.cold_warm_switch cold
-    python -m scripts.evaluation.cold_warm_switch cold --skip-seed --skip-qdrant
-    python -m scripts.evaluation.cold_warm_switch cold --dry-run
-
-    # Warm save: snapshot current DB state
-    python -m scripts.evaluation.cold_warm_switch warm-save --output snapshots/run1.dump
-
-    # Warm restore: restore from snapshot
-    python -m scripts.evaluation.cold_warm_switch warm-restore --snapshot snapshots/run1.dump
-"""
 from __future__ import annotations
 
 import argparse
@@ -31,7 +12,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from sqlalchemy import text
@@ -46,15 +26,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
-# All tables to truncate in cold reset.
-# Order matters only for the DELETE fallback (SQLite); PostgreSQL TRUNCATE
-# CASCADE handles FK constraints atomically regardless of order.
 COLD_TRUNCATION_TABLES = [
-    # Leaf tables (no inbound FKs)
     "ab_test_sample",
     "agent_execution_events",
     "analysis_finding",
@@ -67,34 +40,27 @@ COLD_TRUNCATION_TABLES = [
     "artifact_schemas",
     "user_settings",
     "reports",
-    # FK children
     "relations",
     "skill_bindings",
     "skill_build_attempts",
     "orchestration_telemetry",
     "execution_telemetry",
-    # Shared memory
     "facts",
     "hypotheses",
-    # Continuum version tables
     "agents_version",
     "prompts_version",
     "skills_version",
     "transaction",
-    # Core versioned models
     "ab_test",
     "agents",
     "skills",
     "prompts",
-    # Caches
     "package_mappings",
     "research_cache",
 ]
 
-# Qdrant collections used by shared memory
 QDRANT_COLLECTIONS = ["shared_memory_facts", "shared_memory_hypotheses"]
 
-# Vector config for recreating Qdrant collections
 VECTOR_SIZE = 768
 QDRANT_PAYLOAD_INDEXES = [
     "source_agent_id",
@@ -106,16 +72,11 @@ QDRANT_PAYLOAD_INDEXES = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# URL parsing
-# ---------------------------------------------------------------------------
-
 def parse_pg_url(database_url: str) -> dict:
     """Extract connection parameters from a SQLAlchemy-style database URL.
 
     Handles both ``postgresql+asyncpg://`` and ``postgresql://`` prefixes.
     """
-    # Normalise driver prefix so urlparse can handle it
     url = database_url.replace("postgresql+asyncpg://", "postgresql://")
     parsed = urlparse(url)
     return {
@@ -126,10 +87,6 @@ def parse_pg_url(database_url: str) -> dict:
         "dbname": parsed.path.lstrip("/") or "lumari",
     }
 
-
-# ---------------------------------------------------------------------------
-# Cold reset
-# ---------------------------------------------------------------------------
 
 async def cold_reset(
     database_url: str | None = None,
@@ -155,18 +112,15 @@ async def cold_reset(
         summary["dry_run"] = True
         return summary
 
-    # --- Step 1: Truncate all SQL tables ---
     engine = create_async_engine(db_url, echo=False)
     try:
         summary["tables_truncated"] = await _truncate_all_tables(engine)
     finally:
         await engine.dispose()
 
-    # --- Step 2: Clear Qdrant collections ---
     if not skip_qdrant:
         summary["qdrant_cleared"] = _clear_qdrant_collections(qd_url)
 
-    # --- Step 3: Re-seed ---
     if not skip_seed:
         engine = create_async_engine(db_url, echo=False)
         try:
@@ -187,12 +141,10 @@ async def _truncate_all_tables(engine) -> int:
             await conn.execute(text(f"TRUNCATE {table_list} CASCADE"))
             logger.info("Truncated %d tables (PostgreSQL TRUNCATE CASCADE)", len(COLD_TRUNCATION_TABLES))
         else:
-            # SQLite fallback: DELETE in dependency-safe order
             for table_name in COLD_TRUNCATION_TABLES:
                 try:
                     await conn.execute(text(f"DELETE FROM {table_name}"))
                 except Exception:
-                    # Table may not exist in SQLite test DB
                     pass
             logger.info("Deleted from %d tables (SQLite fallback)", len(COLD_TRUNCATION_TABLES))
     return len(COLD_TRUNCATION_TABLES)
@@ -207,18 +159,15 @@ def _clear_qdrant_collections(qdrant_url: str) -> list[str]:
     cleared = []
 
     for collection_name in QDRANT_COLLECTIONS:
-        # Delete if exists
         if client.collection_exists(collection_name):
             client.delete_collection(collection_name)
             logger.info("Deleted Qdrant collection: %s", collection_name)
 
-        # Recreate with correct vector config
         client.create_collection(
             collection_name=collection_name,
             vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
         )
 
-        # Recreate payload indexes
         for field_name in QDRANT_PAYLOAD_INDEXES:
             schema = PayloadSchemaType.KEYWORD
             if field_name in ("created_at_ts", "confidence"):
@@ -270,10 +219,6 @@ async def _seed_from_default(engine) -> int:
     return count
 
 
-# ---------------------------------------------------------------------------
-# Warm save / restore
-# ---------------------------------------------------------------------------
-
 def warm_snapshot_save(
     output_path: str,
     database_url: str | None = None,
@@ -288,14 +233,11 @@ def warm_snapshot_save(
     params = parse_pg_url(db_url)
     result = {"pg_dump": None, "qdrant_snapshots": []}
 
-    # Ensure output directory exists
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    # --- pg_dump ---
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     if _pg_tool_available_locally("pg_dump"):
-        # Local pg_dump available
         env = {**os.environ, "PGPASSWORD": params["password"]}
         cmd = [
             "pg_dump",
@@ -311,7 +253,6 @@ def warm_snapshot_save(
         if proc.returncode != 0:
             raise RuntimeError(f"pg_dump failed (exit {proc.returncode}): {proc.stderr}")
     elif _docker_container_running(POSTGRES_CONTAINER):
-        # Fallback: run pg_dump inside Docker container, copy dump out
         container_path = f"/tmp/warm_snapshot.dump"
         dump_cmd = [
             "docker", "exec", POSTGRES_CONTAINER,
@@ -325,7 +266,6 @@ def warm_snapshot_save(
         proc = subprocess.run(dump_cmd, capture_output=True, text=True, timeout=300)
         if proc.returncode != 0:
             raise RuntimeError(f"pg_dump (docker) failed (exit {proc.returncode}): {proc.stderr}")
-        # Copy file from container to host
         cp_cmd = ["docker", "cp", f"{POSTGRES_CONTAINER}:{container_path}", output_path]
         subprocess.run(cp_cmd, check=True, capture_output=True, timeout=60)
     else:
@@ -337,7 +277,6 @@ def warm_snapshot_save(
     result["pg_dump"] = output_path
     logger.info("pg_dump saved to: %s", output_path)
 
-    # --- Qdrant snapshots ---
     for collection in QDRANT_COLLECTIONS:
         try:
             resp = httpx.post(f"{qd_url}/collections/{collection}/snapshots", timeout=60)
@@ -386,10 +325,8 @@ def warm_snapshot_restore(
         proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
     elif _docker_container_running(POSTGRES_CONTAINER):
         container_path = "/tmp/warm_restore.dump"
-        # Copy dump into container
         cp_cmd = ["docker", "cp", snapshot_path, f"{POSTGRES_CONTAINER}:{container_path}"]
         subprocess.run(cp_cmd, check=True, capture_output=True, timeout=60)
-        # Run pg_restore inside container
         cmd = [
             "docker", "exec", POSTGRES_CONTAINER,
             "pg_restore",
@@ -440,17 +377,12 @@ def _docker_container_running(container: str) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="F18 — Cold/Warm DB switch for evaluation runs",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # --- cold ---
     cold_p = subparsers.add_parser("cold", help="Truncate all tables + re-seed")
     cold_p.add_argument("--skip-seed", action="store_true", help="Don't re-seed after truncation")
     cold_p.add_argument("--skip-qdrant", action="store_true", help="Don't clear Qdrant collections")
@@ -458,13 +390,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     cold_p.add_argument("--qdrant-url", default=None, help="Override Qdrant URL")
     cold_p.add_argument("--dry-run", action="store_true", help="Print actions without executing")
 
-    # --- warm-save ---
     save_p = subparsers.add_parser("warm-save", help="Snapshot current DB state")
     save_p.add_argument("--output", required=True, help="Path for pg_dump output file")
     save_p.add_argument("--database-url", default=None, help="Override database URL")
     save_p.add_argument("--qdrant-url", default=None, help="Override Qdrant URL")
 
-    # --- warm-restore ---
     restore_p = subparsers.add_parser("warm-restore", help="Restore DB from snapshot")
     restore_p.add_argument("--snapshot", required=True, help="Path to pg_dump snapshot file")
     restore_p.add_argument("--database-url", default=None, help="Override database URL")

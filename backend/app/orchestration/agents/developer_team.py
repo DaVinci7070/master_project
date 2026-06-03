@@ -1,24 +1,3 @@
-"""
-Developer Team Orchestrator for coordinating multi-file coding tasks.
-
-This service implements the Orchestrator-Worker pattern:
-1. Analyze task complexity via LLM
-2. Decompose into file-level subtasks
-3. Spawn coding agents in parallel waves using asyncio.TaskGroup
-4. Synthesize results and handle partial failures
-5. Clean up all agents after completion
-
-Flow:
-    DevelopmentTask -> decompose() -> [SubtaskSpec, ...]
-    -> spawn agents per wave via TaskGroup
-    -> collect SpawnResults -> TaskResult
-
-Architecture follows RESEARCH.md patterns:
-- asyncio.TaskGroup for structured concurrency
-- Parallel Context Isolation (PCI) for agents
-- OpenTelemetry for distributed tracing
-- Automatic cleanup via try/finally
-"""
 import asyncio
 import json
 import logging
@@ -145,7 +124,6 @@ class DeveloperTeamOrchestrator:
             }
         ) as span:
             try:
-                # 1. Decompose task into subtasks
                 self.log.info(
                     f"Decomposing task id={task.task_id[:8]}..., "
                     f"files={len(task.files_involved)}"
@@ -154,9 +132,8 @@ class DeveloperTeamOrchestrator:
                 span.set_attribute("task.subtasks_count", len(decomposition.subtasks))
                 span.set_attribute("task.waves_count", len(decomposition.execution_order))
 
-                # 2. Execute subtasks in waves
                 all_results: List[SpawnResult] = []
-                completed_files: Dict[str, str] = {}  # file_path -> generated_code
+                completed_files: Dict[str, str] = {}
 
                 for wave_idx, wave_files in enumerate(decomposition.execution_order):
                     self.log.info(
@@ -173,12 +150,10 @@ class DeveloperTeamOrchestrator:
 
                     all_results.extend(wave_results)
 
-                    # Update completed files for next wave's context
                     for result in wave_results:
                         if result.success and result.generated_code:
                             completed_files[result.file_path] = result.generated_code
 
-                # 3. Aggregate results
                 files_completed = [r.file_path for r in all_results if r.success]
                 files_failed = [r.file_path for r in all_results if not r.success]
                 total_tokens = sum(r.tokens_used for r in all_results)
@@ -219,7 +194,6 @@ class DeveloperTeamOrchestrator:
                 )
 
             finally:
-                # Clean up all agents for this task
                 await self._cleanup_task_agents(task.task_id)
 
     async def _decompose_task(
@@ -248,18 +222,16 @@ class DeveloperTeamOrchestrator:
                 constraints=task.constraints,
             )
 
-            # Use Instructor for structured output - guarantees valid response
             output: TaskDecompositionOutput = await self.llm.chat_structured(
                 messages=[
                     {"role": "system", "content": TASK_DECOMPOSITION_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_model=TaskDecompositionOutput,
-                temperature=0.2,  # Deterministic decomposition
-                max_retries=3,  # Instructor will retry on validation failures
+                temperature=0.2,
+                max_retries=3,
             )
 
-            # Convert to TaskDecomposition (adds task_id)
             decomposition = TaskDecomposition(
                 task_id=task.task_id,
                 subtasks=output.subtasks,
@@ -299,7 +271,6 @@ class DeveloperTeamOrchestrator:
         Returns:
             List of SpawnResults from this wave.
         """
-        # Find subtasks for this wave
         subtasks = [
             s for s in decomposition.subtasks
             if s.file_path in wave_files
@@ -315,11 +286,9 @@ class DeveloperTeamOrchestrator:
             "developer_team.execute_wave",
             attributes={"wave.files": wave_files}
         ):
-            # Use TaskGroup for structured concurrency
             try:
                 async with asyncio.TaskGroup() as tg:
                     for subtask in subtasks[:self.max_parallel]:
-                        # Build context with completed files
                         additional_context = self._build_context_from_completed(
                             subtask, completed_files, decomposition.shared_context
                         )
@@ -336,23 +305,19 @@ class DeveloperTeamOrchestrator:
                             task_id=task.task_id,
                             subtask=subtask,
                             context=context,
-                            timeout_seconds=300,  # 5 minutes per file
+                            timeout_seconds=300,
                         )
 
-                        # Create task
                         t = tg.create_task(
                             self.spawner.spawn_and_execute(request),
                             name=f"spawn-{subtask.file_path}",
                         )
                         spawn_tasks.append(t)
 
-                # Collect results (TaskGroup waits for all)
                 results = [t.result() for t in spawn_tasks]
 
             except* Exception as eg:
-                # ExceptionGroup from TaskGroup - some tasks failed
                 self.log.warning(f"Some wave tasks failed: {eg.exceptions}")
-                # Collect whatever results we have
                 for t in spawn_tasks:
                     if t.done() and not t.cancelled():
                         try:
@@ -381,12 +346,10 @@ class DeveloperTeamOrchestrator:
         """
         lines = []
 
-        # Add relevant completed files
         for dep in subtask.required_files:
             if dep in completed_files:
                 lines.append(f"## Completed: {dep}")
                 lines.append("```python")
-                # Truncate if very long
                 code = completed_files[dep]
                 if len(code) > 2000:
                     code = code[:2000] + "\n# ... truncated ..."
@@ -394,7 +357,6 @@ class DeveloperTeamOrchestrator:
                 lines.append("```")
                 lines.append("")
 
-        # Add shared context
         if shared_context:
             lines.append("## Shared Context")
             lines.append(json.dumps(shared_context, indent=2))
@@ -436,7 +398,6 @@ class DeveloperTeamOrchestrator:
         Returns:
             True if spawning is recommended.
         """
-        # Per RESEARCH.md: spawn if >3 files or complex
         if files_count > 3:
             return True
         if task_complexity == "complex":

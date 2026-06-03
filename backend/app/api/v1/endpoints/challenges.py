@@ -1,9 +1,3 @@
-"""
-API endpoints for challenge submission and execution.
-
-Provides endpoints for submitting challenges, triggering capability assessment,
-and starting execution.
-"""
 import logging
 import os
 import re
@@ -44,13 +38,6 @@ from app.orchestration.execution.executor import AutonomousExecutorService, get_
 router = APIRouter(prefix="/challenges", tags=["challenges"])
 
 
-# ============================================================================
-# Dependency Detection Helpers
-# ============================================================================
-# These functions ensure skills have their dependencies installed even if
-# the skill metadata is missing pip_requirements (e.g., old skills)
-
-# Capability-based default requirements
 CAPABILITY_DEFAULT_REQUIREMENTS = {
     "audio transcription": {
         "pip": ["faster-whisper", "pydub"],
@@ -102,7 +89,6 @@ CAPABILITY_DEFAULT_REQUIREMENTS = {
     },
 }
 
-# Import name to pip package mapping
 IMPORT_TO_PIP = {
     'cv2': 'opencv-python',
     'PIL': 'Pillow',
@@ -126,7 +112,6 @@ IMPORT_TO_PIP = {
     'aiohttp': 'aiohttp',
 }
 
-# Standard library modules (don't need pip install)
 STDLIB_MODULES = {
     'os', 'sys', 'json', 're', 'time', 'datetime', 'pathlib', 'io',
     'subprocess', 'tempfile', 'shutil', 'glob', 'copy', 'math',
@@ -147,13 +132,11 @@ def _detect_pip_requirements(code: str, capability: str) -> list[str]:
     import re
     requirements = []
 
-    # 1. Get defaults for this capability type - ALWAYS include these
     capability_lower = capability.lower()
     if capability_lower in CAPABILITY_DEFAULT_REQUIREMENTS:
         requirements.extend(CAPABILITY_DEFAULT_REQUIREMENTS[capability_lower]["pip"])
         log.info(f"Added default pip requirements for '{capability}': {requirements}")
 
-    # 2. Detect imports from code
     import_pattern = re.compile(r'^(?:from|import)\s+(\w+)', re.MULTILINE)
     imports = import_pattern.findall(code)
 
@@ -161,16 +144,14 @@ def _detect_pip_requirements(code: str, capability: str) -> list[str]:
         if imp in STDLIB_MODULES:
             continue
 
-        # Map import name to pip package
         if imp in IMPORT_TO_PIP:
             pkg = IMPORT_TO_PIP[imp]
             if pkg not in requirements:
                 requirements.append(pkg)
         elif imp not in requirements:
-            # Assume import name is package name
             requirements.append(imp)
 
-    return list(dict.fromkeys(requirements))  # Remove duplicates
+    return list(dict.fromkeys(requirements))
 
 
 def _detect_system_packages(capability: str) -> list[str]:
@@ -184,7 +165,6 @@ def _detect_system_packages(capability: str) -> list[str]:
 log = logging.getLogger(__name__)
 
 
-# Request models
 class AnalyzeChallengeRequest(BaseModel):
     """Request body for direct challenge analysis."""
     challenge_text: str
@@ -193,7 +173,6 @@ class AnalyzeChallengeRequest(BaseModel):
     include_cross_project: bool = True
 
 
-# Response models
 class ChallengeCreateResponse(BaseModel):
     """Response after creating a challenge."""
     id: str
@@ -207,12 +186,12 @@ class ChallengeAssessmentResponse(BaseModel):
     """Capability assessment result for a challenge."""
     challenge_id: str
     execution_id: str
-    confidence: str  # CAN_DO, MAYBE, CANNOT_DO
+    confidence: str
     reasoning: str
     top_factors: list[str]
-    gaps: list[dict]  # CapabilityGap as dict
+    gaps: list[dict]
     improvement_suggestions: list[str]
-    route_decision: str  # execute or developer_team
+    route_decision: str
     assessed_at: str
 
 
@@ -238,7 +217,7 @@ class ChallengeStatusResponse(BaseModel):
     assessment_result: Optional[dict] = None
     gaps_snapshot: list[dict] = Field(default_factory=list)
     built_capability_ids: list[str] = Field(default_factory=list)
-    execution_results: Optional[dict] = None  # Orchestrator output after execution
+    execution_results: Optional[dict] = None
     created_at: str
     updated_at: Optional[str] = None
     resolved_at: Optional[str] = None
@@ -246,12 +225,12 @@ class ChallengeStatusResponse(BaseModel):
 
 class ChallengeAnalysisFullResponse(BaseModel):
     """Full analysis response matching frontend ChallengeAnalysisResponse type."""
-    challenge_id: str  # ID for executing this challenge
-    assessment: dict  # CapabilityAssessment as dict
+    challenge_id: str
+    assessment: dict
     challenge_text: str
     execution_id: str
     analyzed_at: str
-    route_decision: str  # 'execute' or 'developer_team'
+    route_decision: str
 
 
 class ChallengeResultsResponse(BaseModel):
@@ -273,8 +252,7 @@ class ChallengeAnalysisWithPlanResponse(BaseModel):
     challenge_text: str
     execution_id: str
     analyzed_at: str
-    route_decision: str  # 'execute' or 'developer_team'
-    # Build plan fields (only populated when route_decision == 'developer_team')
+    route_decision: str
     build_plan: Optional[dict] = None
     build_plan_status: Optional[str] = None
     auto_apply_enabled: bool = False
@@ -304,10 +282,8 @@ async def analyze_challenge_direct(
 
     log.info(f"Direct challenge analysis: execution_id={request.execution_id}")
 
-    # Generate challenge ID
     challenge_id = str(uuid.uuid4())
 
-    # Create challenge record
     challenge = BlockedChallenge(
         id=challenge_id,
         execution_id=request.execution_id,
@@ -321,7 +297,6 @@ async def analyze_challenge_direct(
     session.add(challenge)
     await session.commit()
 
-    # Perform capability assessment using PreExecutionOrchestrator
     try:
         embedding_fn = create_embedding_fn()
         structured_llm_fn = create_structured_llm_fn()
@@ -331,7 +306,6 @@ async def analyze_challenge_direct(
             structured_llm_fn=structured_llm_fn,
         )
 
-        # Build analysis request
         analysis_request = ChallengeAnalysisRequest(
             challenge_text=request.challenge_text,
             execution_id=request.execution_id,
@@ -339,10 +313,8 @@ async def analyze_challenge_direct(
             include_cross_project=request.include_cross_project
         )
 
-        # Run the orchestrator analysis
         analysis_response = await orchestrator.analyze_challenge(analysis_request)
 
-        # Extract assessment and route decision from response
         assessment = analysis_response.assessment
         route_decision = analysis_response.route_decision
 
@@ -350,7 +322,6 @@ async def analyze_challenge_direct(
 
     except Exception as e:
         log.error(f"Orchestrator analysis failed, using fallback: {e}")
-        # Fallback to simple assessment if orchestrator fails
         assessment = CapabilityAssessment(
             confidence=ConfidenceLevel.CAN_DO,
             reasoning=f"Fallback assessment (orchestrator error: {str(e)[:100]})",
@@ -361,21 +332,16 @@ async def analyze_challenge_direct(
         )
         route_decision = "execute"
 
-    # Update challenge with assessment
     challenge.assessment_result = assessment.model_dump()
     challenge.gaps_snapshot = [g.model_dump() for g in assessment.gaps]
     challenge.status = "assessed"
     await session.commit()
 
-    # Route decision already determined by orchestrator (or fallback)
-    # Generate build plan if routing to developer team
     build_plan_dict = None
     auto_apply_enabled = False
     message = ""
 
     if route_decision == "developer_team" and assessment.gaps:
-        # PRE-CHECK: Filter out gaps that are already satisfied by existing capabilities
-        # This prevents rebuilding skills that already exist
         verification_service = GapVerificationService(AsyncSessionLocal)
         remaining_gaps = []
 
@@ -391,14 +357,12 @@ async def analyze_challenge_direct(
             else:
                 remaining_gaps.append(gap)
 
-        # Update route decision if all gaps are already satisfied
         if not remaining_gaps:
             log.info(f"All {len(assessment.gaps)} gaps already satisfied by existing capabilities - routing to execute")
             route_decision = "execute"
             message = f"Alle {len(assessment.gaps)} benötigten Capabilities existieren bereits. Bereit zur Ausführung."
         else:
             log.info(f"{len(assessment.gaps) - len(remaining_gaps)} gaps already satisfied, {len(remaining_gaps)} remaining")
-            # Update assessment gaps to only include remaining gaps
             assessment.gaps = remaining_gaps
 
     if route_decision == "developer_team" and assessment.gaps:
@@ -409,17 +373,14 @@ async def analyze_challenge_direct(
         )
         build_plan_dict = build_plan.model_dump(mode="json")
 
-        # Save plan to challenge
         challenge.build_plan = build_plan_dict
         challenge.build_plan_status = BuildPlanStatus.PENDING.value
 
-        # Check auto-apply setting
         auto_apply_enabled = await build_plan_service.is_auto_apply_enabled()
 
         if auto_apply_enabled:
             message = "Build-Plan wird automatisch ausgeführt (Auto-Apply aktiv)"
             challenge.build_plan_status = BuildPlanStatus.APPROVED.value
-            # Trigger capability building in background
             background_tasks.add_task(
                 _run_capability_building,
                 challenge_id=challenge_id,
@@ -443,7 +404,6 @@ async def analyze_challenge_direct(
     )
 
 
-# File upload endpoint - system autonomously handles any file format
 @router.post("/upload", response_model=ChallengeAnalysisWithPlanResponse)
 async def upload_challenge_file(
     file: UploadFile = File(..., description="Challenge file (any format)"),
@@ -473,33 +433,23 @@ async def upload_challenge_file(
 
     log.info(f"File upload: {file.filename}, size={file.size}, type={file.content_type}")
 
-    # Read file content
     content = await file.read()
 
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Empty file")
 
-    if len(content) > 50 * 1024 * 1024:  # 50MB limit
+    if len(content) > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 50MB")
 
-    # Detect file type
     file_ext = file.filename.split('.')[-1].lower() if '.' in file.filename else 'unknown'
     content_type = file.content_type or mimetypes.guess_type(file.filename)[0] or 'application/octet-stream'
 
-    # Known binary formats - detect by extension/content-type FIRST
-    # These should never be decoded as text
     BINARY_EXTENSIONS = {
-        # Documents
         'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
-        # Images
         'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'ico', 'svg',
-        # Audio
         'mp3', 'wav', 'ogg', 'opus', 'm4a', 'flac', 'aac', 'wma',
-        # Video
         'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm',
-        # Archives
         'zip', 'tar', 'gz', 'rar', '7z',
-        # Other binary
         'exe', 'dll', 'so', 'dylib', 'bin',
     }
 
@@ -511,31 +461,24 @@ async def upload_challenge_file(
         'application/octet-stream',
     }
 
-    # Determine if file is binary
     is_binary = (
         file_ext in BINARY_EXTENSIONS or
         any(content_type.startswith(mime) for mime in BINARY_MIMETYPES)
     )
 
-    # For text files, try UTF-8 decode
     text_content = None
     if not is_binary:
         try:
             text_content = content.decode('utf-8')
-            # Double-check: if text contains null bytes, it's binary
             if '\x00' in text_content:
                 is_binary = True
                 text_content = None
         except UnicodeDecodeError:
             is_binary = True
 
-    # Audio formats that can be transcribed directly via Whisper API
     AUDIO_EXTENSIONS = {'mp3', 'wav', 'ogg', 'opus', 'm4a', 'flac', 'webm', 'mp4', 'mpeg', 'mpga'}
 
-    # Build challenge text - handle binary files appropriately
     if is_binary:
-        # Save binary file to temp storage
-        # Path: endpoints -> v1 -> api -> app/uploads
         upload_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'uploads')
         os.makedirs(upload_dir, exist_ok=True)
 
@@ -548,13 +491,9 @@ async def upload_challenge_file(
 
         log.info(f"Saved binary file to: {file_path}")
 
-        # Check if this is an audio file
         if file_ext in AUDIO_EXTENSIONS:
-            # Don't transcribe synchronously — it takes 60-90s in Docker sandbox.
-            # Instead, mark as needing transcription and handle in background.
             from app.models.sql.versioned_models import Skill
 
-            # Check if transcription skill exists
             skill_result = await session.execute(
                 select(Skill).where(
                     (Skill.name.like("%audio%transcription%")) &
@@ -564,7 +503,6 @@ async def upload_challenge_file(
             existing_skill = skill_result.scalar_one_or_none()
 
             if existing_skill:
-                # Skill exists — transcription will happen in background during execution
                 log.info(f"Audio transcription skill available: {existing_skill.name} — will transcribe in background")
                 file_info = f"""[UPLOADED AUDIO FILE - READY FOR TRANSCRIPTION]
 Original Filename: {file.filename}
@@ -577,7 +515,6 @@ Transcription Skill: {existing_skill.name}
 Transcribe this audio file and analyze the content.
 """
             else:
-                # No skill or skill failed - create capability gap for autonomous building
                 log.info(f"No working audio transcription skill - will build one autonomously")
                 file_info = f"""[UPLOADED AUDIO FILE - NEEDS SKILL]
 Filename: {file.filename}
@@ -601,7 +538,6 @@ System: ffmpeg
 Method: Open Source (NO external API)
 """
         else:
-            # Other binary files (PDF, images, etc.) - create capability gap
             processing_type = "Image OCR" if file_ext in {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff'} else \
                               "Document parsing" if file_ext in {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'} else \
                               "Binary file processing"
@@ -627,7 +563,6 @@ Processing type: {processing_type}
 Method: Open Source (NO external API)
 """
     else:
-        # For text files, include content directly (safe for database)
         file_info = f"""[UPLOADED TEXT FILE]
 Filename: {file.filename}
 File Extension: .{file_ext}
@@ -638,16 +573,13 @@ Size: {len(content)} bytes
 {text_content[:50000]}{"..." if len(text_content) > 50000 else ""}
 """
 
-    # Append user instructions if provided
     if instructions and instructions.strip():
         file_info += f"\n\n[USER INSTRUCTIONS]\n{instructions.strip()}\n"
 
-    # Generate IDs
     if not execution_id:
         execution_id = str(uuid.uuid4())
     challenge_id = str(uuid.uuid4())
 
-    # Create challenge record
     challenge = BlockedChallenge(
         id=challenge_id,
         execution_id=execution_id,
@@ -661,13 +593,10 @@ Size: {len(content)} bytes
     session.add(challenge)
     await session.commit()
 
-    # Check if system can handle this file type
     verification_service = GapVerificationService(AsyncSessionLocal)
     gaps: list[CapabilityGap] = []
 
-    # Capability needed based on file type
     file_type_capabilities = {
-        # Documents
         'pdf': 'pdf file reading',
         'docx': 'word document reading',
         'doc': 'word document reading',
@@ -678,7 +607,6 @@ Size: {len(content)} bytes
         'ppt': 'powerpoint reading',
         'odt': 'document reading',
         'ods': 'spreadsheet reading',
-        # Images (OCR)
         'png': 'image ocr text extraction',
         'jpg': 'image ocr text extraction',
         'jpeg': 'image ocr text extraction',
@@ -686,7 +614,6 @@ Size: {len(content)} bytes
         'bmp': 'image ocr text extraction',
         'webp': 'image ocr text extraction',
         'tiff': 'image ocr text extraction',
-        # Audio
         'mp3': 'audio transcription',
         'wav': 'audio transcription',
         'm4a': 'audio transcription',
@@ -694,7 +621,6 @@ Size: {len(content)} bytes
         'opus': 'audio transcription',
         'flac': 'audio transcription',
         'aac': 'audio transcription',
-        # Video
         'mp4': 'video transcription',
         'mov': 'video transcription',
         'avi': 'video transcription',
@@ -704,11 +630,9 @@ Size: {len(content)} bytes
 
     required_capability = file_type_capabilities.get(file_ext)
 
-    # Check if audio skill is available (no gap needed)
     audio_transcribed = "[TRANSCRIBED AUDIO FILE]" in file_info or "[READY FOR TRANSCRIPTION]" in file_info
 
     if required_capability and is_binary and not audio_transcribed:
-        # Check if system has this capability
         cap_result = await verification_service.capability_exists(required_capability)
         if not cap_result.exists:
             gaps.append(CapabilityGap(
@@ -721,7 +645,6 @@ Size: {len(content)} bytes
                 evidence=[f"User uploaded a .{file_ext} file that requires specialized parsing"]
             ))
 
-    # Also check for content-specific capabilities (financial, technical, etc.)
     if text_content:
         text_lower = text_content.lower()
         has_financial = any(term in text_lower for term in [
@@ -742,7 +665,6 @@ Size: {len(content)} bytes
                     evidence=["Financial terms found in file content"]
                 ))
 
-    # Determine route and confidence
     if gaps:
         route_decision = "developer_team"
         confidence = ConfidenceLevel.CANNOT_DO
@@ -765,20 +687,17 @@ Size: {len(content)} bytes
         execution_path=route_decision
     )
 
-    # Update challenge
     challenge.assessment_result = assessment.model_dump()
     challenge.gaps_snapshot = [g.model_dump() for g in gaps]
     challenge.status = "needs_capabilities" if gaps else "ready"
     await session.commit()
 
-    # Build plan if needed
     build_plan_dict = None
     auto_apply_enabled = False
     message = f"File '{file.filename}' uploaded successfully"
 
     if gaps:
         plan_service = BuildPlanService(session)
-        # generate_plan_from_gaps expects list[dict], not list[CapabilityGap]
         plan = plan_service.generate_plan_from_gaps(challenge_id, [g.model_dump() for g in gaps])
 
         user_settings = await session.execute(
@@ -802,7 +721,6 @@ Size: {len(content)} bytes
 
         message = f"File uploaded. System needs to develop {len(gaps)} capability(ies) to process this file type."
 
-        # Auto-build skills in background if auto-apply is enabled
         if auto_apply_enabled and background_tasks:
             log.info(f"Auto-apply enabled: triggering skill building for {len(gaps)} gaps")
             background_tasks.add_task(
@@ -886,7 +804,6 @@ async def submit_challenge(
     """
     log.info(f"Submitting challenge: has_text={challenge_text is not None}, has_file={file is not None}")
 
-    # Extract challenge text from file if provided
     if file and not challenge_text:
         content = await file.read()
         try:
@@ -903,18 +820,15 @@ async def submit_challenge(
             detail="Either challenge_text or file must be provided"
         )
 
-    # Generate IDs
     challenge_id = str(uuid.uuid4())
     execution_id = str(uuid.uuid4())
 
-    # Create blocked challenge record (initially in queued state)
-    # This will be used for tracking the challenge lifecycle
     challenge = BlockedChallenge(
         id=challenge_id,
         execution_id=execution_id,
         project_id=project_id,
         challenge_text=challenge_text,
-        assessment_result={},  # Will be filled during analysis
+        assessment_result={},
         gaps_snapshot=[],
         status="queued",
     )
@@ -945,7 +859,6 @@ async def analyze_challenge(
     """
     log.info(f"Analyzing challenge: id={challenge_id}")
 
-    # Get challenge
     stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
     result = await session.execute(stmt)
     challenge = result.scalar_one_or_none()
@@ -953,7 +866,6 @@ async def analyze_challenge(
     if not challenge:
         raise HTTPException(status_code=404, detail=f"Challenge not found: {challenge_id}")
 
-    # Perform capability assessment using PreExecutionOrchestrator
     try:
         embedding_fn = create_embedding_fn()
         structured_llm_fn = create_structured_llm_fn()
@@ -963,7 +875,6 @@ async def analyze_challenge(
             structured_llm_fn=structured_llm_fn,
         )
 
-        # Build analysis request from stored challenge
         analysis_request = ChallengeAnalysisRequest(
             challenge_text=challenge.challenge_text,
             execution_id=challenge.execution_id,
@@ -971,7 +882,6 @@ async def analyze_challenge(
             include_cross_project=True
         )
 
-        # Run the orchestrator analysis
         analysis_response = await orchestrator.analyze_challenge(analysis_request)
         assessment = analysis_response.assessment
         route_decision = analysis_response.route_decision
@@ -980,7 +890,6 @@ async def analyze_challenge(
 
     except Exception as e:
         log.error(f"Orchestrator analysis failed, using fallback: {e}")
-        # Fallback to simple assessment if orchestrator fails
         assessment = CapabilityAssessment(
             confidence=ConfidenceLevel.CAN_DO,
             reasoning=f"Fallback assessment (orchestrator error: {str(e)[:100]})",
@@ -991,7 +900,6 @@ async def analyze_challenge(
         )
         route_decision = "execute"
 
-    # Update challenge with assessment
     challenge.assessment_result = assessment.model_dump()
     challenge.gaps_snapshot = [g.model_dump() for g in assessment.gaps]
     await session.commit()
@@ -1021,7 +929,6 @@ async def get_assessment(
     """
     log.info(f"Getting assessment: challenge_id={challenge_id}")
 
-    # Get challenge
     stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
     result = await session.execute(stmt)
     challenge = result.scalar_one_or_none()
@@ -1032,7 +939,6 @@ async def get_assessment(
     if not challenge.assessment_result:
         raise HTTPException(status_code=404, detail=f"Challenge not yet assessed: {challenge_id}")
 
-    # Parse assessment from stored dict
     assessment_dict = challenge.assessment_result
     confidence = ConfidenceLevel(assessment_dict.get("confidence", "CAN_DO"))
     route_decision = "developer_team" if confidence in (ConfidenceLevel.MAYBE, ConfidenceLevel.CANNOT_DO) else "execute"
@@ -1067,7 +973,6 @@ async def execute_challenge(
     """
     log.info(f"Executing challenge: id={challenge_id}")
 
-    # Get challenge
     stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
     result = await session.execute(stmt)
     challenge = result.scalar_one_or_none()
@@ -1075,18 +980,15 @@ async def execute_challenge(
     if not challenge:
         raise HTTPException(status_code=404, detail=f"Challenge not found: {challenge_id}")
 
-    # Check assessment
     if not challenge.assessment_result:
         raise HTTPException(
             status_code=400,
             detail="Challenge must be assessed before execution. Call /analyze first."
         )
 
-    # Update status to executing
     challenge.status = "executing"
     await session.commit()
 
-    # Run orchestrator execution in background
     background_tasks.add_task(
         _run_challenge_execution,
         challenge_id=challenge_id,
@@ -1123,7 +1025,6 @@ async def _transcribe_audio_before_execution(
         log.warning(f"Audio-Datei nicht gefunden: {file_path}")
         return challenge_text
 
-    # Skill-Daten lesen (read-only, eigene Session)
     async with AsyncSessionLocal() as read_session:
         skill_result = await read_session.execute(
             select(Skill).where(
@@ -1143,7 +1044,6 @@ async def _transcribe_audio_before_execution(
     log.info(f"Transkribiere Audio vor Execution: {file_path} mit Skill {skill_name}")
 
     try:
-        # Sandbox-Execution in isoliertem Kontext (keine geteilte DB-Session)
         executor = AutonomousExecutorService(db=None)
         pip_requirements = skill_meta.get("pip_requirements", [])
         system_packages = skill_meta.get("system_packages", [])
@@ -1189,7 +1089,6 @@ Transcription Method: Pre-built Skill ({skill_name})
 [TASK]
 Analyze the above transcribed content.
 """
-            # DB-Update in eigener Session (isoliert von Sandbox-Seiteneffekten)
             async with AsyncSessionLocal() as write_session:
                 stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
                 result = await write_session.execute(stmt)
@@ -1227,13 +1126,11 @@ async def _run_challenge_execution(
 
     async with AsyncSessionLocal() as session:
         try:
-            # Audio-Transkription nachholen, falls Skill existiert aber noch nicht ausgeführt
             if "[UPLOADED AUDIO FILE - READY FOR TRANSCRIPTION]" in challenge_text:
                 challenge_text = await _transcribe_audio_before_execution(
                     session, challenge_id, challenge_text
                 )
 
-            # Initialize orchestrator
             llm = LLMClient()
             embedding_fn = create_embedding_fn()
 
@@ -1245,7 +1142,6 @@ async def _run_challenge_execution(
             execution_verifier = ExecutionVerifier(llm_client=llm, settings=app_settings) if app_settings.verify_adapt_enabled else None
             adapt_strategy = AdaptStrategy(app_settings) if app_settings.verify_adapt_enabled else None
 
-            # SharedMemory für TeamAssembler + StrategyMemory
             shared_mem_service = None
             if app_settings.shared_memory_enabled:
                 try:
@@ -1307,15 +1203,28 @@ async def _run_challenge_execution(
             )
             await orchestrator.initialize()
 
-            # Execute via orchestrator
-            results = await orchestrator.execute(
-                input_data={"challenge": challenge_text},
-                execution_id=execution_id,
-                project_id=project_id,
-                challenge_id=challenge_id,
-            )
+            import asyncio as _asyncio
+            from app.core.config import settings as _app_settings
+            try:
+                results = await _asyncio.wait_for(
+                    orchestrator.execute(
+                        input_data={"challenge": challenge_text},
+                        execution_id=execution_id,
+                        project_id=project_id,
+                        challenge_id=challenge_id,
+                    ),
+                    timeout=float(_app_settings.execution_hard_timeout),
+                )
+            except _asyncio.TimeoutError:
+                log.warning(
+                    f"Execution hard timeout ({_app_settings.execution_hard_timeout}s): "
+                    f"challenge_id={challenge_id}"
+                )
+                results = {
+                    "success": False,
+                    "error": f"execution_hard_timeout ({_app_settings.execution_hard_timeout}s)",
+                }
 
-            # Update challenge with results
             stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
             result = await session.execute(stmt)
             challenge = result.scalar_one_or_none()
@@ -1338,7 +1247,6 @@ async def _run_challenge_execution(
         except Exception as e:
             log.error(f"Execution failed: challenge_id={challenge_id}, error={e}")
 
-            # Frische Session — die alte kann durch PendingRollbackError vergiftet sein
             try:
                 async with AsyncSessionLocal() as err_session:
                     stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
@@ -1368,7 +1276,6 @@ async def get_challenge_status(
     """
     log.info(f"Getting challenge status: id={challenge_id}")
 
-    # Get challenge
     stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
     result = await session.execute(stmt)
     challenge = result.scalar_one_or_none()
@@ -1406,7 +1313,6 @@ async def get_challenge_results(
     """
     log.info(f"Getting challenge results: id={challenge_id}")
 
-    # Get challenge
     stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
     result = await session.execute(stmt)
     challenge = result.scalar_one_or_none()
@@ -1446,7 +1352,6 @@ async def get_challenge_by_execution_id(
     """
     log.info(f"Getting challenge by execution_id: {execution_id}")
 
-    # Get challenge by execution_id
     stmt = select(BlockedChallenge).where(BlockedChallenge.execution_id == execution_id)
     result = await session.execute(stmt)
     challenge = result.scalar_one_or_none()
@@ -1471,10 +1376,6 @@ async def get_challenge_by_execution_id(
     )
 
 
-# ============================================================================
-# Build Plan Endpoints
-# ============================================================================
-
 @router.get("/{challenge_id}/build-plan", response_model=BuildPlanResponse)
 async def get_build_plan(
     challenge_id: str,
@@ -1497,7 +1398,6 @@ async def get_build_plan(
     if not challenge.build_plan:
         raise HTTPException(status_code=404, detail="No build plan exists for this challenge")
 
-    # Get auto-apply setting
     build_plan_service = BuildPlanService(session)
     auto_apply = await build_plan_service.is_auto_apply_enabled()
 
@@ -1543,7 +1443,6 @@ async def approve_build_plan(
         challenge.build_plan_status = BuildPlanStatus.APPROVED.value
         await session.commit()
 
-        # Trigger capability building in background
         background_tasks.add_task(
             _run_capability_building,
             challenge_id=challenge_id,
@@ -1557,7 +1456,6 @@ async def approve_build_plan(
     else:
         challenge.build_plan_status = BuildPlanStatus.REJECTED.value
         if request.feedback:
-            # Store feedback for future improvements
             failure_reasons = challenge.failure_reasons or []
             failure_reasons.append(f"User rejected: {request.feedback}")
             challenge.failure_reasons = failure_reasons
@@ -1590,7 +1488,6 @@ async def _run_capability_building(challenge_id: str) -> None:
 
     async with AsyncSessionLocal() as session:
         try:
-            # Get challenge
             stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
             result = await session.execute(stmt)
             challenge = result.scalar_one_or_none()
@@ -1599,17 +1496,14 @@ async def _run_capability_building(challenge_id: str) -> None:
                 log.error(f"Challenge not found for building: {challenge_id}")
                 return
 
-            # Update status
             challenge.build_plan_status = BuildPlanStatus.IN_PROGRESS.value
             challenge.status = "building"
             await session.commit()
 
-            # Create LLM and embedding functions for capability matching
             llm_fn = create_llm_fn()
             embedding_fn = create_embedding_fn()
             structured_llm_fn = create_structured_llm_fn()
 
-            # Create intervention orchestrator with LLM and embedding support
             orchestrator = await create_intervention_orchestrator(
                 session_factory=AsyncSessionLocal,
                 llm_fn=llm_fn,
@@ -1617,10 +1511,6 @@ async def _run_capability_building(challenge_id: str) -> None:
                 structured_llm_fn=structured_llm_fn,
             )
 
-            # Process the challenge mit Hard-Timeout (Phase 0 / V2-Plan).
-            # Ohne dieses Timeout konnten hängende SkillTeam-Builds das Backend
-            # endlos blockieren — der Benchmark-Runner gab nach 180s auf, der
-            # Backend-Task lief aber weiter und blockierte Folge-Tasks.
             try:
                 intervention_result = await asyncio.wait_for(
                     orchestrator.process_blocked_challenge(challenge),
@@ -1631,7 +1521,6 @@ async def _run_capability_building(challenge_id: str) -> None:
                     f"Capability building hard-timeout after "
                     f"{app_settings.build_total_timeout}s: challenge_id={challenge_id}"
                 )
-                # Session sauber halten und Status auf build_failed setzen
                 await session.rollback()
                 stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
                 result = await session.execute(stmt)
@@ -1647,7 +1536,6 @@ async def _run_capability_building(challenge_id: str) -> None:
                     await session.commit()
                 return
 
-            # Update based on result — use status values the benchmark poller expects
             built_ids = [
                 r.artifact_id for r in (intervention_result.built_capabilities or [])
                 if r.success and r.artifact_id
@@ -1672,10 +1560,8 @@ async def _run_capability_building(challenge_id: str) -> None:
         except Exception as e:
             log.error(f"Capability building failed: challenge_id={challenge_id}, error={e}")
 
-            # Rollback the failed transaction before reusing the session
             await session.rollback()
 
-            # Update status to failed
             stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
             result = await session.execute(stmt)
             challenge = result.scalar_one_or_none()
@@ -1688,10 +1574,6 @@ async def _run_capability_building(challenge_id: str) -> None:
                 challenge.failure_reasons = failure_reasons
                 await session.commit()
 
-
-# ============================================================================
-# User Settings Endpoints
-# ============================================================================
 
 @router.get("/settings/user", response_model=UserSettingsResponse)
 async def get_user_settings(
@@ -1736,10 +1618,6 @@ async def update_user_settings(
     )
 
 
-# ============================================================================
-# Autonomous Skill Building Endpoints
-# ============================================================================
-
 class SkillBuildRequest(BaseModel):
     """Request to build a skill for a capability."""
     capability: str = Field(..., description="Capability to build (e.g., 'audio transcription')")
@@ -1777,7 +1655,6 @@ async def build_skills_for_challenge(
     """
     log.info(f"Building skills for challenge: {challenge_id}")
 
-    # Get challenge
     result = await session.execute(
         select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
     )
@@ -1792,7 +1669,6 @@ async def build_skills_for_challenge(
             message="No capability gaps to build skills for",
         )
 
-    # Get first gap to build
     gaps = challenge.gaps_snapshot
     first_gap = gaps[0] if gaps else None
 
@@ -1805,20 +1681,17 @@ async def build_skills_for_challenge(
     capability = first_gap.get("affected_capability", "unknown")
     log.info(f"Building skill for capability: {capability}")
 
-    # Build skill autonomously
     builder = AutonomousSkillBuilder(session)
     build_result = await builder.build_skill(
         capability=capability,
-        test_input={},  # Basic test
+        test_input={},
     )
 
     if build_result.success:
-        # Update challenge status
         challenge.status = "skills_built"
         challenge.built_capability_ids = [build_result.skill_id]
         await session.commit()
 
-        # Get skill metadata
         skill_meta = build_result.skill.skill_metadata if build_result.skill else {}
 
         return SkillBuildResponse(
@@ -1862,7 +1735,6 @@ async def _run_autonomous_skill_building(
 
     async with AsyncSessionLocal() as session:
         try:
-            # Get challenge
             stmt = select(BlockedChallenge).where(BlockedChallenge.id == challenge_id)
             result = await session.execute(stmt)
             challenge = result.scalar_one_or_none()
@@ -1871,18 +1743,15 @@ async def _run_autonomous_skill_building(
                 log.error(f"Challenge not found: {challenge_id}")
                 return
 
-            # Extract file path from challenge text (if binary file was uploaded)
             file_path = None
             file_path_match = re.search(r'Storage Path: (.+)', challenge.challenge_text)
             if file_path_match:
                 file_path = file_path_match.group(1).strip()
                 log.info(f"Found uploaded file: {file_path}")
 
-            # Update status
             challenge.status = "building_skills"
             await session.commit()
 
-            # Create skill builder
             builder = AutonomousSkillBuilder(session_factory=AsyncSessionLocal)
 
             built_skill_ids = []
@@ -1894,7 +1763,6 @@ async def _run_autonomous_skill_building(
                 log.info(f"Building skill for: {capability}")
 
                 try:
-                    # Prepare test input - include file path if available
                     test_input = {}
                     input_files = {}
 
@@ -1903,7 +1771,6 @@ async def _run_autonomous_skill_building(
                         with open(file_path, "rb") as f:
                             input_files[os.path.basename(file_path)] = f.read()
 
-                    # Build the skill
                     build_result = await builder.build_skill(
                         capability=capability,
                         test_input=test_input if test_input else {"test": True},
@@ -1914,18 +1781,15 @@ async def _run_autonomous_skill_building(
                         built_skill_ids.append(build_result.skill_id)
                         log.info(f"Successfully built skill: {build_result.skill_id}")
 
-                        # NOW USE THE SKILL to process the original file
                         if file_path and os.path.exists(file_path) and build_result.skill:
                             log.info(f"Using new skill to process: {file_path}")
                             try:
                                 executor = AutonomousExecutorService(db=session)
                                 skill_meta = build_result.skill.skill_metadata or {}
 
-                                # Get requirements from metadata, with fallback detection
                                 pip_requirements = skill_meta.get("pip_requirements", [])
                                 system_packages = skill_meta.get("system_packages", [])
 
-                                # Ensure requirements are detected if metadata is incomplete
                                 if not pip_requirements:
                                     pip_requirements = _detect_pip_requirements(
                                         build_result.skill.code, capability
@@ -1952,7 +1816,6 @@ async def _run_autonomous_skill_building(
                                     })
                                     log.info(f"File processed successfully: {exec_result.output}")
 
-                                    # Update challenge text with the result (e.g., transcription)
                                     if capability == "audio transcription" and exec_result.output:
                                         if isinstance(exec_result.output, dict):
                                             transcript = (
@@ -1990,7 +1853,6 @@ Analyze the above transcribed content.
                     log.error(f"Error building skill for {capability}: {e}")
                     failed_capabilities.append(capability)
 
-            # Update challenge with results
             challenge.built_capability_ids = built_skill_ids
 
             if len(built_skill_ids) == len(gaps):
@@ -2005,7 +1867,6 @@ Analyze the above transcribed content.
                 challenge.build_plan_status = BuildPlanStatus.FAILED.value
                 log.error(f"Failed to build any skills")
 
-            # Store processing results
             if processing_results:
                 challenge.execution_results = {
                     "processing_results": processing_results,
@@ -2019,7 +1880,6 @@ Analyze the above transcribed content.
         except Exception as e:
             log.error(f"Autonomous skill building failed: {e}")
 
-            # Session may be in a broken state — rollback before retrying
             try:
                 await session.rollback()
             except Exception:
@@ -2085,10 +1945,6 @@ async def build_skill_directly(
         )
 
 
-# ============================================================================
-# Monitoring & Metrics Endpoints (Phase 4)
-# ============================================================================
-
 class ExecutorMetricsResponse(BaseModel):
     """Execution metrics for monitoring."""
     total_executions: int
@@ -2115,7 +1971,7 @@ class CacheStatsResponse(BaseModel):
 
 class SystemHealthResponse(BaseModel):
     """System health status."""
-    status: str  # healthy, degraded, unhealthy
+    status: str
     docker_available: bool
     database_connected: bool
     executor_metrics: ExecutorMetricsResponse
@@ -2185,18 +2041,14 @@ async def get_system_health(
     """
     from app.skills.testing.docker_sandbox import DynamicSandboxService
 
-    # Check Docker
     sandbox = DynamicSandboxService()
     docker_available = sandbox.is_available()
 
-    # Check database (we're already connected if we got here)
     database_connected = True
 
-    # Get executor metrics
     executor = AutonomousExecutorService(db=session)
     metrics = executor.get_metrics()
 
-    # Get cache stats (if available)
     cache_stats = None
     try:
         stats = await executor.get_cache_stats()
@@ -2213,7 +2065,6 @@ async def get_system_health(
     except Exception:
         pass
 
-    # Determine overall status
     if docker_available and database_connected:
         status = "healthy"
     elif docker_available or database_connected:

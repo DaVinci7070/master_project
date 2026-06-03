@@ -1,0 +1,75 @@
+%%{init: {'theme':'base', 'fontFamily':'Arial, Helvetica, sans-serif', 'themeVariables': {
+  'fontFamily': 'Arial, Helvetica, sans-serif',
+  'fontSize': '14px',
+  'lineColor': '#9AA7C7',
+  'primaryTextColor': '#26344D',
+  'clusterBorder': '#DCE3F2'
+}}}%%
+flowchart LR
+    RUN(["Task-Ausführung<br/>(Main Team)"])
+
+    subgraph Analysis["Analyse"]
+        FA("Failure Analyzer")
+        STAT("Statistical Analyzer<br/>(Erfolgsraten, Muster)")
+        FA --> STAT
+    end
+
+    subgraph Decisions["Entscheidung"]
+        PO("Product Owner<br/>(was verbessern?)")
+        QJ("Quality Judge<br/>(Gut genug?)")
+        CTRL("Control Agent<br/>(Steuerung)")
+        PO --> QJ --> CTRL
+    end
+
+    subgraph Improvement["Verbesserung"]
+        PE("Prompt Engineer")
+        TB("Tool Builder<br/>(neue Skills)")
+        AB("A/B-Testing")
+        RB("Rollback<br/>(bei Regression)")
+        PE --> AB
+        TB --> AB
+        AB --> RB
+    end
+
+    REG[("Skill / Agent Registry<br/>versioniert")]
+
+    RUN -->|"Logs, Fehler, Scores"| FA
+    STAT --> PO
+    CTRL -->|"Verbesserungsauftrag"| PE
+    CTRL -->|"Verbesserungsauftrag"| TB
+    AB -->|"besser?"| REG
+    RB -->|"schlechter -> zurück"| REG
+    REG -->|"aktualisierte Fähigkeiten"| RUN
+
+    subgraph Legende[" Legende "]
+        direction LR
+        L1("Analyse")
+        L2("Entscheidung")
+        L3("Verbesserung")
+        L4("Registry")
+        L1 ~~~ L2 ~~~ L3 ~~~ L4
+    end
+
+    Legende ~~~ RUN
+
+    classDef io fill:#E0E7FF,stroke:#7C8CE4,stroke-width:1.5px,color:#26344D;
+    classDef teal fill:#D2F0EC,stroke:#46B5A8,stroke-width:1.5px,color:#26344D;
+    classDef purple fill:#E7DEFA,stroke:#9676E0,stroke-width:1.5px,color:#26344D;
+    classDef peach fill:#FBE3D2,stroke:#EE9F62,stroke-width:1.5px,color:#26344D;
+    classDef rose fill:#FBDCE6,stroke:#E5759B,stroke-width:1.5px,color:#26344D;
+
+    class RUN io;
+    class FA,STAT teal;
+    class PO,QJ,CTRL purple;
+    class PE,TB,AB,RB peach;
+    class REG rose;
+
+    class L1 teal;
+    class L2 purple;
+    class L3 peach;
+    class L4 rose;
+
+    style Analysis fill:#ECFAF8,stroke:#BFE9E2;
+    style Decisions fill:#F4EFFE,stroke:#DCCDF7;
+    style Improvement fill:#FEF2EA,stroke:#F6D9C2;
+    style Legende fill:#FBFCFE,stroke:#DCE3F2;

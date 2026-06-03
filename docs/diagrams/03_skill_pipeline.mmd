@@ -1,0 +1,104 @@
+%%{init: {'theme':'base', 'fontFamily':'Arial, Helvetica, sans-serif', 'themeVariables': {
+  'fontFamily': 'Arial, Helvetica, sans-serif',
+  'fontSize': '14px',
+  'lineColor': '#9AA7C7',
+  'primaryTextColor': '#26344D',
+  'clusterBorder': '#DCE3F2'
+}}}%%
+flowchart TB
+    subgraph Legende[" Legende "]
+        direction LR
+        L1("Funktional-Team")
+        L2("Planning")
+        L3("Fehler-Loop")
+        L4("Gatekeeper")
+        L5("Aktivierung / Registry")
+        L1 ~~~ L2 ~~~ L3 ~~~ L4 ~~~ L5
+    end
+
+    GAP(["Erkannte Fähigkeitslücke<br/>(Gap Detector)"])
+    TYPE{"Skill-Typ?"}
+    PROP("PROPOSER<br/>brainstormt 3+ Reasoning-Ansätze<br/>(build_path: planning_proposer)")
+
+    subgraph Team["Funktional-Skill — 5 Rollen"]
+        direction TB
+        R1("1. Researcher<br/>recherchiert Lösungsansatz")
+        R2("2. Architect<br/>entwirft Blueprint S = (C, π, T, R)")
+        R3("3. Implementer<br/>schreibt Code · Docker-Sandbox")
+        R4("4. Reviewer<br/>prüft Code (max 2 Runden)")
+        R5("5. Tester<br/>generiert Testcases")
+        R1 --> R2 --> R3 --> R4 --> R5
+    end
+
+    subgraph ErrLoop["Fehler-Klassifikation — 8 ErrorTypes (max 10 Iterationen)"]
+        direction TB
+        EC{"ErrorType?"}
+        E1("IMPORT / DEPENDENCY<br/>→ Paket / Library wechseln")
+        E2("SYNTAX / STRUCTURE<br/>→ Code neu schreiben")
+        E3("RUNTIME / SEMANTIC / TIMEOUT / RESOURCE<br/>→ Ansatz anpassen")
+        EC --> E1
+        EC --> E2
+        EC --> E3
+    end
+
+    subgraph Gatekeeper["Semantischer Gatekeeper (RQ3)"]
+        AST("AST-Analyse<br/>(statische Sicherheit)")
+        ALIGN("Alignment-Validierung<br/>(Code ↔ Beschreibung, ≥ 0.6)")
+        AST --> ALIGN
+    end
+
+    SBX("Docker-Sandbox<br/>Testcases ausführen")
+    DEC{"Tests bestanden<br/>+ Gatekeeper OK?"}
+    ACT(["Skill aktiviert<br/>in Registry (DB-06)"])
+    REJ("Abgelehnt<br/>Re-Build / Verwerfen")
+
+    RAG[("Skill-Registry · PostgreSQL<br/>aktivierte Skills wiederverwendbar<br/>RQ2: Warm-Start")]
+
+    Legende ~~~ GAP
+    GAP --> TYPE
+    TYPE -->|"Functional-Skill"| R1
+    TYPE -->|"Planning-Skill"| PROP
+    RAG -.->|"ähnliche Skills (DB-Query)"| R2
+    R3 -.->|"Build / Test-Fehler"| EC
+    E1 -.->|"Retry"| R3
+    E2 -.-> R3
+    E3 -.-> R3
+    R5 --> AST
+    ALIGN --> SBX
+    SBX --> DEC
+    DEC -->|"ja"| ACT
+    DEC -->|"nein"| REJ
+    PROP -->|"Planning-Blueprint"| ACT
+    ACT -.->|"Skill aktiviert / persistiert"| RAG
+
+    classDef io fill:#E0E7FF,stroke:#7C8CE4,stroke-width:1.5px,color:#26344D;
+    classDef blue fill:#D7E6FF,stroke:#6F9CEB,stroke-width:1.5px,color:#26344D;
+    classDef purple fill:#E7DEFA,stroke:#9676E0,stroke-width:1.5px,color:#26344D;
+    classDef teal fill:#D2F0EC,stroke:#46B5A8,stroke-width:1.5px,color:#26344D;
+    classDef green fill:#D8F1DF,stroke:#5BB97D,stroke-width:1.5px,color:#26344D;
+    classDef rose fill:#FBDCE6,stroke:#E5759B,stroke-width:1.5px,color:#26344D;
+    classDef peach fill:#FBE3D2,stroke:#EE9F62,stroke-width:1.5px,color:#26344D;
+    classDef lav fill:#E2E0F7,stroke:#8B86D6,stroke-width:1.5px,color:#26344D;
+
+    class GAP io;
+    class TYPE,DEC peach;
+    class PROP lav;
+    class R1,R2,R3,R4,R5 blue;
+    class EC peach;
+    class E1,E2,E3 rose;
+    class AST,ALIGN purple;
+    class SBX teal;
+    class ACT green;
+    class REJ rose;
+    class RAG rose;
+
+    class L1 blue;
+    class L2 lav;
+    class L3 rose;
+    class L4 purple;
+    class L5 green;
+
+    style Team fill:#EEF4FF,stroke:#C7D7F5;
+    style ErrLoop fill:#FEF0F4,stroke:#F6CEDC;
+    style Gatekeeper fill:#F4EFFE,stroke:#DCCDF7;
+    style Legende fill:#FBFCFE,stroke:#DCE3F2;

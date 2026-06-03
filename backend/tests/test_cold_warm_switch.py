@@ -1,9 +1,3 @@
-"""
-Tests for F18 — Cold/Warm DB Switch.
-
-Covers: transactional truncation, idempotency, rollback safety,
-Qdrant cleanup, seeding, warm save/restore CLI, and argument parsing.
-"""
 from __future__ import annotations
 
 import subprocess
@@ -18,7 +12,6 @@ from app.models.sql.versioned_models import Agent, Prompt, Skill
 from app.models.sql.shared_memory_models import Fact, Hypothesis
 from app.models.sql.improvement_models import ImprovementAttempt
 
-# Module under test — import functions directly
 from scripts.evaluation.cold_warm_switch import (
     cold_reset,
     _truncate_all_tables,
@@ -33,10 +26,6 @@ from scripts.evaluation.cold_warm_switch import (
     VECTOR_SIZE,
 )
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 async def _seed_test_data(session: AsyncSession) -> None:
     """Insert minimal test data into several tables."""
@@ -104,26 +93,19 @@ async def _count_rows(session: AsyncSession, model) -> int:
     return result.scalar() or 0
 
 
-# ---------------------------------------------------------------------------
-# Cold reset tests
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
 async def test_cold_truncate_clears_all_tables(test_engine, test_session):
     """Seed data, truncate, verify all tables empty."""
     await _seed_test_data(test_session)
 
-    # Verify data exists before truncation
     assert await _count_rows(test_session, Prompt) > 0
     assert await _count_rows(test_session, Agent) > 0
     assert await _count_rows(test_session, Skill) > 0
     assert await _count_rows(test_session, Fact) > 0
 
-    # Truncate
     count = await _truncate_all_tables(test_engine)
     assert count == len(COLD_TRUNCATION_TABLES)
 
-    # Verify all empty — need a fresh session to see post-truncation state
     from sqlalchemy.ext.asyncio import AsyncSession as AS
     from sqlalchemy.orm import sessionmaker as sm
 
@@ -142,9 +124,7 @@ async def test_cold_truncate_idempotent(test_engine, test_session):
     """Running truncation twice should not error."""
     await _seed_test_data(test_session)
 
-    # First truncation
     count1 = await _truncate_all_tables(test_engine)
-    # Second truncation on empty tables
     count2 = await _truncate_all_tables(test_engine)
 
     assert count1 == count2 == len(COLD_TRUNCATION_TABLES)
@@ -157,7 +137,6 @@ async def test_cold_truncate_does_not_affect_separate_engine(test_engine, test_s
     original_count = await _count_rows(test_session, Prompt)
     assert original_count > 0
 
-    # Create a separate in-memory SQLite engine (completely independent DB)
     from sqlalchemy.ext.asyncio import create_async_engine as _cae
     from sqlalchemy.pool import StaticPool as _SP
 
@@ -166,11 +145,9 @@ async def test_cold_truncate_does_not_affect_separate_engine(test_engine, test_s
         poolclass=_SP,
         connect_args={"check_same_thread": False},
     )
-    # Truncate the *other* engine — should not touch our test data
     await _truncate_all_tables(other_engine)
     await other_engine.dispose()
 
-    # Our original engine's data must be intact
     assert await _count_rows(test_session, Prompt) == original_count
 
 
@@ -188,20 +165,14 @@ async def test_cold_dry_run_no_side_effects(test_engine, test_session):
 
     assert result.get("dry_run") is True
     assert result["tables_truncated"] == 0
-    # Original data should be untouched
     assert await _count_rows(test_session, Prompt) == original_prompt_count
 
-
-# ---------------------------------------------------------------------------
-# Qdrant cleanup tests
-# ---------------------------------------------------------------------------
 
 def test_cold_qdrant_cleanup():
     """Verify Qdrant collections are deleted and recreated with correct params."""
     mock_client = MagicMock()
     mock_client.collection_exists.return_value = True
 
-    # Patch at the actual import location (lazy import inside the function)
     with patch("qdrant_client.QdrantClient", return_value=mock_client):
         cleared = _clear_qdrant_collections("http://localhost:6333")
 
@@ -209,33 +180,22 @@ def test_cold_qdrant_cleanup():
     assert "shared_memory_facts" in cleared
     assert "shared_memory_hypotheses" in cleared
 
-    # Verify delete was called for both existing collections
     assert mock_client.delete_collection.call_count == 2
 
-    # Verify create was called for both collections
     assert mock_client.create_collection.call_count == 2
 
-    # Verify indexes were created (6 indexes x 2 collections = 12)
     assert mock_client.create_payload_index.call_count == 12
 
-
-# ---------------------------------------------------------------------------
-# Seed tests
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_cold_seed_after_truncate(test_engine):
     """After truncation, seeding should create the expected agents."""
-    # First truncate
     await _truncate_all_tables(test_engine)
 
-    # Then seed
     count = await _seed_from_default(test_engine)
 
-    # Should have created agents (exact count depends on seed_agents.py)
     assert count > 0
 
-    # Verify agents exist in DB
     from sqlalchemy.ext.asyncio import AsyncSession as AS
     from sqlalchemy.orm import sessionmaker as sm
 
@@ -245,13 +205,8 @@ async def test_cold_seed_after_truncate(test_engine):
         prompt_count = await _count_rows(session, Prompt)
         assert agent_count > 0
         assert prompt_count > 0
-        # Each agent should have a prompt
         assert agent_count == prompt_count
 
-
-# ---------------------------------------------------------------------------
-# Warm snapshot tests
-# ---------------------------------------------------------------------------
 
 def test_warm_save_calls_pg_dump():
     """Verify pg_dump is called with correct arguments."""
@@ -268,7 +223,6 @@ def test_warm_save_calls_pg_dump():
             database_url="postgresql+asyncpg://lumari:lumari_dev@localhost:5432/lumari",
         )
 
-        # pg_dump called
         mock_run.assert_called_once()
         call_args = mock_run.call_args
         cmd = call_args[0][0] if call_args[0] else call_args.kwargs.get("args", [])
@@ -278,7 +232,6 @@ def test_warm_save_calls_pg_dump():
         assert "--format=custom" in cmd
         assert "/tmp/test.dump" in cmd
 
-        # Password passed via env
         env = call_args.kwargs.get("env") or call_args[1].get("env", {})
         assert env.get("PGPASSWORD") == "lumari_dev"
 
@@ -352,10 +305,6 @@ def test_warm_restore_file_not_found():
         )
 
 
-# ---------------------------------------------------------------------------
-# URL parsing tests
-# ---------------------------------------------------------------------------
-
 def test_parse_pg_url_full():
     """Parse a full asyncpg URL."""
     result = parse_pg_url("postgresql+asyncpg://lumari:lumari_dev@localhost:5432/lumari")
@@ -385,10 +334,6 @@ def test_parse_pg_url_defaults():
     assert result["port"] == 5432
     assert result["dbname"] == "testdb"
 
-
-# ---------------------------------------------------------------------------
-# CLI argument parsing tests
-# ---------------------------------------------------------------------------
 
 def test_parse_args_cold():
     args = parse_args(["cold"])

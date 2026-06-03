@@ -1,4 +1,3 @@
-"""Migration utility for hardcoded agents to database."""
 import logging
 import yaml
 from pathlib import Path
@@ -86,14 +85,12 @@ class AgentMigrator:
             logger.warning("Agent config missing name, skipping")
             return None
 
-        # Check if agent already exists (idempotent)
         existing = await self._get_agent_by_name(name)
         if existing:
             logger.debug(f"Agent '{name}' already exists, skipping")
             self._skipped_agents.append(name)
             return None
 
-        # Migrate prompt if present
         prompt_id = None
         prompt_content = config.get("prompt")
         if prompt_content:
@@ -104,7 +101,6 @@ class AgentMigrator:
             )
             self._migrated_prompts.append(f"{name}_prompt")
 
-        # Create agent
         agent_id = str(uuid4())
         agent = Agent(
             id=agent_id,
@@ -136,7 +132,6 @@ class AgentMigrator:
         metadata: Optional[dict] = None
     ) -> str:
         """Create prompt in database."""
-        # Check if prompt exists
         result = await self.db.execute(
             select(Prompt).where(Prompt.name == name)
         )
@@ -190,7 +185,6 @@ class AgentMigrator:
         Returns:
             Created prompt ID
         """
-        # Check if prompt exists
         result = await self.db.execute(
             select(Prompt).where(Prompt.name == name)
         )

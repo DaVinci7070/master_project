@@ -1,11 +1,3 @@
-"""Intervention orchestrator for autonomous capability building.
-
-Refactored to use Gap Plan approach:
-- Creates fixed gap list at start (no re-analysis during build)
-- Works through gaps sequentially via GapPlanExecutor
-- Only re-assesses at END of cycle
-- Max 3 cycles instead of 5 iterations per gap
-"""
 import asyncio
 import logging
 import re
@@ -33,7 +25,6 @@ from app.orchestration.execution.gap_verification import GapVerificationService
 
 logger = logging.getLogger(__name__)
 
-# Max cycles for gap resolution (3 instead of 5 iterations)
 MAX_CYCLES = 3
 
 
@@ -102,31 +93,25 @@ class InterventionOrchestrator:
             f"attempt={challenge.attempt_number}/{challenge.max_attempts}"
         )
 
-        # Mark as building
         await self.queue.mark_building(challenge.id)
 
-        # Track all built results across cycles
         all_built_results: list[BuildResult] = []
         all_built_artifact_ids: list[str] = []
 
-        # Check if we have an active plan for this challenge
         active_plan = await self.plan_service.get_active_plan(challenge.id)
 
         if active_plan:
-            # Resume existing plan
             logger.info(
                 f"Resuming existing gap plan: {active_plan.id[:8]}..., "
                 f"cycle={active_plan.cycle_number}, "
                 f"progress={active_plan.completed_gaps}/{active_plan.total_gaps}"
             )
         else:
-            # Create new gap plan from initial assessment
             should_create, cycle_number = await self.plan_service.should_create_new_cycle(
                 challenge.id, max_cycles=MAX_CYCLES
             )
 
             if not should_create:
-                # Max cycles reached or active plan exists
                 logger.warning(
                     f"Cannot create new cycle for challenge {challenge.id[:8]}..., "
                     f"max_cycles={MAX_CYCLES} reached or active plan exists"
@@ -145,7 +130,6 @@ class InterventionOrchestrator:
                     message=f"Failed: Max {MAX_CYCLES} cycles reached for gap resolution"
                 )
 
-            # Create gap plan from challenge's gaps snapshot
             gaps = [
                 CapabilityGap(**g) for g in (challenge.gaps_snapshot or [])
             ]
@@ -173,7 +157,6 @@ class InterventionOrchestrator:
                 f"cycle={cycle_number}, gaps={len(gaps)}"
             )
 
-        # Execute the gap plan (no re-analysis during execution!)
         cycle_results, cycle_artifacts = await self.plan_executor.execute_plan(
             plan_id=active_plan.id,
             challenge_text=challenge.challenge_text,
@@ -184,8 +167,6 @@ class InterventionOrchestrator:
         all_built_results.extend(cycle_results)
         all_built_artifact_ids.extend(cycle_artifacts)
 
-        # VERIFICATION instead of Re-Analysis (no LLM call!)
-        # This prevents the LLM from "discovering" new gaps each time
         logger.info(
             f"Verifying gap closure after cycle {active_plan.cycle_number}, "
             f"built {len(cycle_artifacts)} capabilities"
@@ -198,13 +179,10 @@ class InterventionOrchestrator:
             f"all_closed={verification_result.all_closed}"
         )
 
-        # Check if all gaps are now closed
         if verification_result.all_closed:
-            # Success! All original gaps are fulfilled
             await self.queue.mark_built(challenge.id, all_built_artifact_ids)
             await self.queue.mark_resolved(challenge.id)
 
-            # Notify user
             await self._notify_user_resolved(challenge, all_built_artifact_ids)
 
             logger.info(
@@ -222,11 +200,8 @@ class InterventionOrchestrator:
                         f"All {verification_result.total_gaps} gaps closed. Ready for execution."
             )
 
-        # Still have open gaps - check if we can create a new cycle
         open_gaps = verification_result.open_gaps
         if open_gaps and active_plan.cycle_number < MAX_CYCLES:
-            # Create new cycle with ONLY the remaining open gaps (not new ones!)
-            # Convert open gap dicts back to CapabilityGap objects
             remaining_gaps = []
             for gap in open_gaps:
                 try:
@@ -252,7 +227,6 @@ class InterventionOrchestrator:
                     f"(not new ones!) for challenge {challenge.id[:8]}..."
                 )
 
-                # Mark as built with current artifacts
                 await self.queue.mark_built(challenge.id, all_built_artifact_ids)
 
                 return InterventionResponse(
@@ -265,7 +239,6 @@ class InterventionOrchestrator:
                             f"cycle {new_plan.cycle_number} will retry {len(remaining_gaps)} remaining gaps"
                 )
 
-        # Max cycles reached or no more gaps to try
         await self.queue.mark_built(challenge.id, all_built_artifact_ids)
 
         failure_msg = (
@@ -284,7 +257,6 @@ class InterventionOrchestrator:
         )
 
         if not more_attempts:
-            # Max attempts reached
             await self._handle_max_attempts_reached(
                 challenge, all_built_artifact_ids, failure_msg
             )
@@ -297,7 +269,6 @@ class InterventionOrchestrator:
                 message=f"Failed after {challenge.max_attempts} attempts, {active_plan.cycle_number} cycles"
             )
 
-        # More attempts available
         return InterventionResponse(
             challenge_id=challenge.id,
             status=ChallengeStatus.QUEUED,
@@ -334,23 +305,17 @@ class InterventionOrchestrator:
 
         Returns a normalized key that matches semantically similar capabilities.
         """
-        # Lowercase
         normalized = name.lower().strip()
 
-        # Remove content in parentheses (details like "downtime costs", "DSGVO, BaFin")
         normalized = re.sub(r'\s*\([^)]*\)', '', normalized)
 
-        # Replace underscores and hyphens with spaces
         normalized = normalized.replace('_', ' ').replace('-', ' ')
 
-        # Remove extra whitespace
         normalized = ' '.join(normalized.split())
 
-        # Remove trailing 's' for simple plural handling (but not for words like "analysis")
         words = normalized.split()
         normalized_words = []
         for word in words:
-            # Don't de-pluralize words ending in 'sis', 'ss', or short words
             if len(word) > 4 and word.endswith('s') and not word.endswith(('sis', 'ss', 'us')):
                 normalized_words.append(word[:-1])
             else:
@@ -370,15 +335,11 @@ class InterventionOrchestrator:
 
         Per RESEARCH pitfall 4: Deactivate provisional capabilities.
         """
-        # Deactivate provisional capabilities to prevent pollution
-        # Query the artifacts to determine types
         for artifact_id in built_artifact_ids:
-            # Try to find the type
             artifact_type = await self._determine_artifact_type(artifact_id)
             if artifact_type:
                 await self.builder.deactivate_provisional(artifact_type, artifact_id)
 
-        # Notify user
         await self._notify_user_failed(challenge, final_failure)
 
     async def _determine_artifact_type(self, artifact_id: str) -> Optional[str]:
@@ -483,7 +444,6 @@ class InterventionOrchestrator:
             result = await skill_team.develop_skill(capability=capability)
 
             if result.success and result.skill_id:
-                # Inject into topology
                 if result.integration_plan and result.integration_plan.target_agent_id:
                     inject_ok, inject_msg = await self.injector.inject_with_plan(
                         plan=result.integration_plan,
@@ -533,13 +493,10 @@ class InterventionOrchestrator:
 
         while True:
             try:
-                # Get next queued challenge
                 challenge = await self.queue.get_next_queued()
 
                 if challenge:
-                    # Process with retry wait if needed
                     if challenge.attempt_number > 1:
-                        # Wait before retry (per retry strategy)
                         await RetryStrategy.wait_before_retry(
                             challenge.attempt_number - 1
                         )
@@ -552,12 +509,10 @@ class InterventionOrchestrator:
                         f"route={response.route_decision}"
                     )
                 else:
-                    # No challenges queued - wait before checking again
                     await asyncio.sleep(poll_interval_seconds)
 
             except Exception as e:
                 logger.error(f"Intervention loop error: {e}", exc_info=True)
-                # Back off on error
                 await asyncio.sleep(poll_interval_seconds * 2)
 
     async def process_single_challenge(
@@ -620,7 +575,6 @@ async def create_intervention_orchestrator(
 
     llm_client = LLMClient()
 
-    # Qdrant-Adapter (optional — SharedMemory nicht essentiell für Builds)
     qdrant_adapter = None
     shared_memory = None
     try:
@@ -630,7 +584,6 @@ async def create_intervention_orchestrator(
         qdrant_adapter = SharedMemoryQdrantAdapter(qdrant_client)
         await qdrant_adapter.ensure_collections()
 
-        # SharedMemory bekommt eigene Session (TODO: auf Factory umbauen)
         sm_db = session_factory()
         shared_memory = SharedMemoryService(
             db=sm_db,
@@ -644,7 +597,6 @@ async def create_intervention_orchestrator(
     topology_loader = TopologyLoader(session_factory)
     await topology_loader.load()
 
-    # Developer Team
     registry = RuntimeAgentRegistry(max_concurrent_agents=5)
     spawner = AgentSpawnerService(registry, llm_client)
     developer_team = DeveloperTeamOrchestrator(
@@ -653,7 +605,6 @@ async def create_intervention_orchestrator(
         registry=registry
     )
 
-    # Pre-Execution Orchestrator
     pre_execution = PreExecutionOrchestrator(
         topology_loader=topology_loader,
         shared_memory=shared_memory,
@@ -661,7 +612,6 @@ async def create_intervention_orchestrator(
         structured_llm_fn=structured_llm_fn,
     )
 
-    # Intervention-Komponenten
     queue_manager = BlockedChallengeQueue(session_factory)
     capability_builder = CapabilityBuilder(developer_team, session_factory)
     injector = CapabilityInjector(topology_loader, session_factory)

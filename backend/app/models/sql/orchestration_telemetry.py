@@ -1,4 +1,3 @@
-"""Phase-Token-Telemetrie pro Challenge-Execution (Orchestrator-Level)."""
 import uuid
 from sqlalchemy import Column, String, Integer, DateTime, Index
 
@@ -17,7 +16,6 @@ class OrchestrationTelemetry(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     execution_id = Column(String(36), nullable=False, index=True, unique=True)
 
-    # Phase-Tokens
     tokens_assembly = Column(Integer, default=0)
     tokens_execution = Column(Integer, default=0)
     tokens_verification = Column(Integer, default=0)
@@ -25,7 +23,6 @@ class OrchestrationTelemetry(Base):
     tokens_self_healing = Column(Integer, default=0)
     tokens_total = Column(Integer, default=0)
 
-    # Adapt-Metriken
     adapt_rounds = Column(Integer, default=0)
     verification_score = Column(Integer, default=0)
 

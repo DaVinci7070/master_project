@@ -1,19 +1,8 @@
-"""
-Pydantic schemas for telemetry operations.
-
-These schemas handle validation for:
-- Creating new telemetry records (ExecutionTelemetryCreate)
-- Updating telemetry when execution completes (ExecutionTelemetryUpdate)
-- API responses (ExecutionTelemetryResponse)
-- Aggregation queries for dashboards (TelemetryAggregation)
-- Quick summary statistics (TelemetrySummary)
-"""
 from datetime import datetime
 from typing import Optional, Literal
 from pydantic import BaseModel, Field, ConfigDict
 
 
-# Outcome type for execution status
 OutcomeType = Literal["success", "error", "timeout", "cancelled", "running"]
 
 
@@ -51,7 +40,6 @@ class ExecutionTelemetryCreate(BaseModel):
         description="Initial execution outcome"
     )
 
-    # Optional fields that may be known at creation time
     trace_id: Optional[str] = Field(
         default=None,
         max_length=64,
@@ -140,25 +128,20 @@ class ExecutionTelemetryResponse(BaseModel):
     completed_at: Optional[datetime] = Field(None, description="When execution completed")
     latency_ms: Optional[float] = Field(None, description="Execution time in milliseconds")
 
-    # Token usage
     tokens_input: int = Field(default=0, description="Input tokens consumed")
     tokens_output: int = Field(default=0, description="Output tokens generated")
     tokens_total: int = Field(default=0, description="Total tokens used")
 
-    # Hashes for deduplication
     input_hash: str = Field(..., description="SHA-256 hash of input")
     output_hash: Optional[str] = Field(None, description="SHA-256 hash of output")
 
-    # Outcome and errors
     outcome: OutcomeType = Field(..., description="Execution outcome")
     error_message: Optional[str] = Field(None, description="Error message if failed")
     error_type: Optional[str] = Field(None, description="Error type if failed")
 
-    # Tracing
     trace_id: Optional[str] = Field(None, description="OpenTelemetry trace ID")
     span_id: Optional[str] = Field(None, description="OpenTelemetry span ID")
 
-    # Metadata
     execution_metadata: dict = Field(default_factory=dict, description="Additional metadata")
 
 
@@ -175,7 +158,6 @@ class TelemetryAggregation(BaseModel):
     timeout_executions: int = Field(default=0, ge=0, description="Number of timed out executions")
     cancelled_executions: int = Field(default=0, ge=0, description="Number of cancelled executions")
 
-    # Success rate as percentage (0-100)
     success_rate: float = Field(
         ...,
         ge=0,
@@ -183,7 +165,6 @@ class TelemetryAggregation(BaseModel):
         description="Success rate as percentage"
     )
 
-    # Latency statistics
     avg_latency_ms: Optional[float] = Field(
         None,
         ge=0,
@@ -215,7 +196,6 @@ class TelemetryAggregation(BaseModel):
         description="99th percentile latency"
     )
 
-    # Token statistics
     total_tokens_input: int = Field(default=0, ge=0, description="Total input tokens")
     total_tokens_output: int = Field(default=0, ge=0, description="Total output tokens")
     total_tokens: int = Field(default=0, ge=0, description="Total tokens used")
@@ -225,7 +205,6 @@ class TelemetryAggregation(BaseModel):
         description="Average tokens per execution"
     )
 
-    # Time range
     period_start: Optional[datetime] = Field(None, description="Start of aggregation period")
     period_end: Optional[datetime] = Field(None, description="End of aggregation period")
 

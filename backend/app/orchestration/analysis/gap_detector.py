@@ -1,4 +1,3 @@
-"""Gap detector for identifying capability deficiencies."""
 import logging
 import os
 from typing import Callable, Awaitable, Optional
@@ -16,12 +15,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Thresholds for capability matching (configurable via ENV)
-# Lowered from 0.95 to 0.90 - 0.95 was too strict and caused false negatives
 CAN_DO_THRESHOLD = float(os.getenv("CAPABILITY_CAN_DO_THRESHOLD", "0.90"))
 MAYBE_THRESHOLD = float(os.getenv("CAPABILITY_MAYBE_THRESHOLD", "0.50"))
 
-# LLM prompt for nuanced gap identification
 GAP_IDENTIFICATION_PROMPT = """You are analyzing a system's capability to handle a challenge.
 
 ## Challenge
@@ -97,7 +93,6 @@ class GapDetector:
         Returns:
             (gaps, confidence_level, factors)
         """
-        # 0. Reine KNOWLEDGE-Tasks koennen immer vom Main-Team geloest werden
         all_knowledge = all(
             m.capability_type == CapabilityType.KNOWLEDGE
             for m in context.capability_matches
@@ -110,23 +105,18 @@ class GapDetector:
             factors = ["All capabilities are knowledge-type (reasoning only)"]
             return [], ConfidenceLevel.CAN_DO, factors
 
-        # 1. Check for immediate CANNOT_DO conditions
         cannot_do_gaps, cannot_do_factors = self._check_cannot_do_conditions(context)
         if cannot_do_gaps:
-            # Limit factors to avoid validation errors
             return cannot_do_gaps, ConfidenceLevel.CANNOT_DO, cannot_do_factors[:5]
 
-        # 2. Check for CAN_DO conditions (all capabilities sufficient)
         if await self._all_capabilities_sufficient(context):
             factors = ["All required capabilities matched"]
             if context.confidence_boost > 0:
                 factors.append("Similar past successes found")
             return [], ConfidenceLevel.CAN_DO, factors
 
-        # 3. MAYBE case - use LLM for nuanced gap identification
         gaps = await self._identify_gaps_with_llm(context)
 
-        # Add gaps from feasibility check (execution capabilities without tool backing)
         for infeasible in context.infeasible_capabilities:
             gap = CapabilityGap(
                 gap_type=GapType.MISSING_SKILL,
@@ -155,8 +145,6 @@ class GapDetector:
         gaps = []
         factors = []
 
-        # Check for very low capability matches
-        # KNOWLEDGE-Caps haben niedrigeren CANNOT_DO-Threshold (Reasoning braucht kein exaktes Match)
         KNOWLEDGE_CANNOT_DO = float(os.getenv("CAPABILITY_KNOWLEDGE_CANNOT_DO", "0.30"))
         for match in context.capability_matches:
             threshold = (
@@ -174,7 +162,6 @@ class GapDetector:
                 gaps.append(gap)
                 factors.append(f"Missing: {match.required_capability}")
 
-        # Check topology dependency issues
         if context.topology_capabilities and context.topology_capabilities.has_dependency_issues:
             for issue in context.topology_capabilities.dependency_issues[:2]:
                 gap = CapabilityGap(
@@ -186,7 +173,6 @@ class GapDetector:
                 gaps.append(gap)
             factors.append("Topology dependency issues detected")
 
-        # Check schema issues
         for issue in context.schema_issues[:2]:
             gap = CapabilityGap(
                 gap_type=GapType.SCHEMA_MISMATCH,
@@ -204,7 +190,6 @@ class GapDetector:
         if not context.capability_matches:
             return False
 
-        # KNOWLEDGE-Caps brauchen niedrigeren Threshold — kein Tool-Backing noetig
         KNOWLEDGE_THRESHOLD = float(os.getenv("CAPABILITY_KNOWLEDGE_THRESHOLD", "0.60"))
 
         for match in context.capability_matches:
@@ -220,15 +205,11 @@ class GapDetector:
             if boosted_score < threshold:
                 return False
 
-        # Also check for any topology/schema issues
         if context.topology_capabilities and context.topology_capabilities.has_dependency_issues:
             return False
         if context.schema_issues:
             return False
 
-        # NEW: Feasibility check for execution-type capabilities
-        # Even if embedding scores are high, verify that the matched agents
-        # actually have tools/skills to perform execution tasks
         if self._feasibility_judge:
             execution_matches = [
                 m for m in context.capability_matches
@@ -240,7 +221,6 @@ class GapDetector:
                 )
                 infeasible = [r for r in results if not r.feasible]
                 if infeasible:
-                    # Store results on context for gap creation downstream
                     context.infeasible_capabilities = infeasible
                     logger.info(
                         f"Feasibility check failed for {len(infeasible)} execution capabilities: "
@@ -266,14 +246,12 @@ class GapDetector:
             logger.warning("No LLM function, using rule-based gap identification")
             return self._rule_based_gap_identification(context)
 
-        # Build match scores string
         match_scores = "\n".join(
             f"- {m.required_capability}: {m.similarity_score:.2f} "
             f"(matched: {m.matched_capability or 'none'})"
             for m in context.capability_matches
         )
 
-        # Build topology issues string
         topology_issues = "None"
         if context.topology_capabilities and context.topology_capabilities.dependency_issues:
             topology_issues = "\n".join(
@@ -282,7 +260,6 @@ class GapDetector:
         if context.schema_issues:
             topology_issues += "\n" + "\n".join(f"- {issue}" for issue in context.schema_issues)
 
-        # Build similar successes string
         similar_successes = "None found"
         if context.similar_successes:
             similar_successes = "\n".join(
@@ -309,7 +286,6 @@ class GapDetector:
             )
             gaps = result.gaps
 
-            # Sort by severity: critical first, then important, then minor
             severity_order = {GapSeverity.CRITICAL: 0, GapSeverity.IMPORTANT: 1, GapSeverity.MINOR: 2}
             gaps.sort(key=lambda g: severity_order[g.severity])
 
@@ -328,7 +304,6 @@ class GapDetector:
 
         for match in context.capability_matches:
             if match.similarity_score < CAN_DO_THRESHOLD:
-                # Determine severity based on score
                 if match.similarity_score < MAYBE_THRESHOLD:
                     severity = GapSeverity.CRITICAL
                 elif match.similarity_score < 0.7:
@@ -336,17 +311,15 @@ class GapDetector:
                 else:
                     severity = GapSeverity.MINOR
 
-                # Determine gap type based on capability type
                 if match.matched_capability is None:
-                    # No match at all — classify by capability type
                     if match.capability_type == CapabilityType.KNOWLEDGE:
                         gap_type = GapType.MISSING_PLANNING_SKILL
                     else:
                         gap_type = GapType.MISSING_SKILL
                 elif match.capability_type == CapabilityType.KNOWLEDGE:
-                    gap_type = GapType.MISSING_PLANNING_SKILL  # Weak knowledge match
+                    gap_type = GapType.MISSING_PLANNING_SKILL
                 else:
-                    gap_type = GapType.WEAK_PROMPT  # Partial execution match
+                    gap_type = GapType.WEAK_PROMPT
 
                 gap = CapabilityGap(
                     gap_type=gap_type,
@@ -356,7 +329,6 @@ class GapDetector:
                 )
                 gaps.append(gap)
 
-        # Sort by severity
         severity_order = {GapSeverity.CRITICAL: 0, GapSeverity.IMPORTANT: 1, GapSeverity.MINOR: 2}
         gaps.sort(key=lambda g: severity_order[g.severity])
 
@@ -370,7 +342,6 @@ class GapDetector:
         """Build top factors list for MAYBE verdict."""
         factors = []
 
-        # Count gap types
         critical_count = sum(1 for g in gaps if g.severity == GapSeverity.CRITICAL)
         important_count = sum(1 for g in gaps if g.severity == GapSeverity.IMPORTANT)
 
@@ -379,7 +350,6 @@ class GapDetector:
         if important_count > 0:
             factors.append(f"{important_count} important gap(s)")
 
-        # Add partial match info
         partial_matches = [
             m for m in context.capability_matches
             if MAYBE_THRESHOLD <= m.similarity_score < CAN_DO_THRESHOLD
@@ -388,7 +358,7 @@ class GapDetector:
             caps = [m.required_capability for m in partial_matches[:2]]
             factors.append(f"Partial match: {', '.join(caps)}")
 
-        return factors[:2]  # Max 2 factors per CONTEXT
+        return factors[:2]
 
     def generate_suggestions(
         self,
@@ -416,7 +386,7 @@ class GapDetector:
                 elif gap.gap_type == GapType.SCHEMA_MISMATCH:
                     suggestions.append(f"Update schema for: {gap.affected_capability}")
 
-        return suggestions[:5]  # Limit suggestions
+        return suggestions[:5]
 
     async def build_assessment(
         self,
@@ -429,7 +399,6 @@ class GapDetector:
         """
         gaps, confidence, factors = await self.detect_gaps(context)
 
-        # Generate suggestions for non-CAN_DO cases
         suggestions = []
         if confidence != ConfidenceLevel.CAN_DO:
             suggestions = self.generate_suggestions(gaps)

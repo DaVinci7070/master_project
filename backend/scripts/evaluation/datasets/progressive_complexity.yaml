@@ -834,7 +834,7 @@ tasks:
       1. Analysiere die CSV-Struktur und erkenne die 5 Subunternehmer
       2. Entwirf ein normalisiertes Datenbankschema (mindestens: Subunternehmer,
          Gewerke, Tageseintraege, Material) und erstelle es in der Datenbank
-         (Host: host.docker.internal, Port: 5433, User: benchmark,
+         (Host: benchmark-db, Port: 5432, User: benchmark,
          Passwort: bench2024, DB: lumari_benchmark_db)
       3. Lade alle 50 CSVs in die normalisierte Struktur
       4. Erstelle eine Quartalsübersicht Q3/2025 mit:

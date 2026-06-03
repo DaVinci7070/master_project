@@ -1,26 +1,3 @@
-"""
-Dynamic Sandbox Service for autonomous code execution with full capabilities.
-
-This service implements an OpenClaw-style sandbox that can:
-- Execute code in isolated Docker containers WITH network access
-- Install pip packages at runtime
-- Install system packages (apt-get) at runtime
-- Mount workspace directories for file I/O
-- Cache container images for faster startup
-
-Unlike epicbox (restricted sandbox), this enables self-improving agents that can:
-- Research solutions online
-- Install required libraries
-- Test and iterate on code
-- Persist successful skills with their dependencies
-
-Security is maintained through:
-- Container isolation (no host access)
-- Resource limits (CPU, memory, time)
-- Non-root execution
-- Capability dropping
-"""
-
 import asyncio
 import json
 import logging
@@ -37,7 +14,6 @@ import docker
 from docker.errors import ContainerError, ImageNotFound, APIError
 from docker.types import Mount
 
-# Conditional import for image manager (to avoid circular imports)
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.skills.testing.container_manager import ContainerImageManager
@@ -57,10 +33,8 @@ class SandboxResult:
     timeout: bool = False
     oom_killed: bool = False
     error: Optional[str] = None
-    # New fields for autonomous operation
     installed_packages: list[str] = field(default_factory=list)
     output_files: dict[str, bytes] = field(default_factory=dict)
-    # Phase 3: Image caching
     used_cached_image: bool = False
     cached_image_tag: Optional[str] = None
 
@@ -69,35 +43,27 @@ class SandboxResult:
 class ExecutionConfig:
     """Configuration for sandbox execution."""
 
-    # Resource limits
-    memory_limit: str = "2g"  # 2GB RAM (enough for whisper, etc.)
-    cpu_quota: int = 100000   # 100% of one CPU
+    memory_limit: str = "2g"
+    cpu_quota: int = 100000
     cpu_period: int = 100000
-    pids_limit: int = 100     # Max processes
+    pids_limit: int = 100
 
-    # Timeouts
-    execution_timeout: int = 600  # 10 Minuten — erste Ausfuehrung kann Model-Downloads enthalten
-    pip_timeout: int = 600        # 10 minutes for pip install (large packages need time)
-    apt_timeout: int = 600        # 10 minutes for apt-get (ffmpeg etc. brauchen laenger)
+    execution_timeout: int = 600
+    pip_timeout: int = 600
+    apt_timeout: int = 600
 
-    # Pip cache
-    pip_cache_volume: str = "lumari-pip-cache"  # Named Docker volume for pip cache
+    pip_cache_volume: str = "lumari-pip-cache"
 
-    # Data-Mount: uploads/ → /data/ (read-only) für Directory-Level-Zugriff
     uploads_mount_enabled: bool = True
     uploads_host_dir: str = str(Path(__file__).parent.parent.parent / "uploads")
     uploads_container_dir: str = "/data"
 
-    # Network
-    network_enabled: bool = True  # Enable for pip/apt/research
+    network_enabled: bool = True
 
-    # Security
-    # Note: apt-get requires more capabilities than a fully locked-down container
-    # We still maintain isolation through container boundaries and resource limits
-    user: str = "0:0"  # Run as root (needed for apt-get, pip installs to system)
-    read_only: bool = False  # Must be writable for pip/apt install
-    cap_drop: list[str] = field(default_factory=list)  # Don't drop caps (apt needs them)
-    security_opt: list[str] = field(default_factory=list)  # Allow for apt-get
+    user: str = "0:0"
+    read_only: bool = False
+    cap_drop: list[str] = field(default_factory=list)
+    security_opt: list[str] = field(default_factory=list)
 
 
 class SandboxSession:
@@ -134,7 +100,6 @@ class SandboxSession:
 
     async def __aenter__(self) -> "SandboxSession":
         """Create container and install packages once."""
-        # Check for cached image
         image_override = None
         skip_packages = False
         sandbox = self._sandbox
@@ -169,7 +134,6 @@ class SandboxSession:
         )
         log.info(f"Session container created: {self._container.short_id}")
 
-        # Install packages once
         if not skip_packages:
             if self._system_packages:
                 apt_result = await sandbox._install_system_packages(
@@ -189,7 +153,6 @@ class SandboxSession:
 
         self._packages_installed = True
 
-        # Copy static input files
         if self._input_files:
             await sandbox._copy_files_to_container(self._container, self._input_files)
 
@@ -226,14 +189,11 @@ class SandboxSession:
         start_time = time.time()
         timeout = timeout or self._sandbox.config.execution_timeout
 
-        # Copy any additional input files for this iteration
         if input_files:
             await self._sandbox._copy_files_to_container(self._container, input_files)
 
-        # Execute code
         result = await self._sandbox._execute_code(self._container, code, timeout)
 
-        # Collect output files
         if output_file_paths and result.success:
             result.output_files = await self._sandbox._collect_output_files(
                 self._container, output_file_paths
@@ -296,7 +256,7 @@ class DynamicSandboxService:
         self._client: Optional[docker.DockerClient] = None
         self._image_manager = image_manager
         self._enable_image_caching = enable_image_caching
-        self._image_cache: dict[str, str] = {}  # requirements hash -> image tag
+        self._image_cache: dict[str, str] = {}
 
     def session(
         self,
@@ -390,7 +350,6 @@ class DynamicSandboxService:
             f"input_files={list(input_files.keys())}"
         )
 
-        # Check for cached image (Phase 3 optimization)
         cached_image = None
         use_cached = False
         if self._image_manager and self._enable_image_caching and (pip_requirements or system_packages):
@@ -406,9 +365,7 @@ class DynamicSandboxService:
                 log.warning(f"Failed to check image cache: {e}")
 
         try:
-            # Step 0: Ensure image exists (pull if needed)
             if use_cached:
-                # Use cached image - skip package installation
                 image_to_use = cached_image.image_tag
                 try:
                     self.client.images.get(image_to_use)
@@ -420,30 +377,24 @@ class DynamicSandboxService:
                 image_to_use = self.base_image
                 await self._ensure_image_exists()
 
-            # Step 1: Create container
             container = await self._create_container(env_vars, image_override=image_to_use if use_cached else None)
             log.debug(f"Created container: {container.short_id} (cached={use_cached})")
 
-            # Step 2: Install system packages (skip if using cached image)
             if system_packages and not use_cached:
                 apt_result = await self._install_system_packages(container, system_packages)
                 if not apt_result.success:
                     return apt_result
 
-            # Step 3: Install pip packages (skip if using cached image)
             if pip_requirements and not use_cached:
                 pip_result = await self._install_pip_packages(container, pip_requirements)
                 if not pip_result.success:
                     return pip_result
 
-            # Step 4: Copy input files
             if input_files:
                 await self._copy_files_to_container(container, input_files)
 
-            # Step 5: Execute code
             result = await self._execute_code(container, code, timeout)
 
-            # Step 6: Collect output files
             if output_file_paths and result.success:
                 result.output_files = await self._collect_output_files(
                     container, output_file_paths
@@ -459,7 +410,6 @@ class DynamicSandboxService:
                 f"time={result.execution_time_ms}ms, cached={use_cached}"
             )
 
-            # Cache the image for future use (Phase 3)
             if (
                 result.success
                 and self._image_manager
@@ -474,7 +424,6 @@ class DynamicSandboxService:
                         system_packages=system_packages,
                     )
                 except Exception as e:
-                    # Don't fail the execution if caching fails
                     log.warning(f"Failed to cache image: {e}")
 
             return result
@@ -500,7 +449,6 @@ class DynamicSandboxService:
             )
 
         finally:
-            # Cleanup container
             if container:
                 await self._cleanup_container(container)
 
@@ -513,10 +461,9 @@ class DynamicSandboxService:
         environment = env_vars or {}
         image = image_override or self.base_image
 
-        # Build container config
         container_config = {
             "image": image,
-            "command": "sleep infinity",  # Keep container running
+            "command": "sleep infinity",
             "detach": True,
             "working_dir": self.CONTAINER_WORKSPACE,
             "environment": environment,
@@ -526,13 +473,11 @@ class DynamicSandboxService:
             "pids_limit": self.config.pids_limit,
         }
 
-        # Netzwerk: lumari-network für Zugriff auf benchmark-db u.a. Services
         if self.config.network_enabled:
             container_config["network_mode"] = "lumari-network"
         else:
             container_config["network_mode"] = "none"
 
-        # Mounts: pip-cache + uploads-Verzeichnis
         mounts = []
         if self.config.pip_cache_volume:
             mounts.append(Mount(
@@ -552,7 +497,6 @@ class DynamicSandboxService:
         if mounts:
             container_config["mounts"] = mounts
 
-        # Only add security options if specified
         if self.config.user:
             container_config["user"] = self.config.user
         if self.config.security_opt:
@@ -560,7 +504,6 @@ class DynamicSandboxService:
         if self.config.cap_drop:
             container_config["cap_drop"] = self.config.cap_drop
 
-        # Run in thread pool to not block async loop
         container = await asyncio.to_thread(
             self.client.containers.create,
             **container_config,
@@ -568,7 +511,6 @@ class DynamicSandboxService:
 
         await asyncio.to_thread(container.start)
 
-        # Create workspace directory
         await self._exec_in_container(
             container,
             "mkdir -p /workspace",
@@ -587,7 +529,6 @@ class DynamicSandboxService:
         packages_str = " ".join(packages)
         log.info(f"Installing system packages: {packages_str}")
 
-        # Update apt cache and install packages (need root)
         commands = [
             "apt-get update -qq",
             f"apt-get install -y -qq {packages_str}",
@@ -622,13 +563,12 @@ class DynamicSandboxService:
         packages_str = " ".join(f'"{p}"' for p in packages)
         log.info(f"Installing pip packages: {packages_str}")
 
-        # Install packages as root (so they go to system site-packages)
         cmd = f"pip install {packages_str}"
 
         exit_code, output = await self._exec_in_container(
             container,
             cmd,
-            user="root",  # Install as root
+            user="root",
             timeout=self.config.pip_timeout,
         )
 
@@ -652,10 +592,8 @@ class DynamicSandboxService:
         """Copy files into the container workspace."""
         log.debug(f"Copying {len(files)} files to container")
 
-        # Create a tar archive with all files
         tar_stream = io.BytesIO()
         with tarfile.open(fileobj=tar_stream, mode="w") as tar:
-            # Subdirectory-Einträge vorab anlegen
             created_dirs: set[str] = set()
             for filename in files:
                 parts = filename.split("/")
@@ -676,7 +614,6 @@ class DynamicSandboxService:
 
         tar_stream.seek(0)
 
-        # Copy to container
         await asyncio.to_thread(
             container.put_archive,
             self.CONTAINER_WORKSPACE,
@@ -692,11 +629,9 @@ class DynamicSandboxService:
         timeout: int,
     ) -> SandboxResult:
         """Execute Python code in the container."""
-        # Write code to file
         code_bytes = code.encode("utf-8")
         await self._copy_files_to_container(container, {"script.py": code_bytes})
 
-        # Execute
         log.debug("Executing Python code...")
         exit_code, output = await self._exec_in_container(
             container,
@@ -704,8 +639,6 @@ class DynamicSandboxService:
             timeout=timeout,
         )
 
-        # Split stdout and stderr (docker exec combines them)
-        # For now, treat all output as stdout
         success = exit_code == 0
 
         if not success:
@@ -733,7 +666,7 @@ class DynamicSandboxService:
                     command,
                     user=user,
                     workdir=self.CONTAINER_WORKSPACE,
-                    demux=False,  # Combined stdout/stderr
+                    demux=False,
                 ),
                 timeout=timeout,
             )
@@ -757,13 +690,11 @@ class DynamicSandboxService:
             try:
                 full_path = f"{self.CONTAINER_WORKSPACE}/{file_path}"
 
-                # Get file as tar archive
                 bits, _ = await asyncio.to_thread(
                     container.get_archive,
                     full_path,
                 )
 
-                # Extract from tar
                 tar_stream = io.BytesIO()
                 for chunk in bits:
                     tar_stream.write(chunk)
@@ -822,18 +753,15 @@ class DynamicSandboxService:
         Returns:
             SandboxResult with execution details.
         """
-        # Parse requirements.txt to get package list for caching/logging
         pip_requirements = [
             line.strip()
             for line in requirements_txt.strip().split('\n')
             if line.strip() and not line.strip().startswith('#')
         ]
 
-        # Add requirements.txt to input files
         input_files = input_files or {}
         input_files['requirements.txt'] = requirements_txt.encode('utf-8')
 
-        # Execute with modified pip install command
         start_time = time.time()
         container = None
         system_packages = system_packages or []
@@ -850,17 +778,14 @@ class DynamicSandboxService:
             container = await self._create_container(env_vars)
             log.debug(f"Created container: {container.short_id}")
 
-            # Install system packages
             if system_packages:
                 apt_result = await self._install_system_packages(container, system_packages)
                 if not apt_result.success:
                     return apt_result
 
-            # Copy input files (includes requirements.txt)
             if input_files:
                 await self._copy_files_to_container(container, input_files)
 
-            # Install from requirements.txt
             exit_code, output = await self._exec_in_container(
                 container,
                 "pip install -r /workspace/requirements.txt",
@@ -879,7 +804,6 @@ class DynamicSandboxService:
 
             log.info("Packages installed from requirements.txt")
 
-            # Execute code
             result = await self._execute_code(container, code, timeout)
 
             result.installed_packages = pip_requirements
@@ -961,7 +885,6 @@ class DynamicSandboxService:
 
             last_result = result
 
-            # Try to fix code if callback provided and not last attempt
             if fix_code_callback and attempt < max_retries:
                 error_info = result.error or result.stderr
                 log.info(f"Attempting to fix code based on error: {error_info[:200]}")
@@ -985,7 +908,6 @@ class DynamicSandboxService:
             return False
 
 
-# Convenience function for quick execution
 async def run_in_sandbox(
     code: str,
     pip_requirements: Optional[list[str]] = None,

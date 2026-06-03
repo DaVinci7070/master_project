@@ -1,4 +1,3 @@
-"""Capability builder using Developer Team and Skill Team for gap closure."""
 import logging
 import os
 import re
@@ -17,14 +16,12 @@ from app.models.sql.skill_build_models import SkillBinding
 from app.orchestration.intervention.retry_strategy import ApproachSelector
 from app.orchestration.agents.developer_team import DeveloperTeamOrchestrator
 
-# Lazy import to avoid circular dependencies
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.skills.building.team_orchestrator import SkillTeamOrchestrator
 
 logger = logging.getLogger(__name__)
 
-# Minimum affinity score to bind skill to agent
 MIN_AGENT_AFFINITY_SCORE = 0.3
 
 
@@ -85,14 +82,11 @@ class CapabilityBuilder:
             f"attempt={attempt_number}, approach={approach.name}"
         )
 
-        # Route to appropriate builder based on gap type
         if gap.gap_type == GapType.MISSING_SKILL:
             return await self._build_skill(
                 gap, challenge_text, approach.name, approach.constraints, previous_failures
             )
         elif gap.gap_type == GapType.MISSING_PLANNING_SKILL:
-            # Planning skills will be built via Proposer-Agent in Sprint 3
-            # For now: route to prompt builder (closest semantic match)
             return await self._build_prompt(
                 gap, challenge_text, approach.name, approach.constraints, previous_failures
             )
@@ -109,7 +103,6 @@ class CapabilityBuilder:
                 gap, challenge_text, approach.name, approach.constraints, previous_failures
             )
         elif gap.gap_type == GapType.SCHEMA_MISMATCH:
-            # Schema-Probleme zuerst mit Skill lösen (DB-Verbindung, ETL etc.)
             skill_result = await self._build_skill(
                 gap, challenge_text, approach.name, approach.constraints, previous_failures
             )
@@ -142,6 +135,19 @@ class CapabilityBuilder:
             )
         return self._skill_team
 
+    _DB_CREDENTIAL_PATTERN = re.compile(
+        r'Host:\s*([^\s,]+)'
+        r'[\s,]+'
+        r'Port:\s*(\d+)'
+        r'[\s,]+'
+        r'User:\s*([^\s,]+)'
+        r'[\s,]+'
+        r'(?:Passwort|Password):\s*([^\s,]+)'
+        r'[\s,]+'
+        r'DB:\s*([^\s,\)\.\]]+)',
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def _extract_test_context(
         challenge_text: str,
@@ -171,6 +177,15 @@ class CapabilityBuilder:
                     input_files = {basename: f.read()}
                 logger.info(f"Test-Datei aus Challenge extrahiert: {basename}")
 
+        db_match = CapabilityBuilder._DB_CREDENTIAL_PATTERN.search(challenge_text)
+        if db_match:
+            host, port, user, password, dbname = db_match.groups()
+            db_url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+            if test_input is None:
+                test_input = {}
+            test_input["database_url"] = db_url
+            logger.info(f"DB-Credentials aus Challenge extrahiert: {host}:{port}/{dbname}")
+
         return test_input, input_files
 
     async def _build_skill(
@@ -185,11 +200,9 @@ class CapabilityBuilder:
         import time
         start_time = time.time()
 
-        # Check if a matching skill already exists (deduplication)
         skill_name = f"skill_{gap.affected_capability.lower().replace(' ', '_').replace('-', '_')}"
         existing = await self._find_existing_skill(skill_name)
         if existing and existing.is_active:
-            # Warm-Skill Validation: Kann der existierende Skill noch ausführen?
             validation_passed = await self._validate_existing_skill(existing)
             if validation_passed:
                 logger.info(
@@ -215,7 +228,6 @@ class CapabilityBuilder:
                 )
                 await self.deactivate_provisional("skill", existing.id)
 
-        # Skill Team ist der einzige Build-Pfad im Interventions-System
         logger.info(f"Using Skill Team for capability: {gap.affected_capability}")
         return await self._build_skill_with_team(gap, start_time, challenge_text)
 
@@ -239,7 +251,6 @@ class CapabilityBuilder:
         try:
             skill_team = self.get_skill_team()
 
-            # Test-Input und Dateien aus dem Challenge-Kontext ableiten
             test_input, input_files = self._extract_test_context(
                 challenge_text, gap.affected_capability
             )
@@ -262,7 +273,6 @@ class CapabilityBuilder:
                     f"duration={duration:.1f}s"
                 )
 
-                # Skill an passenden Agent binden (wie im Autonomous-Pfad)
                 expanded_agent_id = await self._expand_agent_capabilities(
                     skill_id=result.skill_id,
                     affected_capability=gap.affected_capability
@@ -350,7 +360,6 @@ class CapabilityBuilder:
                 spawn_result = result.results[0]
                 prompt_content = spawn_result.generated_code or ""
 
-                # Create new prompt version
                 prompt = Prompt(
                     id=str(uuid.uuid4()),
                     name=prompt_name,
@@ -428,7 +437,6 @@ class CapabilityBuilder:
             artifact_type="agent"
         )
 
-        # For agents, we need both agent config and prompt
         task = DevelopmentTask(
             task_id=str(uuid.uuid4()),
             description=task_description,
@@ -449,7 +457,6 @@ class CapabilityBuilder:
             result = await self.developer_team.execute_complex_task(task)
 
             if result.success and result.results:
-                # First, create prompt
                 prompt_result = None
                 agent_config = None
 
@@ -476,7 +483,6 @@ class CapabilityBuilder:
                             agent_config = spawn_result.generated_code
 
                     if prompt_result and agent_config:
-                        # Create agent
                         agent = Agent(
                             id=str(uuid.uuid4()),
                             name=agent_name,
@@ -501,7 +507,6 @@ class CapabilityBuilder:
                         await db.commit()
                         await db.refresh(agent)
 
-                        # Log topology change
                         from app.orchestration.topology.service import TopologyService
                         topology_service = TopologyService(db)
                         await topology_service.log_agent_created(
@@ -604,7 +609,6 @@ if __name__ == "__main__":
             )).scalars().all()
 
         caps = []
-        # Aus agent_metadata gespeicherte Capabilities
         agent_meta = getattr(agent, "agent_metadata", None) or {}
         caps.extend(agent_meta.get("capabilities", []))
 
@@ -649,25 +653,21 @@ if __name__ == "__main__":
             if not agent_caps:
                 continue
 
-            # Calculate word overlap with agent's existing capabilities
             agent_score = 0.0
             for agent_cap in agent_caps:
                 agent_cap_normalized = self._normalize_capability(agent_cap)
                 agent_words = set(agent_cap_normalized.split())
 
-                # Jaccard-like similarity
                 if cap_words and agent_words:
                     overlap = len(cap_words & agent_words)
                     union = len(cap_words | agent_words)
                     similarity = overlap / union if union > 0 else 0
 
-                    # Boost for partial containment
                     if cap_normalized in agent_cap_normalized or agent_cap_normalized in cap_normalized:
                         similarity = max(similarity, 0.7)
 
                     agent_score = max(agent_score, similarity)
 
-            # Also consider agent name relevance
             agent_name_words = set(self._normalize_capability(agent.name).split())
             name_overlap = len(cap_words & agent_name_words)
             if name_overlap > 0:
@@ -702,7 +702,6 @@ if __name__ == "__main__":
         Returns:
             Agent ID if expanded or created, None only on error
         """
-        # Find best matching agent
         best_agent, score = await self._find_best_agent_for_capability(affected_capability)
 
         if not best_agent or score < MIN_AGENT_AFFINITY_SCORE:
@@ -710,10 +709,8 @@ if __name__ == "__main__":
                 f"No suitable agent for capability '{affected_capability}' "
                 f"(best score: {score:.2f}) - creating new specialist agent (Option 4)"
             )
-            # Option 4: Create new agent for this capability
             return await self._create_specialist_agent(skill_id, affected_capability)
 
-        # Check if capability already exists
         current_caps = await self._get_agent_capabilities(best_agent)
         cap_normalized = self._normalize_capability(affected_capability)
 
@@ -722,7 +719,6 @@ if __name__ == "__main__":
                 logger.info(
                     f"Agent '{best_agent.name}' already has capability '{affected_capability}'"
                 )
-                # Still create binding if not exists
                 await self._bind_skill_to_agent(
                     skill_id=skill_id,
                     agent_id=best_agent.id,
@@ -731,7 +727,6 @@ if __name__ == "__main__":
                 )
                 return best_agent.id
 
-        # Capability in agent_metadata speichern (Agent hat kein capabilities-Feld)
         async with self.session_factory() as db:
             new_caps = current_caps + [affected_capability]
             result = await db.execute(
@@ -747,7 +742,6 @@ if __name__ == "__main__":
             )
             await db.commit()
 
-        # Create skill binding
         await self._bind_skill_to_agent(
             skill_id=skill_id,
             agent_id=best_agent.id,
@@ -786,7 +780,6 @@ if __name__ == "__main__":
         """
         try:
             async with self.session_factory() as db:
-                # Check if binding already exists
                 existing = await db.execute(
                     select(SkillBinding).where(
                         SkillBinding.skill_id == skill_id,
@@ -798,7 +791,6 @@ if __name__ == "__main__":
                     logger.debug(f"Skill binding already exists: skill={skill_id[:8]}, agent={agent_id[:8]}")
                     return None
 
-                # Create new binding
                 binding = SkillBinding(
                     skill_id=skill_id,
                     agent_id=agent_id,
@@ -840,12 +832,10 @@ if __name__ == "__main__":
             New agent ID, or None on failure
         """
         try:
-            # Generate agent name from capability
             agent_name = affected_capability.replace(" ", "_").lower()
             agent_name = f"specialist_{agent_name}"
 
             async with self.session_factory() as db:
-                # Check if agent with this name already exists
                 existing = await db.execute(
                     select(Agent).where(Agent.name == agent_name)
                 )
@@ -856,7 +846,6 @@ if __name__ == "__main__":
                     )).scalar_one()
                     return existing_agent.id
 
-                # Create minimal prompt for the specialist
                 prompt_content = f"""You are a specialist agent for: {affected_capability}
 
 Your role:
@@ -872,7 +861,6 @@ When processing a task:
 
 Always be precise and thorough in your {affected_capability} work."""
 
-                # Create prompt
                 prompt = Prompt(
                     id=str(uuid.uuid4()),
                     name=f"{agent_name}_prompt",
@@ -888,14 +876,12 @@ Always be precise and thorough in your {affected_capability} work."""
                 db.add(prompt)
                 await db.flush()
 
-                # max_tool_calls basierend auf Capability-Typ
                 data_keywords = ("sql", "database", "query", "csv", "etl", "data", "pipeline", "batch", "aggregate", "schema")
                 if any(kw in affected_capability.lower() for kw in data_keywords):
                     max_tool_calls = 30
                 else:
                     max_tool_calls = 15
 
-                # Create specialist agent
                 agent = Agent(
                     id=str(uuid.uuid4()),
                     name=agent_name,
@@ -921,7 +907,6 @@ Always be precise and thorough in your {affected_capability} work."""
                 await db.commit()
                 await db.refresh(agent)
 
-                # Log topology change
                 try:
                     from app.orchestration.topology.service import TopologyService
                     topology_service = TopologyService(db)
@@ -939,7 +924,6 @@ Always be precise and thorough in your {affected_capability} work."""
                 except Exception as log_err:
                     logger.warning(f"Failed to log agent creation: {log_err}")
 
-            # Create skill binding for the new agent
             await self._bind_skill_to_agent(
                 skill_id=skill_id,
                 agent_id=agent.id,

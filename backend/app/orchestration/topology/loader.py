@@ -1,4 +1,3 @@
-"""Topology loader from database with validation and caching."""
 import logging
 from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING, Any
@@ -47,13 +46,11 @@ class TopologyLoader:
         self.validator = validator or TopologyValidator()
         self.ab_test_service = ab_test_service
 
-        # Cached topology (per CONTEXT: reload between runs only)
         self._cached_topology: Optional[Topology] = None
         self._cached_validation: Optional[ValidationResult] = None
         self._loaded_skills: dict[str, Skill] = {}
         self._last_load_time: Optional[datetime] = None
 
-        # Track current prompt IDs per agent for hot-swap detection
         self._current_prompt_ids: dict[str, str] = {}
 
     async def load(self, force_reload: bool = False) -> tuple[Topology, ValidationResult]:
@@ -100,34 +97,25 @@ class TopologyLoader:
             )
             return empty_topology, result
 
-        # Build name->id lookup for resolving dependencies
         name_to_id = {agent.name: agent.id for agent, _ in agents_with_prompts}
 
-        # Load skills and map by capability (applicability → metadata → name fallback)
         capability_to_skills, skill_metadata_map = await self._map_skills_to_capabilities(db=db)
 
-        # Convert to AgentNode models
         agent_nodes = []
         for agent, prompt in agents_with_prompts:
-            # Resolve dependency names to IDs
             resolved_deps = []
             for dep in (agent.dependencies or []):
                 if dep in name_to_id:
                     resolved_deps.append(name_to_id[dep])
                 elif dep in {a.id for a, _ in agents_with_prompts}:
-                    # Already an ID
                     resolved_deps.append(dep)
                 else:
                     logger.warning(f"Agent {agent.name}: dependency '{dep}' not found")
 
-            # Bind skills to agent:
-            # 1. Explicit assignment via skill_metadata.target_agent_id
-            # 2. All unassigned skills are available to all agents
             agent_skill_ids = []
             agent_caps = []
             for cap, sids in capability_to_skills.items():
                 for sid in sids:
-                    # Check if skill is explicitly assigned to a different agent
                     skill_meta = skill_metadata_map.get(sid, {})
                     target = skill_meta.get("target_agent_id") or skill_meta.get("assigned_agent")
                     if target and target != agent.id and target != agent.name:
@@ -136,7 +124,6 @@ class TopologyLoader:
                         agent_skill_ids.append(sid)
                         agent_caps.append(cap)
 
-            # Config aus agent_metadata propagieren
             agent_config = {}
             meta = agent.agent_metadata or {}
             if "max_tool_calls" in meta:
@@ -148,7 +135,7 @@ class TopologyLoader:
                 prompt_id=agent.prompt_id,
                 capabilities=agent_caps,
                 dependencies=resolved_deps,
-                skill_ids=list(set(agent_skill_ids)),  # Deduplicate skill IDs
+                skill_ids=list(set(agent_skill_ids)),
                 config=agent_config,
                 is_active=agent.is_active,
                 input_schema=agent.io_schema.get("input") if agent.io_schema else None,
@@ -161,7 +148,6 @@ class TopologyLoader:
             if agent_skill_ids:
                 logger.debug(f"Agent {agent.name}: bound {len(agent_skill_ids)} skills")
 
-        # Create topology
         topology = Topology(
             topology_id=f"db-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
             name="Database Topology",
@@ -169,23 +155,19 @@ class TopologyLoader:
             is_active=True
         )
 
-        # Validate topology
         result = self.validator.validate(topology)
 
         if result.is_valid:
-            # Update cache
             self._cached_topology = topology
             self._cached_validation = result
             self._last_load_time = datetime.now(timezone.utc)
 
-            # Track current prompt IDs for hot-swap detection
             self._current_prompt_ids = {
                 agent.agent_id: agent.prompt_id
                 for agent in agent_nodes
                 if agent.prompt_id
             }
 
-            # Eager skill loading (per CONTEXT)
             await self._load_skills(topology, db)
 
             logger.info(
@@ -193,12 +175,10 @@ class TopologyLoader:
                 f"{len(result.execution_waves)} waves"
             )
         else:
-            # Per CONTEXT: Reject invalid, keep old
             logger.error(f"Topology validation failed: {result.errors}")
             if self._cached_topology:
                 logger.warning("Using previously cached valid topology")
                 topology = self._cached_topology
-                # Return new result but use old topology
             else:
                 logger.error("No cached topology available, returning invalid")
 
@@ -213,13 +193,9 @@ class TopologyLoader:
         - "Cost_Analysis" -> "cost analysis"
         """
         import re
-        # Lowercase and strip
         normalized = name.lower().strip()
-        # Remove content in parentheses
         normalized = re.sub(r'\s*\([^)]*\)', '', normalized)
-        # Replace underscores/hyphens with spaces
         normalized = normalized.replace('_', ' ').replace('-', ' ')
-        # Normalize whitespace
         normalized = ' '.join(normalized.split())
         return normalized
 
@@ -247,20 +223,17 @@ class TopologyLoader:
             mapped_caps = []
             skill_metadata_map[skill.id] = skill.skill_metadata or {}
 
-            # Priority 1: Skill.applicability (SoK field)
             if skill.applicability:
                 cap_normalized = self._normalize_capability_for_matching(skill.applicability)
                 mapped_caps.append(cap_normalized)
                 logger.debug(f"Skill {skill.name} mapped via applicability to '{cap_normalized}'")
 
-            # Priority 2: affected_capability in metadata (legacy)
             if not mapped_caps and skill.skill_metadata and skill.skill_metadata.get("affected_capability"):
                 affected_cap = skill.skill_metadata["affected_capability"]
                 cap_normalized = self._normalize_capability_for_matching(affected_cap)
                 mapped_caps.append(cap_normalized)
                 logger.debug(f"Skill {skill.name} mapped via metadata to '{cap_normalized}'")
 
-            # Priority 3: Fallback - derive from skill name
             if not mapped_caps:
                 skill_name_cap = skill.name.replace("skill_", "").replace("_", " ")
                 cap_from_name = self._normalize_capability_for_matching(skill_name_cap)
@@ -445,7 +418,6 @@ class TopologyLoader:
             (success, message) - True if swap succeeded, False with reason if not
         """
         async with self.session_factory() as db:
-            # Verify new prompt exists
             prompt_result = await db.execute(
                 select(Prompt).where(Prompt.id == new_prompt_id)
             )
@@ -453,7 +425,6 @@ class TopologyLoader:
             if not new_prompt:
                 return False, f"Prompt {new_prompt_id} not found"
 
-            # Verify agent exists
             agent_result = await db.execute(
                 select(Agent).where(Agent.id == agent_id)
             )
@@ -461,12 +432,10 @@ class TopologyLoader:
             if not agent:
                 return False, f"Agent {agent_id} not found"
 
-            # Check A/B test validation (per CONTEXT: Prompt swap requires A/B test)
             if self.ab_test_service:
                 if not ab_test_id:
                     return False, "A/B test ID required for prompt swap"
 
-                # Verify A/B test completed successfully with improvement as winner
                 try:
                     ab_test = await self.ab_test_service.get_test(ab_test_id)
                     if not ab_test:
@@ -475,11 +444,9 @@ class TopologyLoader:
                     if ab_test.status != "completed":
                         return False, f"A/B test {ab_test_id} not completed (status: {ab_test.status})"
 
-                    # is_significant == 1 means improvement won (per ABTest model)
                     if ab_test.is_significant != 1:
                         return False, f"A/B test {ab_test_id} did not validate improvement (is_significant: {ab_test.is_significant})"
 
-                    # Verify the test was for a prompt artifact
                     if ab_test.artifact_type != "prompt":
                         return False, f"A/B test {ab_test_id} was not for a prompt (type: {ab_test.artifact_type})"
 
@@ -489,7 +456,6 @@ class TopologyLoader:
             else:
                 logger.warning("No A/B test service configured - allowing prompt swap without validation")
 
-            # Perform the swap
             old_prompt_id = agent.prompt_id
             await db.execute(
                 update(Agent)
@@ -498,7 +464,6 @@ class TopologyLoader:
             )
             await db.commit()
 
-            # Update tracking
             self._current_prompt_ids[agent_id] = new_prompt_id
 
             logger.info(
@@ -529,7 +494,6 @@ class TopologyLoader:
             if not prompt:
                 return False
 
-            # Check if it's actually different from current
             current_prompt_id = self._current_prompt_ids.get(agent_id)
             return current_prompt_id != new_prompt_id
 

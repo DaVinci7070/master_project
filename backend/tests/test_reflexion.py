@@ -1,4 +1,3 @@
-"""Tests für das Reflexion-Modul: CoT-Verification, Self-Reflection, Episodic Memory."""
 import json
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
@@ -40,9 +39,6 @@ def make_settings(**overrides) -> Settings:
     }
     defaults.update(overrides)
     return Settings(**defaults)
-
-
-# ── CoT Verification ──
 
 
 class TestCoTVerification:
@@ -148,9 +144,6 @@ class TestCoTVerification:
         assert result.score == 0.0
         assert len(result.gap_indicators) > 0
         llm.chat.assert_not_called()
-
-
-# ── Self-Reflection ──
 
 
 class TestSelfReflection:
@@ -264,9 +257,6 @@ class TestSelfReflection:
         assert result.score == 0.84
         assert not result.score_corrected
         llm.chat.assert_called_once()
-
-
-# ── Episodic Reflection Memory (StrategyMemory) ──
 
 
 class TestEpisodicReflectionMemory:

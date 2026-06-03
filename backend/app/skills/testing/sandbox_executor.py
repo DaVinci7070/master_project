@@ -1,18 +1,3 @@
-"""
-Sandbox Executor Service for Docker-isolated code execution via epicbox.
-
-This service implements the second defense layer for generated code:
-- Executes code in isolated Docker containers
-- Enforces CPU, memory, and time limits
-- Disables network access
-- Runs as non-root user in read-only filesystem
-- Captures pytest test results
-
-Flow:
-    CodeValidatorService validates code -> SandboxExecutorService.execute_tests()
-    -> Pass: code is safe and tests pass
-    -> Fail: return detailed error (validation error, timeout, OOM, test failures)
-"""
 import asyncio
 import logging
 import re
@@ -79,10 +64,9 @@ class SandboxExecutorService:
         print(f"Tests passed: {result.success}")
     """
 
-    # Default resource limits (from research)
-    DEFAULT_CPUTIME_LIMIT = 5  # seconds
-    DEFAULT_REALTIME_LIMIT = 10  # seconds
-    DEFAULT_MEMORY_LIMIT = 128  # MB
+    DEFAULT_CPUTIME_LIMIT = 5
+    DEFAULT_REALTIME_LIMIT = 10
+    DEFAULT_MEMORY_LIMIT = 128
 
     def __init__(
         self,
@@ -108,11 +92,10 @@ class SandboxExecutorService:
             "cputime": cputime_limit,
             "realtime": realtime_limit,
             "memory": memory_limit,
-            "processes": 1,  # Single process only
+            "processes": 1,
         }
         self.log = log
 
-        # Configure epicbox profile
         self._configure_epicbox()
 
     def _configure_epicbox(self) -> None:
@@ -150,7 +133,6 @@ class SandboxExecutorService:
         start_time = time.time()
         self.log.info("Starting sandbox execution...")
 
-        # Step 1: Validate code before execution
         validation_result = self.validator.validate(code)
         if not validation_result.is_valid:
             self.log.warning(
@@ -164,7 +146,6 @@ class SandboxExecutorService:
                 execution_time_ms=execution_time_ms,
             )
 
-        # Step 2: Also validate test code
         test_validation_result = self.validator.validate(test_code)
         if not test_validation_result.is_valid:
             self.log.warning(
@@ -178,19 +159,16 @@ class SandboxExecutorService:
                 execution_time_ms=execution_time_ms,
             )
 
-        # Step 3: Prepare files for sandbox
         files = [
             self._create_skill_file(code),
             self._create_test_file(test_code),
         ]
 
-        # Step 4: Execute in sandbox
         command = "python -m pytest test_skill.py -v"
 
         try:
             self.log.debug(f"Executing in sandbox: {command}")
 
-            # Run epicbox.run() in thread to avoid blocking
             result = await asyncio.to_thread(
                 epicbox.run,
                 "python",
@@ -201,21 +179,18 @@ class SandboxExecutorService:
 
             execution_time_ms = int((time.time() - start_time) * 1000)
 
-            # Decode output
             stdout = result.get("stdout", b"").decode("utf-8", errors="replace")
             stderr = result.get("stderr", b"").decode("utf-8", errors="replace")
             timeout = result.get("timeout", False)
             oom_killed = result.get("oom_killed", False)
             exit_code = result.get("exit_code", -1)
 
-            # Log execution details
             self.log.info(
                 f"Sandbox execution complete: exit_code={exit_code}, "
                 f"timeout={timeout}, oom_killed={oom_killed}, "
                 f"time={execution_time_ms}ms"
             )
 
-            # Handle timeout
             if timeout:
                 self.log.warning("Sandbox execution timed out")
                 return SandboxResult(
@@ -227,7 +202,6 @@ class SandboxExecutorService:
                     error="Execution timed out",
                 )
 
-            # Handle OOM
             if oom_killed:
                 self.log.warning("Sandbox execution killed due to memory limit")
                 return SandboxResult(
@@ -239,7 +213,6 @@ class SandboxExecutorService:
                     error="Process killed: memory limit exceeded",
                 )
 
-            # Parse pytest output
             tests_passed, tests_failed = self._parse_pytest_output(stdout)
             success = exit_code == 0 and tests_failed == 0
 
@@ -287,7 +260,6 @@ class SandboxExecutorService:
         passed = 0
         failed = 0
 
-        # Pattern: "X passed" or "X failed"
         passed_match = re.search(r"(\d+)\s+passed", stdout)
         failed_match = re.search(r"(\d+)\s+failed", stdout)
 
@@ -321,7 +293,6 @@ class SandboxExecutorService:
         Returns:
             File dict for epicbox with name and content.
         """
-        # Prepend import statement for skill module
         full_test_code = "from skill import *\n\n" + test_code
         return {"name": "test_skill.py", "content": full_test_code.encode("utf-8")}
 
@@ -360,7 +331,6 @@ class SandboxExecutorService:
         Returns:
             SandboxResult with execution details and function output.
         """
-        # If packages are required, delegate to DynamicSandboxService
         if pip_requirements or system_packages:
             return await self._execute_skill_with_packages(
                 code=code,
@@ -371,18 +341,15 @@ class SandboxExecutorService:
                 input_files=input_files,
             )
 
-        # Try epicbox first, then auto-detect missing modules and retry if needed
         result = await self._execute_skill_epicbox(
             code=code,
             function_name=function_name,
             arguments=arguments,
         )
 
-        # Check if failed due to missing module - auto-retry with DynamicSandbox
         if not result.success and self._is_module_not_found_error(result):
             self.log.info("Detected ModuleNotFoundError, auto-detecting dependencies and retrying...")
 
-            # Detect required packages from code imports
             detected_pip, detected_apt = self._detect_required_packages(code)
 
             if detected_pip or detected_apt:
@@ -412,7 +379,6 @@ class SandboxExecutorService:
         """
         import ast
 
-        # Import name -> pip package mapping
         import_to_pip = {
             'cv2': 'opencv-python',
             'PIL': 'Pillow',
@@ -439,7 +405,6 @@ class SandboxExecutorService:
             'psycopg2': 'psycopg2-binary',
         }
 
-        # Packages that need system dependencies
         pip_to_apt = {
             'faster-whisper': ['ffmpeg'],
             'openai-whisper': ['ffmpeg'],
@@ -448,7 +413,6 @@ class SandboxExecutorService:
             'easyocr': ['libgl1-mesa-glx'],
         }
 
-        # Standard library (skip these)
         stdlib = {
             'os', 'sys', 'json', 're', 'time', 'datetime', 'pathlib', 'io',
             'subprocess', 'tempfile', 'shutil', 'glob', 'copy', 'math',
@@ -461,7 +425,6 @@ class SandboxExecutorService:
         pip_packages = []
         apt_packages = []
 
-        # Extract imports from code
         imports = set()
         try:
             tree = ast.parse(code)
@@ -473,12 +436,10 @@ class SandboxExecutorService:
                     if node.module:
                         imports.add(node.module.split('.')[0])
         except SyntaxError:
-            # Fallback to regex
             import_matches = re.findall(r'^import\s+(\w+)', code, re.MULTILINE)
             from_matches = re.findall(r'^from\s+(\w+)', code, re.MULTILINE)
             imports = set(import_matches + from_matches)
 
-        # Convert imports to pip packages
         for imp in imports:
             if imp in stdlib:
                 continue
@@ -487,7 +448,6 @@ class SandboxExecutorService:
             if pip_name not in pip_packages:
                 pip_packages.append(pip_name)
 
-            # Check if this package needs apt dependencies
             for apt_dep in pip_to_apt.get(pip_name, []):
                 if apt_dep not in apt_packages:
                     apt_packages.append(apt_dep)
@@ -508,7 +468,6 @@ class SandboxExecutorService:
         start_time = time.time()
         self.log.info(f"Executing skill function '{function_name}' in sandbox...")
 
-        # Step 1: Validate code before execution
         validation_result = self.validator.validate(code)
         if not validation_result.is_valid:
             self.log.warning(
@@ -522,7 +481,6 @@ class SandboxExecutorService:
                 execution_time_ms=execution_time_ms,
             )
 
-        # Step 2: Create wrapper script that calls the function and prints result
         import json as json_module
         args_json = json_module.dumps(arguments)
 
@@ -549,19 +507,16 @@ except Exception as e:
     print("__RESULT_END__")
 '''
 
-        # Step 3: Prepare files for sandbox
         files = [
             self._create_skill_file(code),
             {"name": "run_skill.py", "content": wrapper_code.encode("utf-8")},
         ]
 
-        # Step 4: Execute in sandbox
         command = "python run_skill.py"
 
         try:
             self.log.debug(f"Executing in sandbox: {command}")
 
-            # Run epicbox.run() in thread to avoid blocking
             result = await asyncio.to_thread(
                 epicbox.run,
                 "python",
@@ -572,21 +527,18 @@ except Exception as e:
 
             execution_time_ms = int((time.time() - start_time) * 1000)
 
-            # Decode output
             stdout = result.get("stdout", b"").decode("utf-8", errors="replace")
             stderr = result.get("stderr", b"").decode("utf-8", errors="replace")
             timeout = result.get("timeout", False)
             oom_killed = result.get("oom_killed", False)
             exit_code = result.get("exit_code", -1)
 
-            # Log execution details
             self.log.info(
                 f"Skill execution complete: exit_code={exit_code}, "
                 f"timeout={timeout}, oom_killed={oom_killed}, "
                 f"time={execution_time_ms}ms"
             )
 
-            # Handle timeout
             if timeout:
                 self.log.warning("Skill execution timed out")
                 return SandboxResult(
@@ -598,7 +550,6 @@ except Exception as e:
                     error="Execution timed out",
                 )
 
-            # Handle OOM
             if oom_killed:
                 self.log.warning("Skill execution killed due to memory limit")
                 return SandboxResult(
@@ -610,7 +561,6 @@ except Exception as e:
                     error="Process killed: memory limit exceeded",
                 )
 
-            # Parse output to extract result
             skill_output = self._parse_skill_output(stdout)
 
             if skill_output is None:
@@ -706,10 +656,8 @@ except Exception as e:
             f"pip={pip_requirements}, apt={system_packages}"
         )
 
-        # Create wrapper code that calls the function and captures result
         args_json = json_module.dumps(arguments)
 
-        # Build the wrapper script - includes the skill code and calls the function
         wrapper_code = f'''
 {code}
 
@@ -734,12 +682,10 @@ except Exception as e:
 '''
 
         try:
-            # Import and use DynamicSandboxService with container image cache
             from app.skills.testing.docker_sandbox import DynamicSandboxService
             from app.skills.testing.container_manager import ContainerImageManager
             from app.dependencies.dependencies import AsyncSessionLocal
 
-            # Create image manager for container cache lookup
             image_mgr = None
             cache_session = None
             try:
@@ -777,7 +723,6 @@ except Exception as e:
                     error=result.error or result.stderr,
                 )
 
-            # Parse the output to extract result
             output = result.stdout
             skill_output = self._parse_skill_output(output)
 

@@ -1,9 +1,3 @@
-"""
-Telemetry models for logging agent execution metrics.
-
-This module implements DB-07 (execution telemetry) and DB-08 (input/output hashing)
-requirements. ExecutionTelemetry is append-only (no versioning) for audit trail.
-"""
 import uuid
 from sqlalchemy import (
     Column, String, Integer, Float, DateTime, Text, JSON, Index
@@ -24,7 +18,6 @@ class ExecutionTelemetry(Base):
     """
     __tablename__ = "execution_telemetry"
 
-    # Primary key
     id = Column(
         String(36),
         primary_key=True,
@@ -32,7 +25,6 @@ class ExecutionTelemetry(Base):
         doc="UUID primary key"
     )
 
-    # Agent and execution identification
     agent_id = Column(
         String(36),
         nullable=False,
@@ -46,7 +38,6 @@ class ExecutionTelemetry(Base):
         doc="UUID of this specific execution instance"
     )
 
-    # Timing
     started_at = Column(
         DateTime(timezone=True),
         nullable=False,
@@ -63,7 +54,6 @@ class ExecutionTelemetry(Base):
         doc="Total execution time in milliseconds"
     )
 
-    # Token usage
     tokens_input = Column(
         Integer,
         default=0,
@@ -83,7 +73,6 @@ class ExecutionTelemetry(Base):
         doc="Total tokens (input + output)"
     )
 
-    # Input/output hashing for deduplication (DB-08)
     input_hash = Column(
         String(64),
         nullable=False,
@@ -97,7 +86,6 @@ class ExecutionTelemetry(Base):
         doc="SHA-256 hash of output for deduplication"
     )
 
-    # Outcome
     outcome = Column(
         String(32),
         nullable=False,
@@ -114,7 +102,6 @@ class ExecutionTelemetry(Base):
         doc="Error type/class name if outcome is error"
     )
 
-    # Distributed tracing
     trace_id = Column(
         String(64),
         nullable=True,
@@ -126,7 +113,6 @@ class ExecutionTelemetry(Base):
         doc="OpenTelemetry span ID for distributed tracing"
     )
 
-    # Flexible metadata
     execution_metadata = Column(
         JSON,
         default=dict,
@@ -134,11 +120,8 @@ class ExecutionTelemetry(Base):
         doc="Additional execution metadata as JSON"
     )
 
-    # Composite indexes for common query patterns
     __table_args__ = (
-        # Time-series queries: get executions for an agent over time
         Index('ix_telemetry_agent_time', 'agent_id', 'started_at'),
-        # Deduplication queries: find executions with same input/output
         Index('ix_telemetry_hash_dedup', 'input_hash', 'output_hash'),
     )
 

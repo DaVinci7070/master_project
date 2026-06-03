@@ -5,7 +5,7 @@ from sqlalchemy import (
 
 from app.models.sql.base import Base
 from app.models.sql.versioned_models import Prompt, Agent, Skill
-from app.models.sql.evaluation_models import BenchmarkRun, BenchmarkTaskResult  # noqa: F401
+from app.models.sql.evaluation_models import BenchmarkRun, BenchmarkTaskResult
 
 __all__ = ["Base", "Report", "Prompt", "Agent", "Skill", "BenchmarkRun", "BenchmarkTaskResult"]
 

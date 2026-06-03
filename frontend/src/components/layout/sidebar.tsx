@@ -14,6 +14,7 @@ import {
   History,
   Sparkles,
   FlaskConical,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/history", label: "History", icon: History },
   { href: "/evolution", label: "Evolution", icon: Sparkles },
   { href: "/evaluation", label: "Evaluation", icon: FlaskConical },
+  { href: "/results", label: "Ergebnisse", icon: BarChart3 },
   { href: "/topology", label: "Topology", icon: Network },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/skills", label: "Skills", icon: Wrench },

@@ -1,12 +1,3 @@
-"""
-Statistical Analyzer for A/B testing significance testing and composite scoring.
-
-Provides Welch's t-test for statistical significance, Cohen's d effect size,
-and composite score calculation for multi-dimensional metrics.
-
-Part of the A/B testing infrastructure for determining if improvements
-are statistically significant.
-"""
 import logging
 from dataclasses import dataclass
 from typing import Tuple
@@ -135,57 +126,44 @@ class StatisticalAnalyzer:
         var1, var2 = np.var(baseline, ddof=1), np.var(improvement, ddof=1)
         std1, std2 = np.std(baseline, ddof=1), np.std(improvement, ddof=1)
 
-        # Welch's t-test (unequal variance)
-        # alternative='greater' means we test: improvement > baseline
         test_result = stats.ttest_ind(
             improvement,
             baseline,
-            equal_var=False,  # Welch's t-test
-            alternative="greater",  # One-sided test
+            equal_var=False,
+            alternative="greater",
         )
 
-        # Welch-Satterthwaite degrees of freedom
         if var1 == 0 and var2 == 0:
-            # Both groups have zero variance (identical values)
             df = n1 + n2 - 2
         else:
-            # Standard Welch-Satterthwaite formula
             numerator = (var1 / n1 + var2 / n2) ** 2
             denominator = (var1 / n1) ** 2 / (n1 - 1) + (var2 / n2) ** 2 / (n2 - 1)
             df = numerator / denominator if denominator > 0 else n1 + n2 - 2
 
-        # Cohen's d with pooled standard deviation
         pooled_std = np.sqrt(((n1 - 1) * std1**2 + (n2 - 1) * std2**2) / (n1 + n2 - 2))
         if pooled_std > 0:
             cohens_d = (mean2 - mean1) / pooled_std
         else:
-            # Zero variance - all values identical
             cohens_d = 0.0
 
-        # Relative improvement: (improvement - baseline) / baseline
         if mean1 > 0:
             relative = (mean2 - mean1) / mean1
         else:
-            # Baseline mean is zero - fall back to Cohen's d
             log.warning(
                 "Baseline mean is zero, using Cohen's d as fallback for relative improvement"
             )
             relative = cohens_d
 
-        # 95% confidence interval for mean difference
         se = np.sqrt(var1 / n1 + var2 / n2)
         if se > 0:
-            # Two-sided 95% CI
-            t_crit = stats.t.ppf(0.975, df)  # 97.5th percentile for two-sided 95% CI
+            t_crit = stats.t.ppf(0.975, df)
             diff = mean2 - mean1
             ci_low = diff - t_crit * se
             ci_high = diff + t_crit * se
         else:
-            # Zero standard error - no variance
             diff = mean2 - mean1
             ci_low = ci_high = diff
 
-        # Significance: BOTH conditions must be met
         is_significant = (
             test_result.pvalue < p_threshold and relative > effect_threshold
         )
@@ -243,13 +221,10 @@ class StatisticalAnalyzer:
         Returns:
             Composite score in [0, 1], higher is better.
         """
-        # Normalize latency: lower latency = higher score
         latency_score = self._normalize_latency(latency_ms, latency_baseline)
 
-        # Error score: binary
         error_score = 0.0 if is_error else 1.0
 
-        # Weighted sum
         w_quality = weights.get("quality", 0.5)
         w_latency = weights.get("latency", 0.3)
         w_error = weights.get("error_rate", 0.2)
@@ -258,7 +233,6 @@ class StatisticalAnalyzer:
             quality * w_quality + latency_score * w_latency + error_score * w_error
         )
 
-        # Clamp to [0, 1] just in case
         composite = max(0.0, min(1.0, composite))
 
         log.debug(
@@ -283,10 +257,8 @@ class StatisticalAnalyzer:
             Normalized score in [0, 1], clamped.
         """
         if baseline <= 0:
-            baseline = 1000.0  # Fallback to 1 second
+            baseline = 1000.0
 
-        # Lower latency = higher score
         score = 1.0 - (latency_ms / (2 * baseline))
 
-        # Clamp to [0, 1]
         return max(0.0, min(1.0, score))

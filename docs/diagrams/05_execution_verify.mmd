@@ -1,0 +1,67 @@
+%%{init: {'theme':'base', 'fontFamily':'Arial, Helvetica, sans-serif', 'themeVariables': {
+  'fontFamily': 'Arial, Helvetica, sans-serif',
+  'fontSize': '14px',
+  'lineColor': '#9AA7C7',
+  'primaryTextColor': '#26344D',
+  'clusterBorder': '#DCE3F2'
+}}}%%
+flowchart TB
+    subgraph Legende[" Legende "]
+        direction LR
+        K1("Team-Assembly")
+        K2("Ausführung")
+        K3("Verify")
+        K4("Eskalation")
+        K1 ~~~ K2 ~~~ K3 ~~~ K4
+    end
+
+    START(["Plan / Team-Auftrag"])
+
+    subgraph Exec["Main Team — HybridOrchestrator"]
+        direction TB
+        TA("TeamAssembler<br/>plant Team aus Agent-Pool")
+        WAVE("Wave-Execution<br/>parallele Agenten (asyncio.gather)")
+        AG("Agent-Execution<br/>Artefakte + SharedMemory")
+        TA --> WAVE --> AG
+    end
+
+    VER{"ExecutionVerifier<br/>Score 0–1 · capability_gap?"}
+
+    PASS(["Ergebnis (PASS)"])
+    FB("REPLAN_FEEDBACK<br/>gleiche Agents + Feedback")
+    NT("REPLAN_NEW_TEAM<br/>neuer Plan / andere Strategie")
+    ESC(["ESCALATE → Gap-Building"])
+
+    Legende ~~~ START
+    START --> TA
+    AG --> VER
+
+    VER -->|"≥ 0.85 oder is_complete"| PASS
+    VER -->|"0.4 – 0.85"| FB
+    VER -->|"0.1 – 0.4"| NT
+    VER -->|"< 0.1 oder Gap"| ESC
+
+    FB -->|"Retry"| WAVE
+    NT -->|"neues Team"| TA
+    FB -.->|"2. Fehlversuch"| NT
+
+    classDef io fill:#E0E7FF,stroke:#7C8CE4,stroke-width:1.5px,color:#26344D;
+    classDef blue fill:#D7E6FF,stroke:#6F9CEB,stroke-width:1.5px,color:#26344D;
+    classDef green fill:#D8F1DF,stroke:#5BB97D,stroke-width:1.5px,color:#26344D;
+    classDef peach fill:#FBE3D2,stroke:#EE9F62,stroke-width:1.5px,color:#26344D;
+    classDef rose fill:#FBDCE6,stroke:#E5759B,stroke-width:1.5px,color:#26344D;
+
+    class START io;
+    class TA blue;
+    class WAVE,AG green;
+    class VER,FB,NT peach;
+    class PASS green;
+    class ESC rose;
+
+    class K1 blue;
+    class K2 green;
+    class K3 peach;
+    class K4 rose;
+
+    style Exec fill:#EEFBF1,stroke:#CBEBD5;
+    style Legende fill:#FBFCFE,stroke:#DCE3F2;

@@ -1,8 +1,3 @@
-"""
-Skill repository for database operations.
-
-Provides CRUD operations for skill storage and retrieval.
-"""
 import logging
 from typing import List, Optional
 
@@ -141,7 +136,6 @@ class SkillRepository:
             log.warning(f"Skill not found for update: id={skill_id}")
             return None
 
-        # Update allowed fields
         allowed_fields = {
             "name", "description", "code", "test_cases",
             "skill_metadata", "is_active", "parent_id",

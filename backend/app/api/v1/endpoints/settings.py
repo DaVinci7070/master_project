@@ -1,14 +1,3 @@
-"""
-Runtime-Settings API für den Modellvergleich.
-
-Ermöglicht dem Benchmark-Runner, Modelle und Ablation-Flags
-zur Laufzeit umzuschalten — ohne Server-Neustart.
-
-- GET  /settings/current   — aktuelle Modelle + Flags
-- PUT  /settings/models    — alle LLM-Rollen umschalten
-- PUT  /settings/ablation  — Feature-Flags setzen
-"""
-
 from __future__ import annotations
 
 import logging
@@ -21,9 +10,6 @@ from app.core.llm_router import get_router, TaskType
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 log = logging.getLogger(__name__)
-
-
-# ── Schemas ──────────────────────────────────────────────────────────
 
 
 class ModelsUpdateRequest(BaseModel):
@@ -61,9 +47,6 @@ class ModelsUpdateResponse(BaseModel):
 class AblationUpdateResponse(BaseModel):
     previous: dict[str, bool]
     current: dict[str, bool]
-
-
-# ── Endpoints ────────────────────────────────────────────────────────
 
 
 @router.get("/current", response_model=CurrentSettingsResponse)

@@ -1,14 +1,3 @@
-"""
-LLM-based feasibility judge for execution-type capabilities.
-
-Verifies whether agents actually have tools/skills to perform execution tasks,
-preventing false CAN_DO verdicts from embedding similarity alone.
-
-When CapabilityMatcher reports a high similarity score for an execution-type
-capability, the FeasibilityJudge asks the LLM: "Can this agent actually
-perform this action using its available tools?" If no tool exists, the
-capability is marked infeasible and routes to Developer Team for skill building.
-"""
 import logging
 from typing import Callable, Awaitable, Optional
 
@@ -131,7 +120,6 @@ class FeasibilityJudge:
         """Judge feasibility of a single capability match."""
         agent_id = match.matched_agent_id
 
-        # Pseudo-Entities (skill:xxx, prompt:xxx) zum echten Agent aufloesen
         if agent_id.startswith("skill:") or agent_id.startswith("prompt:"):
             real_agent_id = await self._resolve_to_real_agent(agent_id)
             if real_agent_id:
@@ -140,15 +128,11 @@ class FeasibilityJudge:
                 )
                 agent_id = real_agent_id
             else:
-                # Skill/Prompt existiert aber ist keinem Agent zugewiesen.
-                # Trotzdem prüfen ob die Capability zur Aktion passt —
-                # Embedding-Similarity allein reicht nicht (z.B. DB-Skill ≠ File-I/O).
                 logger.info(
                     f"'{match.required_capability}' matched to unbound '{match.matched_agent_id}' "
                     f"— verifying via LLM"
                 )
 
-        # Get agent details and bound skills
         agent_info = await self._get_agent_info(agent_id)
         skill_list = await self._get_agent_skills(agent_id)
         prompt_excerpt = await self._get_agent_prompt_excerpt(agent_id)
@@ -279,12 +263,10 @@ class FeasibilityJudge:
             return ""
 
         try:
-            # Get skills from topology loader cache
             all_skills = self.topology.get_all_loaded_skills()
             agent_skills = []
 
             for skill_id, skill_data in all_skills.items():
-                # Skills sind ORM-Objekte — Attribut-Zugriff statt dict.get()
                 meta = getattr(skill_data, "skill_metadata", None) or {}
                 bound_agent = meta.get("agent_id") or meta.get("bound_to")
                 if bound_agent == agent_id:
@@ -292,7 +274,6 @@ class FeasibilityJudge:
                     desc = getattr(skill_data, "description", None) or "No description"
                     agent_skills.append(f"- {name}: {desc}")
 
-            # Also check skill bindings in database
             from sqlalchemy import select
             from app.models.sql.skill_build_models import SkillBinding
 

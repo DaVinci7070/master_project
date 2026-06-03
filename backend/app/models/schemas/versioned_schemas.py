@@ -1,16 +1,7 @@
-"""
-Pydantic schemas for versioned models (Prompt, Agent, Skill).
-
-Uses Pydantic v2 with ConfigDict for SQLAlchemy model integration.
-"""
 from datetime import datetime
 from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
-
-# ============================================================================
-# Prompt Schemas
-# ============================================================================
 
 class PromptCreate(BaseModel):
     """Schema for creating a new prompt."""
@@ -41,10 +32,6 @@ class PromptResponse(BaseModel):
     is_active: bool
     created_at: datetime
 
-
-# ============================================================================
-# Agent Schemas
-# ============================================================================
 
 class AgentCreate(BaseModel):
     """Schema for creating a new agent."""
@@ -79,10 +66,6 @@ class AgentResponse(BaseModel):
     prompt_id: Optional[str] = None
     created_at: datetime
 
-
-# ============================================================================
-# Skill Schemas
-# ============================================================================
 
 class SkillTestCase(BaseModel):
     """Schema for a skill test case."""

@@ -1,9 +1,3 @@
-"""
-Tests for AutonomousSkillBuilder.
-
-Run with: pytest tests/test_autonomous_skill_builder.py -v
-"""
-
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -41,7 +35,6 @@ class TestCodeExtraction:
 
     @pytest.fixture
     def builder(self):
-        # Create builder with mocked dependencies
         mock_db = MagicMock()
         return AutonomousSkillBuilder(session_factory=mock_db)
 
@@ -90,11 +83,9 @@ def execute(data):
 
         packages = builder._imports_to_packages(imports, recommended)
 
-        # Standard lib should be excluded
         assert "json" not in packages
         assert "os" not in packages
 
-        # Package mappings should work
         assert "faster-whisper" in packages
         assert "pydub" in packages
 
@@ -185,7 +176,6 @@ class TestIntegration:
             test_input={"data": {"key": "value"}},
         )
 
-        # This may or may not succeed depending on LLM output
         print(f"Build result: success={result.success}, iterations={result.iterations}")
         if not result.success:
             print(f"Error: {result.final_error}")

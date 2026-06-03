@@ -1,14 +1,3 @@
-"""
-Agent Prompt Improver for weak_prompt gap resolution.
-
-Instead of creating standalone prompts that never get used,
-this service improves an existing agent's prompt to better
-handle the required capability.
-
-Key insight: A "weak_prompt" gap means an agent EXISTS but its
-prompt isn't good enough. The fix is to IMPROVE that agent's prompt,
-not create a new unattached prompt file.
-"""
 import logging
 import re
 import time
@@ -23,7 +12,6 @@ from app.models.schemas.intervention_schemas import BuildResult
 
 logger = logging.getLogger(__name__)
 
-# Prompt for improving agent prompts
 PROMPT_IMPROVEMENT_TEMPLATE = """You are an expert prompt engineer. Your task is to improve an agent's prompt to better handle a specific capability.
 
 ## Current Agent Prompt
@@ -99,7 +87,6 @@ class AgentPromptImprover:
         start_time = time.time()
 
         try:
-            # 1. Find the best agent for this capability
             agent = await self._find_agent_for_capability(affected_capability)
 
             if not agent:
@@ -111,7 +98,6 @@ class AgentPromptImprover:
                     affected_capability, gap_description, challenge_context, start_time
                 )
 
-            # 2. Load current prompt
             current_prompt = await self._get_agent_prompt(agent)
 
             if not current_prompt:
@@ -122,7 +108,6 @@ class AgentPromptImprover:
                     agent, affected_capability, gap_description, challenge_context, start_time
                 )
 
-            # 3. Generate improved prompt via LLM
             improved_content = await self._generate_improved_prompt(
                 current_prompt=current_prompt.content,
                 affected_capability=affected_capability,
@@ -140,10 +125,9 @@ class AgentPromptImprover:
                     duration_seconds=time.time() - start_time
                 )
 
-            # 4. Create new prompt version
             new_prompt = Prompt(
                 id=str(uuid.uuid4()),
-                parent_id=current_prompt.id,  # Link to previous version
+                parent_id=current_prompt.id,
                 name=current_prompt.name,
                 content=improved_content,
                 prompt_metadata={
@@ -160,14 +144,12 @@ class AgentPromptImprover:
             async with self.session_factory() as db:
                 db.add(new_prompt)
 
-                # 5. Deactivate old prompt version
                 await db.execute(
                     update(Prompt)
                     .where(Prompt.id == current_prompt.id)
                     .values(is_active=False)
                 )
 
-                # 6. Update agent to use new prompt
                 await db.execute(
                     update(Agent)
                     .where(Agent.id == agent.id)
@@ -177,7 +159,6 @@ class AgentPromptImprover:
                 await db.commit()
                 await db.refresh(new_prompt)
 
-            # 7. Log the change
             await self._log_prompt_improvement(
                 agent=agent,
                 old_prompt_id=current_prompt.id,
@@ -272,13 +253,11 @@ class AgentPromptImprover:
                     agent_cap_normalized = self._normalize_capability(agent_cap)
                     agent_words = set(agent_cap_normalized.split())
 
-                    # Calculate word overlap
                     if cap_words and agent_words:
                         overlap = len(cap_words & agent_words)
                         union = len(cap_words | agent_words)
                         score = overlap / union if union > 0 else 0
 
-                        # Boost for containment
                         if cap_normalized in agent_cap_normalized or agent_cap_normalized in cap_normalized:
                             score = max(score, 0.7)
 
@@ -286,7 +265,6 @@ class AgentPromptImprover:
                             best_score = score
                             best_agent = agent
 
-                # Also check agent name
                 agent_name_words = set(self._normalize_capability(agent.name).split())
                 name_overlap = len(cap_words & agent_name_words)
                 if name_overlap > 0:
@@ -359,7 +337,6 @@ class AgentPromptImprover:
         """
         prompt_name = f"prompt_{affected_capability.replace(' ', '_').lower()}"
 
-        # Generate prompt content
         if self._call_llm:
             messages = [
                 {"role": "system", "content": "You are an expert prompt engineer."},
@@ -389,7 +366,7 @@ Output ONLY the prompt text."""}
                 "built_by": "agent_prompt_improver",
                 "affected_capability": affected_capability,
                 "gap_description": gap_description[:200],
-                "standalone": True,  # Not attached to any agent
+                "standalone": True,
                 "provisional": True,
             },
             is_active=True
@@ -422,7 +399,6 @@ Output ONLY the prompt text."""}
         start_time: float
     ) -> BuildResult:
         """Create a new prompt for an agent that doesn't have one."""
-        # Generate prompt content
         if self._call_llm:
             messages = [
                 {"role": "system", "content": "You are an expert prompt engineer."},
@@ -460,7 +436,6 @@ Output ONLY the prompt text."""}
         async with self.session_factory() as db:
             db.add(prompt)
 
-            # Update agent with new prompt
             await db.execute(
                 update(Agent)
                 .where(Agent.id == agent.id)

@@ -1,4 +1,3 @@
-"""Qdrant adapter for shared memory collections (Facts, Hypotheses)."""
 import logging
 import math
 from datetime import datetime, timezone
@@ -13,11 +12,9 @@ from qdrant_client.models import (
 
 logger = logging.getLogger(__name__)
 
-# Collection names
 FACTS_COLLECTION = "shared_memory_facts"
 HYPOTHESES_COLLECTION = "shared_memory_hypotheses"
 
-# Vector dimensions (Gemini text-embedding-004)
 VECTOR_SIZE = 768
 
 
@@ -39,7 +36,6 @@ class SharedMemoryQdrantAdapter:
                         distance=Distance.COSINE
                     )
                 )
-                # Create indexes for filtering
                 self._create_indexes(collection_name)
                 logger.info(f"Created collection: {collection_name}")
 
@@ -61,7 +57,6 @@ class SharedMemoryQdrantAdapter:
                     field_schema=field_type
                 )
             except Exception as e:
-                # Index may already exist
                 logger.debug(f"Index creation skipped for {field_name}: {e}")
 
     async def upsert_fact(
@@ -102,7 +97,7 @@ class SharedMemoryQdrantAdapter:
         self.client.upsert(
             collection_name=FACTS_COLLECTION,
             points=[point],
-            wait=True  # Ensure indexing completes (per RESEARCH pitfall 7)
+            wait=True
         )
         return fact_id
 
@@ -149,7 +144,7 @@ class SharedMemoryQdrantAdapter:
         agent_id: Optional[str] = None,
         project_id: Optional[str] = None,
         tags: Optional[list[str]] = None,
-        recency_scale: int = 604800,  # 1 week in seconds
+        recency_scale: int = 604800,
         score_threshold: float = 0.0,
     ) -> list[dict[str, Any]]:
         """
@@ -169,7 +164,6 @@ class SharedMemoryQdrantAdapter:
         Returns:
             List of fact dicts with scores
         """
-        # Build filter conditions
         must_conditions = []
         if min_confidence > 0:
             must_conditions.append(
@@ -190,7 +184,6 @@ class SharedMemoryQdrantAdapter:
 
         query_filter = Filter(must=must_conditions) if must_conditions else None
 
-        # Search with recency scoring using query_points (qdrant-client 1.7+)
         results = self.client.query_points(
             collection_name=FACTS_COLLECTION,
             query=query_embedding,
@@ -200,15 +193,12 @@ class SharedMemoryQdrantAdapter:
             score_threshold=score_threshold,
         ).points
 
-        # Apply recency boost in post-processing
-        # (Alternative to Qdrant native decay until upgrade)
         now_ts = datetime.now(timezone.utc).timestamp()
         boosted_results = []
         for hit in results:
             payload = hit.payload or {}
             created_ts = payload.get("created_at_ts", now_ts)
             age_seconds = now_ts - created_ts
-            # Exponential decay: e^(-age/scale)
             recency_boost = math.exp(-age_seconds / recency_scale)
             combined_score = hit.score * 0.7 + recency_boost * 0.3
 
@@ -220,7 +210,6 @@ class SharedMemoryQdrantAdapter:
                 **payload
             })
 
-        # Re-sort by combined score
         boosted_results.sort(key=lambda x: x["score"], reverse=True)
         return boosted_results
 
@@ -285,7 +274,7 @@ class SharedMemoryQdrantAdapter:
         exclude_project_id: str,
         limit: int = 30,
         min_confidence: float = 0.5,
-        recency_scale: int = 2592000  # 30 days for cross-project
+        recency_scale: int = 2592000
     ) -> list[dict[str, Any]]:
         """
         Search facts from OTHER projects (excluding current project).
@@ -304,7 +293,6 @@ class SharedMemoryQdrantAdapter:
         Returns:
             List of fact dicts with scores, sorted by combined score
         """
-        # Build filter to EXCLUDE current project
         must_not_conditions = [
             FieldCondition(key="project_id", match=MatchValue(value=exclude_project_id))
         ]
@@ -317,24 +305,21 @@ class SharedMemoryQdrantAdapter:
             must_not=must_not_conditions
         )
 
-        # Search with lower threshold for cross-project (patterns may be less similar)
         results = self.client.query_points(
             collection_name=FACTS_COLLECTION,
             query=query_embedding,
             query_filter=query_filter,
             limit=limit,
             with_payload=True,
-            score_threshold=0.6  # Lower threshold for cross-project
+            score_threshold=0.6
         ).points
 
-        # Apply recency boost with longer scale for cross-project patterns
         now_ts = datetime.now(timezone.utc).timestamp()
         boosted_results = []
         for hit in results:
             payload = hit.payload or {}
             created_ts = payload.get("created_at_ts", now_ts)
             age_seconds = now_ts - created_ts
-            # Exponential decay with longer scale for cross-project
             recency_boost = math.exp(-age_seconds / recency_scale)
             combined_score = hit.score * 0.7 + recency_boost * 0.3
 
@@ -347,6 +332,5 @@ class SharedMemoryQdrantAdapter:
                 **payload
             })
 
-        # Re-sort by combined score
         boosted_results.sort(key=lambda x: x["score"], reverse=True)
         return boosted_results

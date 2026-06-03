@@ -1,16 +1,3 @@
-"""
-F19 — Metrics Collector.
-
-Post-run aggregation of system metrics from backend APIs.
-Reads a benchmark runner JSON output, enriches it with reuse rate,
-evolution stats, topology changes, and exports JSON + CSV.
-
-Usage:
-    python -m scripts.evaluation.metrics_collector \
-        --run-results results/run.json \
-        --output results/metrics.json \
-        --base-url http://localhost:8000/api/v1
-"""
 from __future__ import annotations
 
 import argparse
@@ -23,10 +10,6 @@ from pathlib import Path
 
 import httpx
 
-
-# ---------------------------------------------------------------------------
-# API fetchers
-# ---------------------------------------------------------------------------
 
 async def fetch_json(client: httpx.AsyncClient, url: str) -> dict | None:
     """GET a URL and return parsed JSON, or None on error."""
@@ -50,7 +33,6 @@ async def collect_api_metrics(client: httpx.AsyncClient, base_url: str) -> dict:
         "evolution_succeeded": None,
     }
 
-    # Skill registry stats -> reuse rate
     registry = await fetch_json(client, f"{base_url}/skills/registry/stats")
     if registry and registry.get("skills"):
         skills = registry["skills"]
@@ -60,17 +42,14 @@ async def collect_api_metrics(client: httpx.AsyncClient, base_url: str) -> dict:
     elif registry:
         metrics["blueprint_reuse_rate"] = 0.0
 
-    # Topology history -> total changes
     topo = await fetch_json(client, f"{base_url}/topology/history?limit=100")
     if topo is not None:
         metrics["topology_changes"] = topo.get("total", 0)
 
-    # Skills list -> total built
     skills_resp = await fetch_json(client, f"{base_url}/skills?limit=100")
     if skills_resp is not None:
         metrics["skills_built"] = skills_resp.get("total", 0)
 
-    # Evolution stats
     evo = await fetch_json(client, f"{base_url}/evolution/stats")
     if evo is not None:
         metrics["evolution_attempts"] = evo.get("total_attempts", 0)
@@ -81,10 +60,6 @@ async def collect_api_metrics(client: httpx.AsyncClient, base_url: str) -> dict:
 
     return metrics
 
-
-# ---------------------------------------------------------------------------
-# Compute runner-derived metrics
-# ---------------------------------------------------------------------------
 
 def compute_runner_metrics(run_data: dict) -> dict:
     """Derive latency percentiles and token aggregates from runner output."""
@@ -117,10 +92,6 @@ def percentile(data: list[float | int], pct: float) -> float:
         return float(sorted_data[f])
     return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
 
-
-# ---------------------------------------------------------------------------
-# Main collection
-# ---------------------------------------------------------------------------
 
 async def collect(args: argparse.Namespace) -> dict:
     run_path = Path(args.run_results)
@@ -161,14 +132,12 @@ async def collect(args: argparse.Namespace) -> dict:
         "per_task": per_task,
     }
 
-    # Write JSON
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
     print(f"Metrics JSON written to {output_path}")
 
-    # Write CSV
     csv_path = Path(args.csv) if args.csv else output_path.with_suffix(".csv")
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
@@ -191,7 +160,6 @@ async def collect(args: argparse.Namespace) -> dict:
         ])
     print(f"Metrics CSV  written to {csv_path}")
 
-    # Summary to stdout
     print(f"\nPass@1: {summary['pass_at_1'] * 100:.1f}%  |  "
           f"p50={summary['p50_latency_ms']}ms  p95={summary['p95_latency_ms']}ms  |  "
           f"tokens={summary['total_tokens']}  |  "
@@ -200,10 +168,6 @@ async def collect(args: argparse.Namespace) -> dict:
 
     return output
 
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluation Metrics Collector")

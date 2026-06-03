@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Erstellt die initiale Agent-Topologie in der Datenbank (Main Team + Developer Team) Resettet das System.
-Keine Skills — die werden zur Laufzeit vom System autonom gebaut.
-
-Usage:
-    python scripts/seed_agents.py            # Agents anlegen (idempotent)
-    python scripts/seed_agents.py --status   # Aktuelle Agents anzeigen
-    python scripts/seed_agents.py --reset    # Alle löschen und neu seeden
-"""
 import argparse
 import asyncio
 import logging

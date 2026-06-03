@@ -1,10 +1,3 @@
-"""
-Improvement repository for improvement attempt data access.
-
-This module implements CRUD operations and 3-strike rule queries for
-ImprovementAttempt records. The repository enables tracking how many
-times the system has attempted to fix a specific finding.
-"""
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional

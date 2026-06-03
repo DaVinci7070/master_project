@@ -1,8 +1,3 @@
-"""
-Tests for Phase 12: End-to-End Execution Connection.
-
-Tests the challenge submission → assessment → execution → results flow.
-"""
 import pytest
 import uuid
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -22,7 +17,6 @@ def mock_db_session():
     session = AsyncMock(spec=AsyncSession)
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
-    # execute().scalar_one_or_none() für Lookups
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = None
     mock_result.scalars.return_value.all.return_value = []
@@ -127,7 +121,7 @@ class TestChallengeAnalysis:
         assert response.status_code == 200
         data = response.json()
         assert "challenge_id" in data
-        assert len(data["challenge_id"]) == 36  # UUID format
+        assert len(data["challenge_id"]) == 36
 
 
 class TestChallengeExecution:
@@ -136,7 +130,6 @@ class TestChallengeExecution:
     @pytest.mark.asyncio
     async def test_execute_assessed_challenge(self):
         """Executing an assessed challenge should start background task."""
-        # First analyze
         async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test"
@@ -151,7 +144,6 @@ class TestChallengeExecution:
             )
             challenge_id = analyze_response.json()["challenge_id"]
 
-            # Then execute
             execute_response = await client.post(
                 f"/api/v1/challenges/{challenge_id}/execute"
             )
@@ -187,7 +179,6 @@ class TestChallengeResults:
             transport=ASGITransport(app=app),
             base_url="http://test"
         ) as client:
-            # Analyze but don't execute
             analyze_response = await client.post(
                 "/api/v1/challenges/analyze",
                 json={
@@ -198,7 +189,6 @@ class TestChallengeResults:
             )
             challenge_id = analyze_response.json()["challenge_id"]
 
-            # Try to get results
             results_response = await client.get(
                 f"/api/v1/challenges/{challenge_id}/results"
             )
@@ -232,7 +222,6 @@ class TestChallengeByExecutionId:
             transport=ASGITransport(app=app),
             base_url="http://test"
         ) as client:
-            # Create challenge
             analyze_response = await client.post(
                 "/api/v1/challenges/analyze",
                 json={
@@ -242,7 +231,6 @@ class TestChallengeByExecutionId:
                 }
             )
 
-            # Find by execution_id
             response = await client.get(
                 f"/api/v1/challenges/by-execution/{execution_id}"
             )
@@ -276,7 +264,6 @@ class TestChallengeStatus:
             transport=ASGITransport(app=app),
             base_url="http://test"
         ) as client:
-            # Create challenge
             analyze_response = await client.post(
                 "/api/v1/challenges/analyze",
                 json={
@@ -287,7 +274,6 @@ class TestChallengeStatus:
             )
             challenge_id = analyze_response.json()["challenge_id"]
 
-            # Get status
             response = await client.get(f"/api/v1/challenges/{challenge_id}")
 
         assert response.status_code == 200
@@ -308,7 +294,6 @@ class TestEndToEndFlow:
             transport=ASGITransport(app=app),
             base_url="http://test"
         ) as client:
-            # 1. Analyze
             analyze_response = await client.post(
                 "/api/v1/challenges/analyze",
                 json={
@@ -321,7 +306,6 @@ class TestEndToEndFlow:
             challenge_id = analyze_response.json()["challenge_id"]
             route_decision = analyze_response.json()["route_decision"]
 
-            # 2. Execute (only if route_decision is 'execute')
             if route_decision == "execute":
                 execute_response = await client.post(
                     f"/api/v1/challenges/{challenge_id}/execute"
@@ -329,7 +313,6 @@ class TestEndToEndFlow:
                 assert execute_response.status_code == 200
                 assert execute_response.json()["status"] == "executing"
 
-            # 3. Check status
             status_response = await client.get(
                 f"/api/v1/challenges/{challenge_id}"
             )

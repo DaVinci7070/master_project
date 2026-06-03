@@ -1,10 +1,3 @@
-"""
-Evolution API Endpoints (Sprint 1).
-
-- POST /evolution/executions/{id}/evolve  — manual trigger (debug/demo/evaluation)
-- GET  /evolution/history                 — chronological evolution.* events
-- GET  /evolution/stats                   — aggregated improvement stats
-"""
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query

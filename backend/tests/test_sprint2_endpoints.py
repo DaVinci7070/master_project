@@ -1,16 +1,9 @@
-"""
-Sprint 2 tests for F6 Evolution-API endpoints:
-- GET /api/v1/skills/{id}/version-history  (lineage + build attempts)
-- GET /api/v1/topology/history  (with previous_state / new_state)
-"""
 from datetime import datetime, timezone
 
 import pytest
 from httpx import AsyncClient, ASGITransport
 
-# Make sure models register with Base.metadata (conftest already imports them,
-# but be explicit in case of collection order surprises).
-from app.models.sql import versioned_models, skill_build_models, topology_models  # noqa: F401
+from app.models.sql import versioned_models, skill_build_models, topology_models
 
 from app.main import app
 from app.dependencies.dependencies import get_db_session
@@ -29,10 +22,6 @@ def app_with_session(test_session):
     yield app
     app.dependency_overrides.pop(get_db_session, None)
 
-
-# ---------------------------------------------------------------------------
-# Skill version-history
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_skill_version_history_returns_lineage(app_with_session, test_session):
@@ -55,7 +44,6 @@ async def test_skill_version_history_returns_lineage(app_with_session, test_sess
     body = resp.json()
     assert body["skill_id"] == v3.id
     assert body["total_versions"] == 3
-    # root first, requested last
     ids = [entry["id"] for entry in body["lineage"]]
     assert ids == [root.id, v2.id, v3.id]
     indices = [entry["version_index"] for entry in body["lineage"]]
@@ -109,10 +97,6 @@ async def test_skill_version_history_404_for_unknown(app_with_session):
         resp = await client.get("/api/v1/skills/does-not-exist/version-history")
     assert resp.status_code == 404
 
-
-# ---------------------------------------------------------------------------
-# Topology history with before/after snapshots
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_topology_history_exposes_previous_and_new_state(

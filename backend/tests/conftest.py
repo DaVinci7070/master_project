@@ -1,11 +1,3 @@
-"""
-Pytest configuration and fixtures for lumari-backend tests.
-
-This module provides:
-- Database fixtures with NullPool for test isolation
-- Async test configuration
-- Common test fixtures (skill_executor, etc.)
-"""
 import asyncio
 from typing import AsyncGenerator, Generator
 
@@ -21,11 +13,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import StaticPool
 
 from app.models.sql.base import Base
-# Import SQL model modules so they register with Base.metadata before
-# create_all() runs in the test_engine fixture. Excludes modules that use
-# Postgres-only types (JSONB) incompatible with the SQLite test DB —
-# those tables are not needed by the current test suite.
-from app.models.sql import (  # noqa: F401
+from app.models.sql import (
     sql_models,
     versioned_models,
     telemetry_models,
@@ -43,7 +31,6 @@ from app.models.sql import (  # noqa: F401
 from app.skills.runtime.executor import SkillExecutor
 
 
-# Configure pytest-asyncio
 pytest_plugins = ["pytest_asyncio"]
 
 
@@ -70,19 +57,15 @@ async def test_engine() -> AsyncGenerator[AsyncEngine, None]:
     ``StaticPool`` holds a single shared connection for the lifetime of the
     engine, so all sessions observe the same in-memory DB.
     """
-    # Use in-memory SQLite for tests
-    # aiosqlite required for async SQLite
     database_url = "sqlite+aiosqlite:///:memory:"
 
     engine = create_async_engine(
         database_url,
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
-        echo=False,  # Set True for SQL debugging
+        echo=False,
     )
 
-    # Create all tables except those using Postgres-only types (JSONB),
-    # which SQLite cannot compile. Those tables aren't needed by tests.
     def _is_sqlite_compatible(table) -> bool:
         for col in table.columns:
             type_name = type(col.type).__name__
@@ -96,7 +79,6 @@ async def test_engine() -> AsyncGenerator[AsyncEngine, None]:
 
     yield engine
 
-    # Cleanup
     async with engine.begin() as conn:
         await conn.run_sync(lambda sync_conn: Base.metadata.drop_all(sync_conn, tables=tables))
 

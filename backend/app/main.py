@@ -1,7 +1,6 @@
 import logging
 import structlog
 
-# Load .env FIRST before anything else
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -19,7 +18,6 @@ from app.middleware.telemetry_middleware import setup_telemetry, shutdown_teleme
 
 logger = logging.getLogger(__name__)
 
-# Store telemetry provider for shutdown
 _telemetry_provider = None
 
 
@@ -27,7 +25,6 @@ async def init_db():
     from sqlalchemy import inspect, text
 
     async with async_engine.begin() as conn:
-        # Check if tables already exist
         def check_tables(connection):
             inspector = inspect(connection)
             return inspector.get_table_names()
@@ -36,12 +33,10 @@ async def init_db():
 
         if existing_tables:
             logger.info(f"Database already initialized ({len(existing_tables)} tables)")
-            # Auto-migrate: add SoK skill columns if missing
             if "skills" in existing_tables:
                 await _migrate_skill_columns(conn)
             if "skill_build_attempts" in existing_tables:
                 await _migrate_build_attempt_columns(conn)
-            # Auto-create new tables that don't exist yet
             await conn.run_sync(
                 lambda sync_conn: Base.metadata.create_all(sync_conn, checkfirst=True)
             )
@@ -55,7 +50,6 @@ async def _migrate_skill_columns(conn):
     """Add SoK skill columns to existing skills table if missing."""
     from sqlalchemy import text
 
-    # Detect database dialect and get existing columns
     dialect = conn.dialect.name
     if dialect == "sqlite":
         result = await conn.execute(text("PRAGMA table_info(skills)"))
@@ -163,22 +157,18 @@ async def _backfill_skill_applicability():
 async def lifespan(app: FastAPI):
     global _telemetry_provider
 
-    # Initialize database
     await init_db()
 
-    # Initialize OpenTelemetry (DB-07)
     _telemetry_provider = setup_telemetry(
         app,
         service_name="lumari-backend",
         service_version="0.1.0",
-        enable_console_export=True,  # TODO: Make configurable
+        enable_console_export=True,
     )
     logger.info("OpenTelemetry instrumentation initialized")
 
-    # Backfill applicability for skills that don't have it yet
     await _backfill_skill_applicability()
 
-    # Initialize Skill Registry (Hot-Reload) if enabled
     from app.core.config import settings
     if settings.hot_reload_enabled:
         from app.skills.runtime.registry import SkillRegistry
@@ -189,7 +179,6 @@ async def lifespan(app: FastAPI):
             skill_count = await registry.initialize(db)
             logger.info(f"Skill registry initialized with {skill_count} skills")
 
-        # Register rebuild callback for auto-rebuild flagged skills
         async def _on_skill_rebuild_needed(skill_id: str, skill_name: str, reason: str | None) -> None:
             logger.warning(
                 f"REBUILD_NEEDED: skill '{skill_name}' (id={skill_id[:8]}...) "
@@ -200,7 +189,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown telemetry
     shutdown_telemetry(_telemetry_provider)
     logger.info("OpenTelemetry shutdown complete")
 
@@ -240,4 +228,3 @@ async def health():
     return {"status": "healthy"}
 
 app.include_router(api_router)
-

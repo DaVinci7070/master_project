@@ -1,22 +1,3 @@
-"""
-Evaluation Dashboard API Endpoints.
-
-Wraps the CLI evaluation tools (cold_warm_switch, ablation_modes,
-benchmark_runner) as HTTP endpoints for the frontend dashboard.
-
-- GET  /evaluation/suites              — list available YAML suites
-- GET  /evaluation/suites/{name}       — suite detail with task list
-- GET  /evaluation/ablation-modes      — available ablation modes
-- GET  /evaluation/snapshots           — list warm snapshots
-- POST /evaluation/cold-reset          — truncate + re-seed
-- POST /evaluation/warm-snapshot/save  — pg_dump + qdrant snapshot
-- POST /evaluation/warm-snapshot/restore — pg_restore
-- POST /evaluation/runs               — start benchmark run (background)
-- GET  /evaluation/runs               — list all runs (DB-persistent)
-- GET  /evaluation/runs/{run_id}       — single run detail with tasks
-- GET  /evaluation/runs/{run_id}/stream — SSE progress stream
-- GET  /evaluation/compare             — compare multiple runs
-"""
 from __future__ import annotations
 
 import asyncio
@@ -68,7 +49,6 @@ log = logging.getLogger(__name__)
 DATASETS_DIR = Path(__file__).parent.parent.parent.parent.parent / "scripts" / "evaluation" / "datasets"
 SNAPSHOTS_DIR = Path(__file__).parent.parent.parent.parent.parent / "snapshots"
 
-# ── In-memory run registry ─────────────────────────────────────────
 
 _run_lock = asyncio.Lock()
 
@@ -112,8 +92,6 @@ class EvalRunState:
 
 _eval_runs: dict[str, EvalRunState] = {}
 
-
-# ── Suites ─────────────────────────────────────────────────────────
 
 @router.get("/suites", response_model=list[SuiteInfo])
 async def list_suites():
@@ -160,15 +138,11 @@ async def get_suite_detail(name: str):
     )
 
 
-# ── Ablation Modes ─────────────────────────────────────────────────
-
 @router.get("/ablation-modes")
 async def get_ablation_modes():
     """Return available ablation modes with their feature flags."""
     return MODES
 
-
-# ── Snapshots ──────────────────────────────────────────────────────
 
 @router.get("/snapshots", response_model=list[SnapshotInfo])
 async def list_snapshots():
@@ -185,8 +159,6 @@ async def list_snapshots():
         ))
     return snapshots
 
-
-# ── Cold Reset ─────────────────────────────────────────────────────
 
 _cold_reset_lock = asyncio.Lock()
 
@@ -211,8 +183,6 @@ async def cold_reset_endpoint(request: ColdResetRequest):
             dry_run=request.dry_run,
         )
 
-
-# ── Warm Save / Restore ───────────────────────────────────────────
 
 @router.post("/warm-snapshot/save", response_model=WarmSaveResponse)
 async def warm_save_endpoint(request: WarmSaveRequest):
@@ -251,21 +221,16 @@ async def warm_restore_endpoint(request: WarmRestoreRequest):
     )
 
 
-# ── Benchmark Runs ─────────────────────────────────────────────────
-
 @router.post("/runs", response_model=StartRunResponse)
 async def start_run(request: StartRunRequest):
     """Start a benchmark run in the background."""
-    # Validate suite
     suite_path = DATASETS_DIR / f"{request.suite}.yaml"
     if not suite_path.exists():
         raise HTTPException(404, f"Suite '{request.suite}' not found")
 
-    # Validate ablation mode
     if request.ablation_mode and request.ablation_mode not in MODES:
         raise HTTPException(400, f"Unknown ablation mode '{request.ablation_mode}'. Available: {list(MODES.keys())}")
 
-    # Only one run at a time (settings mutation is not safe for parallel runs)
     for run in _eval_runs.values():
         if run.status == "running":
             raise HTTPException(409, f"Run '{run.run_id}' is already in progress. Wait for it to complete.")
@@ -297,7 +262,6 @@ async def start_run(request: StartRunRequest):
 @router.get("/runs", response_model=list[RunSummary])
 async def list_runs(session: AsyncSession = Depends(get_db_session)):
     """List all evaluation runs (persistent from DB + in-memory active)."""
-    # DB runs
     result = await session.execute(
         select(BenchmarkRun).order_by(BenchmarkRun.started_at.desc())
     )
@@ -320,7 +284,6 @@ async def list_runs(session: AsyncSession = Depends(get_db_session)):
             completed_at=r.completed_at.isoformat() if r.completed_at else None,
         ))
 
-    # Add in-memory runs not yet persisted (still running)
     for run in _eval_runs.values():
         if run.run_id not in db_run_ids:
             summaries.append(RunSummary(**run.summary()))
@@ -331,14 +294,12 @@ async def list_runs(session: AsyncSession = Depends(get_db_session)):
 @router.get("/runs/{run_id}", response_model=RunDetailResponse)
 async def get_run(run_id: str, session: AsyncSession = Depends(get_db_session)):
     """Get detailed results for a specific run (from DB)."""
-    # Try DB first
     result = await session.execute(
         select(BenchmarkRun).where(BenchmarkRun.id == run_id)
     )
     db_run = result.scalar_one_or_none()
 
     if db_run:
-        # Load task results
         tr_result = await session.execute(
             select(BenchmarkTaskResult)
             .where(BenchmarkTaskResult.run_id == run_id)
@@ -383,7 +344,6 @@ async def get_run(run_id: str, session: AsyncSession = Depends(get_db_session)):
             ],
         )
 
-    # Fallback: in-memory (still running)
     run = _eval_runs.get(run_id)
     if not run:
         raise HTTPException(404, f"Run '{run_id}' not found")
@@ -459,7 +419,6 @@ async def compare_runs(
         for r in sorted(runs, key=lambda x: x.started_at)
     ]
 
-    # Compute delta between first and last run
     first, last = items[0], items[-1]
     delta = {
         "pass_at_1": round(last.pass_at_1 - first.pass_at_1, 3),
@@ -471,8 +430,6 @@ async def compare_runs(
 
     return RunCompareResponse(runs=items, delta=delta)
 
-
-# ── SSE Stream ─────────────────────────────────────────────────────
 
 @router.get("/runs/{run_id}/stream")
 async def stream_run(run_id: str):
@@ -497,7 +454,6 @@ async def _eval_stream_generator(run_id: str) -> AsyncGenerator[str, None]:
             yield format_sse_event("error", {"message": "Run not found"})
             return
 
-        # Emit newly completed tasks
         for i, tp in enumerate(run.task_progress[last_seen:], start=last_seen):
             if tp["status"] not in ("pending", "running"):
                 yield format_sse_event("task_complete", {
@@ -523,8 +479,6 @@ async def _eval_stream_generator(run_id: str) -> AsyncGenerator[str, None]:
         await asyncio.sleep(1.0)
 
 
-# ── Background runner ──────────────────────────────────────────────
-
 async def _run_benchmark(
     run_state: EvalRunState,
     tasks: list[dict],
@@ -533,7 +487,6 @@ async def _run_benchmark(
     """Execute benchmark tasks sequentially, updating run_state in-place and persisting to DB."""
     from app.dependencies.dependencies import AsyncSessionLocal
 
-    # Save and apply ablation mode
     original_flags: dict | None = None
     if request.ablation_mode:
         mode_flags = MODES[request.ablation_mode]
@@ -550,7 +503,6 @@ async def _run_benchmark(
     base_url = "http://localhost:8000/api/v1"
     task_db_results: list[BenchmarkTaskResult] = []
 
-    # Create DB run record
     async with AsyncSessionLocal() as db:
         db_run = BenchmarkRun(
             id=run_state.run_id,
@@ -564,7 +516,6 @@ async def _run_benchmark(
         db.add(db_run)
         await db.commit()
 
-    # Create LLM client for claim-based evaluation
     from app.core.llm_client import LLMClient
     llm_client = LLMClient()
 
@@ -601,7 +552,6 @@ async def _run_benchmark(
                 if passed:
                     run_state.tasks_passed += 1
 
-                # Collect task result for DB persistence
                 task_db_results.append(BenchmarkTaskResult(
                     id=str(uuid4()),
                     run_id=run_state.run_id,
@@ -647,10 +597,8 @@ async def _run_benchmark(
             settings.skill_reuse_enabled = original_flags["skill_reuse_enabled"]
             log.info("Ablation mode restored to original settings")
 
-        # Persist results to DB
         try:
             async with AsyncSessionLocal() as db:
-                # Update run record with aggregates
                 result = await db.execute(
                     select(BenchmarkRun).where(BenchmarkRun.id == run_state.run_id)
                 )
@@ -661,7 +609,6 @@ async def _run_benchmark(
                     db_run.tasks_passed = run_state.tasks_passed
                     db_run.pass_at_1 = run_state.pass_at_1
 
-                    # Aggregate metrics from task results
                     total_tokens = sum(tr.tokens_total for tr in task_db_results)
                     total_input = sum(tr.tokens_input for tr in task_db_results)
                     total_output = sum(tr.tokens_output for tr in task_db_results)
@@ -675,7 +622,6 @@ async def _run_benchmark(
                     db_run.total_duration_ms = total_duration
                     db_run.avg_score = avg_score
 
-                    # Add task results
                     for tr in task_db_results:
                         db.add(tr)
 

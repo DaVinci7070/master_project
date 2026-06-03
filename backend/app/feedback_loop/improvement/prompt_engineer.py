@@ -1,16 +1,3 @@
-"""
-Prompt Engineer Service for generating and modifying prompts.
-
-This service implements the Prompt Engineer agent that can:
-- Generate new prompts from natural language requirements
-- Modify existing prompts to address identified issues
-- Validate schema compliance for all changes
-- Track rationale and version history via parent-child relationships
-
-Flow:
-    ControlAgent decides improvement -> PromptEngineerService.generate/modify()
-    -> New prompt version created -> A/B testing validates -> Promote or rollback
-"""
 import json
 import logging
 from typing import Optional
@@ -110,19 +97,16 @@ class PromptEngineerService:
         )
 
         try:
-            # Build user prompt with requirements
             user_prompt = self._build_generation_prompt(request)
 
-            # Build JSON schema for structured output
             json_schema = self._build_generation_schema()
 
-            # Call LLM with meta-prompting
             response = await self.llm.chat(
                 messages=[
                     {"role": "system", "content": PROMPT_ENGINEER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.3,  # Some creativity, mostly structured
+                temperature=0.3,
                 response_format={
                     "type": "json_schema",
                     "json_schema": {
@@ -135,10 +119,8 @@ class PromptEngineerService:
 
             log.debug(f"LLM response: {response.content[:200]}...")
 
-            # Parse and validate the response
             generated = GeneratedPrompt.model_validate_json(response.content)
 
-            # Create prompt record with metadata
             prompt = await self.prompt_repo.create(
                 name=request.name,
                 content=generated.content,
@@ -196,16 +178,13 @@ class PromptEngineerService:
             f"Modifying prompt {request.prompt_id[:8]} for attempt={improvement_attempt_id[:8]}..."
         )
 
-        # Get current prompt
         current = await self.prompt_repo.get_by_id(request.prompt_id)
         if not current:
             raise ValueError(f"Prompt not found: {request.prompt_id}")
 
         try:
-            # Extract output schema from metadata for validation
             output_schema = current.prompt_metadata.get("output_schema", {})
 
-            # Build user prompt with modification context
             user_prompt = self._build_modification_prompt(
                 current.content,
                 request.finding_description,
@@ -214,16 +193,14 @@ class PromptEngineerService:
                 request.preserve_sections,
             )
 
-            # Build JSON schema for structured output
             json_schema = self._build_modification_schema()
 
-            # Call LLM with modification meta-prompt
             response = await self.llm.chat(
                 messages=[
                     {"role": "system", "content": PROMPT_MODIFICATION_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.2,  # More deterministic for modifications
+                temperature=0.2,
                 response_format={
                     "type": "json_schema",
                     "json_schema": {
@@ -236,22 +213,19 @@ class PromptEngineerService:
 
             log.debug(f"LLM response: {response.content[:200]}...")
 
-            # Parse and validate the response
             modification = PromptModification.model_validate_json(response.content)
 
-            # Warn if schema impact is not "none"
             if modification.schema_impact.lower() != "none":
                 log.warning(
                     f"Prompt modification has schema impact: {modification.schema_impact}"
                 )
 
-            # Create new version as child of current
             new_prompt = await self.prompt_repo.create(
-                name=current.name,  # Same name, new version
+                name=current.name,
                 content=modification.modified_content,
-                parent_id=current.id,  # Link to parent
+                parent_id=current.id,
                 prompt_metadata={
-                    **current.prompt_metadata,  # Preserve parent metadata
+                    **current.prompt_metadata,
                     "modification_rationale": modification.rationale,
                     "changes_made": modification.changes_made,
                     "sections_modified": modification.sections_modified,

@@ -1,20 +1,9 @@
-"""
-Pydantic schemas for Tool Builder operations.
-
-These schemas handle validation for:
-- Tool specification requests (ToolSpecification)
-- Generated tool outputs (GeneratedTool, TestCase)
-- Tool modification requests (ToolModificationRequest, ToolModification)
-- Code validation results (ValidationResult)
-- Sandbox execution results (SandboxResult)
-"""
 import builtins
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 
-# Python builtins that cannot be used as skill names
 PYTHON_BUILTINS = set(dir(builtins))
 
 

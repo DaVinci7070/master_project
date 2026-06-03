@@ -1,12 +1,3 @@
-"""
-Pydantic schemas for analysis operations.
-
-These schemas handle validation for:
-- LLM structured output (Finding, AnalysisResult)
-- Product Owner prioritization (PriorityItem, PriorityList)
-- Database operations (AnalysisFindingCreate, AnalysisFindingResponse)
-- Pre-execution capability assessment (ConfidenceLevel, CapabilityGap, CapabilityAssessment)
-"""
 from datetime import datetime
 from enum import Enum
 from typing import Optional, Literal
@@ -14,10 +5,8 @@ from typing import Optional, Literal
 from pydantic import BaseModel, Field, ConfigDict
 
 
-# Category types for findings
 CategoryType = Literal["prompt", "topology", "skill", "error"]
 
-# Severity levels for findings
 SeverityType = Literal["critical", "warning", "info"]
 
 
@@ -188,11 +177,6 @@ class AnalysisFindingResponse(BaseModel):
     created_at: datetime = Field(..., description="When the finding was created")
 
 
-# =============================================================================
-# Pre-Execution Capability Assessment Schemas (Phase 9)
-# =============================================================================
-
-
 class ConfidenceLevel(str, Enum):
     """
     Three-level confidence verdict for capability assessment.
@@ -200,9 +184,9 @@ class ConfidenceLevel(str, Enum):
     Per CONTEXT.md: No percentages or subscores - just these three levels.
     MAYBE and CANNOT_DO both route to Developer Team for capability building.
     """
-    CAN_DO = "CAN_DO"  # All capabilities matched, proceed to execution
-    MAYBE = "MAYBE"  # Partial match, route to Developer Team
-    CANNOT_DO = "CANNOT_DO"  # Missing critical capabilities, route to Developer Team
+    CAN_DO = "CAN_DO"
+    MAYBE = "MAYBE"
+    CANNOT_DO = "CANNOT_DO"
 
 
 class GapSeverity(str, Enum):
@@ -211,9 +195,9 @@ class GapSeverity(str, Enum):
 
     Used to prioritize which gaps to address first.
     """
-    CRITICAL = "critical"  # Blocks execution entirely
-    IMPORTANT = "important"  # Degrades quality significantly
-    MINOR = "minor"  # Workaround exists
+    CRITICAL = "critical"
+    IMPORTANT = "important"
+    MINOR = "minor"
 
 
 class GapType(str, Enum):

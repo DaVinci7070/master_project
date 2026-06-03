@@ -1,18 +1,3 @@
-"""
-Tool Builder Service for generating and modifying Python skills.
-
-This service implements the Tool Builder agent that can:
-- Generate new Python skills from specifications via meta-prompting
-- Modify existing skills to address identified issues
-- Validate generated code via CodeValidatorService before persistence
-- Generate test cases alongside code (test-first pattern)
-- Track rationale and version history via parent-child relationships
-
-Flow:
-    ControlAgent decides improvement -> ToolBuilderService.generate_tool/modify_tool()
-    -> Code validated via CodeValidatorService -> New skill version created
-    -> Sandbox execution validates (06-05) -> A/B testing validates -> Promote or rollback
-"""
 import json
 import logging
 from typing import Optional
@@ -30,6 +15,8 @@ from app.models.schemas.tool_builder_schemas import (
 from app.models.sql.versioned_models import Skill
 from app.repositories.skill_repository import SkillRepository
 from app.skills.testing.code_validator import CodeValidatorService
+from app.skills.testing.code_alignment_validator import CodeAlignmentValidator
+from app.core.config import settings
 from app.prompts.tool_builder_prompt import (
     TOOL_BUILDER_SYSTEM_PROMPT,
     TOOL_MODIFICATION_SYSTEM_PROMPT,
@@ -85,6 +72,10 @@ class ToolBuilderService:
         self.validator = code_validator
         self.skill_repo = skill_repo
         self.log = log
+        self.alignment_validator = CodeAlignmentValidator(
+            llm_client=LLMClient(model=settings.code_alignment_model) if settings.code_alignment_model else llm_client,
+            threshold=settings.code_alignment_threshold,
+        ) if settings.code_alignment_enabled else None
 
     async def generate_tool(
         self,
@@ -113,23 +104,20 @@ class ToolBuilderService:
         )
 
         try:
-            # Build user prompt with specification
             user_prompt = self._build_generation_prompt(spec)
 
-            # Use Instructor for structured output - guarantees valid GeneratedTool
             generated: GeneratedTool = await self.llm.chat_structured(
                 messages=[
                     {"role": "system", "content": TOOL_BUILDER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_model=GeneratedTool,
-                temperature=0.3,  # Some creativity, mostly structured
-                max_retries=3,  # Instructor will retry on validation failures
+                temperature=0.3,
+                max_retries=3,
             )
 
             self.log.debug(f"Generated tool: {generated.rationale[:100]}...")
 
-            # Validate generated code via CodeValidatorService
             validation_result = self.validator.validate(generated.code)
             if not validation_result.is_valid:
                 error_msg = (
@@ -151,12 +139,30 @@ class ToolBuilderService:
                     ],
                 )
 
-            # Build combined test code for reference
+            if self.alignment_validator:
+                alignment = await self.alignment_validator.validate_alignment(
+                    description=spec.description,
+                    code=generated.code,
+                )
+                if not alignment.is_aligned:
+                    self.log.warning(
+                        f"Alignment failed: score={alignment.alignment_score:.2f}, "
+                        f"discrepancies={alignment.discrepancies}"
+                    )
+                    raise ValidationError.from_exception_data(
+                        title="AlignmentValidationError",
+                        line_errors=[{
+                            "type": "value_error",
+                            "loc": ("code",),
+                            "msg": f"Code-Description misalignment: {d}",
+                            "input": generated.code,
+                        } for d in alignment.discrepancies or ["Alignment score below threshold"]],
+                    )
+
             combined_test_code = self._build_combined_test_code(
                 generated.test_cases, spec.name
             )
 
-            # Create Skill record via skill_repo.create()
             skill = await self.skill_repo.create(
                 skill_data={
                     "name": spec.name,
@@ -175,7 +181,7 @@ class ToolBuilderService:
                         "combined_test_code": combined_test_code,
                         "improvement_attempt_id": improvement_attempt_id,
                     },
-                    "is_active": False,  # Not active until A/B tested
+                    "is_active": False,
                     "parent_id": spec.parent_skill_id,
                 }
             )
@@ -222,29 +228,25 @@ class ToolBuilderService:
             f"Modifying skill {request.skill_id[:8]} for attempt={improvement_attempt_id[:8]}..."
         )
 
-        # Get current skill
         current = await self.skill_repo.get_by_id(request.skill_id)
         if not current:
             raise ValueError(f"Skill not found: {request.skill_id}")
 
         try:
-            # Build user prompt with modification context
             user_prompt = self._build_modification_prompt(current, request)
 
-            # Use Instructor for structured output - guarantees valid ToolModification
             modification: ToolModification = await self.llm.chat_structured(
                 messages=[
                     {"role": "system", "content": TOOL_MODIFICATION_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_model=ToolModification,
-                temperature=0.2,  # More deterministic for modifications
-                max_retries=3,  # Instructor will retry on validation failures
+                temperature=0.2,
+                max_retries=3,
             )
 
             self.log.debug(f"Modified tool: {modification.rationale[:100]}...")
 
-            # Validate modified code via CodeValidatorService
             validation_result = self.validator.validate(modification.modified_code)
             if not validation_result.is_valid:
                 error_msg = (
@@ -266,28 +268,46 @@ class ToolBuilderService:
                     ],
                 )
 
-            # Build combined test code for reference
+            if self.alignment_validator:
+                alignment = await self.alignment_validator.validate_alignment(
+                    description=current.description,
+                    code=modification.modified_code,
+                )
+                if not alignment.is_aligned:
+                    self.log.warning(
+                        f"Alignment failed on modify: score={alignment.alignment_score:.2f}, "
+                        f"discrepancies={alignment.discrepancies}"
+                    )
+                    raise ValidationError.from_exception_data(
+                        title="AlignmentValidationError",
+                        line_errors=[{
+                            "type": "value_error",
+                            "loc": ("modified_code",),
+                            "msg": f"Code-Description misalignment: {d}",
+                            "input": modification.modified_code,
+                        } for d in alignment.discrepancies or ["Alignment score below threshold"]],
+                    )
+
             combined_test_code = self._build_combined_test_code(
                 modification.modified_tests, current.name
             )
 
-            # Create new skill version as child of original
             new_skill = await self.skill_repo.create(
                 skill_data={
-                    "name": current.name,  # Same name, new version
+                    "name": current.name,
                     "description": current.description,
                     "code": modification.modified_code,
                     "test_cases": [tc.model_dump() for tc in modification.modified_tests],
                     "skill_metadata": {
-                        **current.skill_metadata,  # Preserve parent metadata
+                        **current.skill_metadata,
                         "modification_rationale": modification.rationale,
                         "changes_made": modification.changes_made,
                         "finding_addressed": request.finding_description,
                         "combined_test_code": combined_test_code,
                         "improvement_attempt_id": improvement_attempt_id,
                     },
-                    "is_active": False,  # Not active until A/B tested
-                    "parent_id": current.id,  # Link to parent
+                    "is_active": False,
+                    "parent_id": current.id,
                 }
             )
 
@@ -435,7 +455,6 @@ class ToolBuilderService:
         lines = ["import pytest", f"from skill import {function_name}", ""]
 
         for tc in test_cases:
-            # Handle both TestCase objects and dicts
             if hasattr(tc, "test_code"):
                 lines.append(tc.test_code)
             else:

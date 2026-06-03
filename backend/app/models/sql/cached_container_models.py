@@ -1,9 +1,3 @@
-"""
-SQLAlchemy models for container image caching.
-
-Part of Phase 3: Container-Caching & Optimierung
-"""
-
 import re
 from datetime import datetime, timezone
 from typing import Optional
@@ -33,24 +27,19 @@ class CachedContainerImage(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     image_tag: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
 
-    # Installed packages
     pip_packages: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     system_packages: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
 
-    # Capability mapping (for quick lookup)
     capability_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
-    # Usage tracking
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    # Status
     status: Mapped[str] = mapped_column(String(20), default="ready", nullable=False)
     size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     build_time_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -113,7 +102,7 @@ class CachedContainerImage(Base):
         all_available = pip_set | sys_set
 
         if not all_required:
-            return 1.0  # No requirements = perfect match
+            return 1.0
 
         covered = all_required & all_available
         return len(covered) / len(all_required)

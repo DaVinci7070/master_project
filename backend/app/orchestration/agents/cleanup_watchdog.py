@@ -1,28 +1,3 @@
-"""
-Agent Cleanup Watchdog for removing orphaned spawned agents.
-
-This service runs periodically to:
-1. Detect agents that have been running too long (stale)
-2. Detect agents whose processes have died without cleanup
-3. Remove orphaned agents from the registry
-4. Log cleanup events for debugging
-
-Prevents RESEARCH.md pitfall #3: Zombie containers/agents accumulating.
-
-Configuration:
-- cleanup_interval_seconds: How often to run (default 300s = 5 min)
-- max_agent_age_seconds: When agent is considered stale (default 3600s = 1 hour)
-
-Usage:
-    registry = RuntimeAgentRegistry()
-    watchdog = AgentCleanupWatchdog(registry)
-
-    # Start background task
-    asyncio.create_task(watchdog.start())
-
-    # Stop when shutting down
-    await watchdog.stop()
-"""
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -104,7 +79,6 @@ class AgentCleanupWatchdog:
             except Exception as e:
                 self.log.error(f"Cleanup error: {e}", exc_info=True)
 
-            # Wait for next interval
             try:
                 await asyncio.sleep(self.interval)
             except asyncio.CancelledError:
@@ -142,7 +116,6 @@ class AgentCleanupWatchdog:
                 "watchdog.max_age_seconds": self.max_age,
             }
         ) as span:
-            # Get all agents
             all_agents = await self.registry.list_all()
             span.set_attribute("watchdog.agents_total", len(all_agents))
 
@@ -157,21 +130,18 @@ class AgentCleanupWatchdog:
                 should_cleanup = False
                 reason = ""
 
-                # Check if stale (too old)
                 age_seconds = (now - agent.spawned_at).total_seconds()
                 if age_seconds > self.max_age:
                     should_cleanup = True
                     reason = f"stale (age={age_seconds:.0f}s > max={self.max_age}s)"
                     cleaned_stale.append(agent.agent_id)
 
-                # Check if zombie (running/pending but completed_at set, or very old running)
                 elif agent.status in (AgentStatus.PENDING, AgentStatus.RUNNING):
                     if agent.completed_at is not None:
                         should_cleanup = True
                         reason = "zombie (has completed_at but still running)"
                         cleaned_zombie.append(agent.agent_id)
 
-                    # Also check for agents stuck in PENDING for too long (30 min)
                     elif agent.status == AgentStatus.PENDING and age_seconds > 1800:
                         should_cleanup = True
                         reason = f"stuck pending (age={age_seconds:.0f}s)"
@@ -183,24 +153,20 @@ class AgentCleanupWatchdog:
                         f"file={agent.file_path}, reason={reason}"
                     )
 
-                    # Update status to CANCELLED before removing
                     await self.registry.update_status(
                         agent.agent_id,
                         AgentStatus.CANCELLED,
                         error_message=f"Cleaned up by watchdog: {reason}"
                     )
 
-                    # Release slot if agent was holding one
                     if agent.status in (AgentStatus.PENDING, AgentStatus.RUNNING):
                         try:
                             await self.registry.release_slot()
                         except Exception:
                             pass
 
-                    # Unregister
                     await self.registry.unregister(agent.agent_id)
 
-            # Log summary
             total_cleaned = len(cleaned_stale) + len(cleaned_zombie)
             if total_cleaned > 0:
                 self.log.info(

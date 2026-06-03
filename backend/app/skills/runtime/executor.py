@@ -1,14 +1,3 @@
-"""
-Skill executor for sandboxed code execution and test validation.
-
-Provides safe execution environment for skill code with:
-- AST-based code safety validation
-- Restricted builtins and module whitelist
-- Test case execution and validation (DB-06)
-
-Note: This provides basic process isolation. Full Docker sandboxing
-is planned for Phase 6 (Tool Builder Agent).
-"""
 import ast
 import asyncio
 import json
@@ -64,9 +53,7 @@ class SkillExecutor:
         is_valid, results = await executor.validate_skill(code, test_cases)
     """
 
-    # Safe builtins that are allowed in skill execution
     SAFE_BUILTINS = {
-        # Type constructors
         "abs": abs,
         "all": all,
         "any": any,
@@ -113,7 +100,6 @@ class SkillExecutor:
         "tuple": tuple,
         "type": type,
         "zip": zip,
-        # Exceptions (for try/except)
         "Exception": Exception,
         "ValueError": ValueError,
         "TypeError": TypeError,
@@ -123,13 +109,11 @@ class SkillExecutor:
         "RuntimeError": RuntimeError,
         "StopIteration": StopIteration,
         "ZeroDivisionError": ZeroDivisionError,
-        # Constants
         "True": True,
         "False": False,
         "None": None,
     }
 
-    # Modules that are allowed to be imported
     ALLOWED_MODULES = {
         "json",
         "datetime",
@@ -151,7 +135,6 @@ class SkillExecutor:
         "typing",
     }
 
-    # Forbidden function names and attributes
     FORBIDDEN_NAMES = {
         "exec",
         "eval",
@@ -171,7 +154,6 @@ class SkillExecutor:
         "quit",
     }
 
-    # Forbidden attribute access patterns
     FORBIDDEN_ATTRIBUTES = {
         "__class__",
         "__bases__",
@@ -218,18 +200,15 @@ class SkillExecutor:
             return False, f"Syntax error: {e.msg} at line {e.lineno}"
 
         for node in ast.walk(tree):
-            # Check function calls
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Name):
                     if node.func.id in self.FORBIDDEN_NAMES:
                         return False, f"Forbidden function: {node.func.id}"
 
-            # Check attribute access
             if isinstance(node, ast.Attribute):
                 if node.attr in self.FORBIDDEN_ATTRIBUTES:
                     return False, f"Forbidden attribute access: {node.attr}"
 
-            # Check imports
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     module_name = alias.name.split(".")[0]
@@ -242,10 +221,8 @@ class SkillExecutor:
                     if module_name not in self.ALLOWED_MODULES:
                         return False, f"Forbidden import: {node.module}"
 
-            # Check for Name nodes that might be forbidden
             if isinstance(node, ast.Name):
                 if node.id in self.FORBIDDEN_NAMES:
-                    # Only flag if it's being used (Load context)
                     if isinstance(node.ctx, ast.Load):
                         return False, f"Forbidden name: {node.id}"
 
@@ -260,7 +237,6 @@ class SkillExecutor:
         """
         safe_globals = {"__builtins__": self.SAFE_BUILTINS.copy()}
 
-        # Pre-import allowed modules
         import json as json_module
         import datetime as datetime_module
         import re as re_module
@@ -280,7 +256,6 @@ class SkillExecutor:
         import copy as copy_module
         import typing as typing_module
 
-        # Create a restricted import function
         module_map = {
             "json": json_module,
             "datetime": datetime_module,
@@ -334,7 +309,6 @@ class SkillExecutor:
         """
         start_time = time.perf_counter()
 
-        # Validate code safety
         is_safe, error = self._validate_code_safety(code)
         if not is_safe:
             return ExecutionResult(
@@ -343,14 +317,11 @@ class SkillExecutor:
                 execution_time_ms=(time.perf_counter() - start_time) * 1000,
             )
 
-        # Create safe execution environment
         safe_globals = self._create_safe_globals()
 
         try:
-            # Execute code to define the function
             exec(code, safe_globals)
 
-            # Check if function exists
             if function_name not in safe_globals:
                 return ExecutionResult(
                     success=False,
@@ -366,9 +337,6 @@ class SkillExecutor:
                     execution_time_ms=(time.perf_counter() - start_time) * 1000,
                 )
 
-            # Execute with timeout
-            # If input_data is a dict, unpack as keyword arguments to match
-            # function signatures like calculate_circle_areas(radii=[...])
             try:
                 result = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
@@ -430,7 +398,6 @@ class SkillExecutor:
                 execution_time_ms=result.execution_time_ms,
             )
 
-        # Compare output
         passed = self._compare_outputs(result.output, expected_output)
 
         return TestResult(
@@ -457,17 +424,14 @@ class SkillExecutor:
         Returns:
             True if outputs match, False otherwise
         """
-        # Direct equality check
         if actual == expected:
             return True
 
-        # Handle floating point comparison
         if isinstance(actual, float) and isinstance(expected, (int, float)):
             return abs(actual - expected) < 1e-9
         if isinstance(expected, float) and isinstance(actual, (int, float)):
             return abs(actual - expected) < 1e-9
 
-        # Try JSON serialization for complex types
         try:
             actual_json = json.dumps(actual, sort_keys=True, default=str)
             expected_json = json.dumps(expected, sort_keys=True, default=str)
@@ -498,8 +462,6 @@ class SkillExecutor:
             Tuple of (all_passed, list_of_test_results)
         """
         if not test_cases:
-            # No test cases - validation passes trivially
-            # (Policy decision: require tests for activation can be enforced at service level)
             return True, []
 
         results = []

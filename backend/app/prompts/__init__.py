@@ -1,10 +1,3 @@
-"""
-System prompts for LLM agents.
-
-This module exports prompts used by the Developer Team's analysis pipeline
-and Control Agent decision-making.
-"""
-
 from app.prompts.analyzer_prompt import ANALYZER_SYSTEM_PROMPT
 from app.prompts.product_owner_prompt import PRODUCT_OWNER_SYSTEM_PROMPT
 from app.prompts.control_agent_prompt import CONTROL_AGENT_SYSTEM_PROMPT

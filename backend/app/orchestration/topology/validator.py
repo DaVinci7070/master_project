@@ -1,4 +1,3 @@
-"""Topology validation using graphlib for DAG verification."""
 import logging
 from graphlib import TopologicalSorter, CycleError
 from typing import Optional
@@ -35,7 +34,6 @@ class TopologyValidator:
         errors = []
         warnings = []
 
-        # Get active agents only
         active_agents = topology.get_active_agents()
         if not active_agents:
             return ValidationResult(
@@ -43,11 +41,8 @@ class TopologyValidator:
                 errors=["Topology has no active agents"]
             )
 
-        # Build dependency graph for graphlib
-        # graphlib expects: {node: [predecessors]}
         dependency_graph = topology.get_dependency_graph()
 
-        # Check for missing dependencies
         agent_ids = set(dependency_graph.keys())
         missing = []
         for agent_id, deps in dependency_graph.items():
@@ -63,20 +58,15 @@ class TopologyValidator:
                 errors=errors
             )
 
-        # Validate using TopologicalSorter (per RESEARCH: use graphlib, not custom DFS)
         try:
             ts = TopologicalSorter(dependency_graph)
-            # static_order() calls prepare() internally and raises CycleError if cycles detected
             execution_order = list(ts.static_order())
 
-            # Compute execution waves (parallel groups)
             waves = self._compute_waves(dependency_graph, execution_order)
 
-            # Artifact flow validation
             artifact_warnings = self._validate_artifact_flow(topology)
             warnings.extend(artifact_warnings)
 
-            # Store as last valid
             self._last_valid_topology = topology
 
             logger.info(
@@ -91,7 +81,6 @@ class TopologyValidator:
             )
 
         except CycleError as e:
-            # Extract cycle nodes from exception
             cycle = list(e.args[1]) if len(e.args) > 1 else []
             logger.error(f"Topology contains cycle: {cycle}")
 
@@ -111,20 +100,16 @@ class TopologyValidator:
 
         Agents with no unsatisfied dependencies can run in parallel.
         """
-        # Track which wave each agent belongs to
         agent_wave: dict[str, int] = {}
 
         for agent_id in execution_order:
             deps = dependency_graph.get(agent_id, [])
             if not deps:
-                # No dependencies = wave 0
                 agent_wave[agent_id] = 0
             else:
-                # Wave = max(dep waves) + 1
                 max_dep_wave = max(agent_wave.get(dep, 0) for dep in deps)
                 agent_wave[agent_id] = max_dep_wave + 1
 
-        # Group by wave
         max_wave = max(agent_wave.values()) if agent_wave else 0
         waves = [[] for _ in range(max_wave + 1)]
         for agent_id, wave in agent_wave.items():
@@ -140,9 +125,8 @@ class TopologyValidator:
         """
         warnings = []
 
-        # Build artifact producers/consumers
-        producers: dict[str, list[str]] = {}  # artifact_type -> [agent_ids]
-        consumers: dict[str, list[str]] = {}  # artifact_type -> [agent_ids]
+        producers: dict[str, list[str]] = {}
+        consumers: dict[str, list[str]] = {}
 
         for agent in topology.get_active_agents():
             for art_type in agent.produces_artifacts:
@@ -150,14 +134,12 @@ class TopologyValidator:
             for art_type in agent.consumes_artifacts:
                 consumers.setdefault(art_type, []).append(agent.agent_id)
 
-        # Check for consumed but not produced
         for art_type, consumer_ids in consumers.items():
             if art_type not in producers:
                 warnings.append(
                     f"Artifact '{art_type}' consumed by {consumer_ids} but not produced by any agent"
                 )
 
-        # Check for produced but not consumed (info only)
         for art_type, producer_ids in producers.items():
             if art_type not in consumers:
                 logger.debug(f"Artifact '{art_type}' produced by {producer_ids} but not consumed")
@@ -189,7 +171,6 @@ class TopologyValidator:
             )
             return result, self._last_valid_topology
         else:
-            # No fallback available
             return result, topology
 
 

@@ -1,13 +1,3 @@
-"""
-Research Service - Enhanced capability research with web search and caching.
-
-This service provides comprehensive research for skill development:
-1. Web search for implementations and examples
-2. Package documentation fetching
-3. Similar skill discovery
-4. Research caching for efficiency
-"""
-
 import asyncio
 import hashlib
 import json
@@ -29,7 +19,6 @@ from app.models.schemas.skill_build_schemas import ResearchContext
 log = logging.getLogger(__name__)
 
 
-# Capability-specific package hints for common tasks
 CAPABILITY_PACKAGE_HINTS = {
     "audio transcription": {
         "pip": ["faster-whisper", "pydub"],
@@ -81,7 +70,6 @@ CAPABILITY_PACKAGE_HINTS = {
         "apt": [],
         "approach": "Pydantic for type validation, jsonschema for JSON validation",
     },
-    # Datenbank-Treiber — je nach Kontext waehlen
     "database": {
         "pip": ["psycopg2-binary"], "apt": [],
         "approach": "Use psycopg2-binary for PostgreSQL or sqlite3 (stdlib) for embedded databases. Choose based on the task description.",
@@ -187,20 +175,17 @@ class ResearchService:
         start_time = datetime.now(timezone.utc)
         self.reset_search_count()
 
-        # Check cache first
         if not force_refresh:
             cached = await self._get_cached_research(capability)
             if cached:
                 log.info(f"Using cached research for: {capability}")
                 return cached
 
-        # Start with known hints
         context = ResearchContext(
             capability=capability,
             query=f"python {capability} implementation",
         )
 
-        # Add capability-specific hints
         cap_lower = capability.lower()
         for key, hints_data in CAPABILITY_PACKAGE_HINTS.items():
             if key in cap_lower or cap_lower in key:
@@ -213,7 +198,6 @@ class ResearchService:
                 }
                 break
 
-        # Extract failure context from hints
         failure_context = ""
         if hints:
             if hints.get("pip"):
@@ -223,30 +207,24 @@ class ResearchService:
             if hints.get("failure_context"):
                 failure_context = hints["failure_context"]
 
-        # Web-based research
         if self.enable_web_search:
             web_context = await self._web_research(capability)
             context = self._merge_contexts(context, web_context)
 
-        # Find similar successful skills
         similar = await self._find_similar_skills(capability)
         context.similar_skills = similar
 
-        # LLM synthesis (with failure awareness)
         if not context.code_examples or failure_context:
             llm_context = await self._llm_research(capability, failure_context)
             context = self._merge_contexts(context, llm_context)
 
-        # Deduplicate
         context.pip_packages = list(dict.fromkeys(context.pip_packages))
         context.system_packages = list(dict.fromkeys(context.system_packages))
 
-        # Calculate time
         context.research_time_ms = int(
             (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
         )
 
-        # Cache results
         await self._cache_research(capability, context)
 
         log.info(
@@ -271,11 +249,9 @@ class ResearchService:
         if not cached:
             return None
 
-        # Check expiry
         if cached.expires_at and cached.expires_at < datetime.now(timezone.utc):
             return None
 
-        # Convert to ResearchContext
         return ResearchContext(
             capability=cached.capability,
             query=f"python {cached.capability} implementation",
@@ -293,7 +269,6 @@ class ResearchService:
             cap_hash = self._hash_capability(capability)
             expires_at = datetime.now(timezone.utc) + timedelta(hours=self.cache_ttl_hours)
 
-            # Check if exists
             result = await self.db.execute(
                 select(ResearchCache).where(
                     ResearchCache.capability_hash == cap_hash
@@ -302,16 +277,14 @@ class ResearchService:
             existing = result.scalar_one_or_none()
 
             if existing:
-                # Update existing
                 existing.recommended_packages = context.pip_packages
                 existing.system_packages = context.system_packages
-                existing.code_examples = context.code_examples[:5]  # Limit stored examples
+                existing.code_examples = context.code_examples[:5]
                 existing.implementation_notes = context.implementation_approach
                 existing.sources = context.example_sources
                 existing.expires_at = expires_at
                 existing.usage_count += 1
             else:
-                # Create new
                 cache_entry = ResearchCache(
                     id=str(uuid.uuid4()),
                     capability=capability,
@@ -335,7 +308,6 @@ class ResearchService:
         context = ResearchContext(capability=capability)
 
         try:
-            # 1. Search for implementations and approaches
             search_results = await self._search_web(
                 f"python {capability} implementation example code"
             )
@@ -347,7 +319,6 @@ class ResearchService:
                     r["url"] for r in search_results[:3]
                 )
 
-                # 2. Fetch full page content from top results (parallel)
                 async def _fetch_one(result: dict) -> Optional[dict]:
                     content = await self._fetch_page_content(result["url"])
                     if content:
@@ -364,7 +335,6 @@ class ResearchService:
                     if isinstance(fr, dict):
                         fetched_sources.append(fr)
 
-                # 3. Add search snippets as a source too
                 snippet_content = "\n".join(
                     f"- {r['title']}: {r['snippet']}"
                     for r in search_results if r.get("snippet")
@@ -376,13 +346,11 @@ class ResearchService:
                         "content": snippet_content,
                     })
 
-            # 4. Fetch package docs (existing logic)
             for package in context.pip_packages[:3]:
                 doc_snippet = await self._fetch_package_docs(package, capability)
                 if doc_snippet:
                     context.code_examples.append(doc_snippet)
 
-            # 5. LLM summarization of all sources into actionable research
             if fetched_sources:
                 summary = await self._summarize_research_sources(
                     capability, fetched_sources
@@ -395,7 +363,6 @@ class ResearchService:
 
         return context
 
-    # Max searches per skill build to avoid rate-limiting
     MAX_SEARCHES_PER_BUILD = 3
     _search_count: int = 0
 
@@ -455,11 +422,9 @@ class ResearchService:
 
             text = response.text
 
-            # If HTML: extract code blocks + clean prose
             if "<html" in text.lower()[:500]:
                 text = self._extract_from_html(text)
             else:
-                # Markdown or plain text — use as-is
                 text = text[:5000]
 
             return text if len(text) > 50 else None
@@ -476,27 +441,20 @@ class ResearchService:
         """
         import html as html_mod
 
-        # Remove non-content sections first
         cleaned = html
         for tag in ("script", "style", "nav", "header", "footer"):
             cleaned = re.sub(
                 rf'<{tag}[^>]*>.*?</{tag}>', '', cleaned, flags=re.DOTALL | re.IGNORECASE
             )
-        # Remove sidebar/toc divs (common in Sphinx/RTD/MkDocs)
         cleaned = re.sub(
             r'<div[^>]*class="[^"]*(?:sidebar|sphinxsidebar|toctree|nav-|breadcrumb|headerlink)[^"]*"[^>]*>.*?</div>',
             '', cleaned, flags=re.DOTALL | re.IGNORECASE,
         )
 
-        # Extract code blocks — multiple patterns for different doc generators
         code_patterns = [
-            # Sphinx/RTD: <div class="highlight"><pre><span>...</span></pre></div>
             r'<div[^>]*class="[^"]*highlight[^"]*"[^>]*>\s*<pre[^>]*>(.*?)</pre>',
-            # Generic: <pre><code>...</code></pre>
             r'<pre[^>]*><code[^>]*>(.*?)</code></pre>',
-            # Bare <pre> blocks (some older docs)
             r'<pre[^>]*class="[^"]*(?:literal-block|code-block|sourcecode)[^"]*"[^>]*>(.*?)</pre>',
-            # MkDocs: <code class="...">multiline</code> inside <pre>
             r'<pre[^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>',
         ]
 
@@ -505,7 +463,6 @@ class ResearchService:
         for pattern in code_patterns:
             for match in re.finditer(pattern, cleaned, re.DOTALL | re.IGNORECASE):
                 raw = match.group(1)
-                # Strip inner HTML tags (syntax highlighting spans etc.)
                 block = re.sub(r'<[^>]+>', '', html_mod.unescape(raw)).strip()
                 if block and len(block) > 20 and block not in seen_blocks:
                     seen_blocks.add(block)
@@ -517,7 +474,6 @@ class ResearchService:
                 f"```\n{b}\n```" for b in code_blocks[:8]
             )
 
-        # Try to isolate main content area (Sphinx, MkDocs, generic)
         main_html = cleaned
         for pattern in [
             r'<div[^>]*class="[^"]*(?:body|document|main-content|md-content|content)[^"]*"[^>]*>(.*)',
@@ -529,7 +485,6 @@ class ResearchService:
                 main_html = m.group(1)
                 break
 
-        # Strip remaining HTML tags for prose
         prose = re.sub(r'<[^>]+>', ' ', main_html)
         prose = html_mod.unescape(prose)
         prose = re.sub(r'\s+', ' ', prose).strip()[:3000]
@@ -580,7 +535,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
             return summary[:4000]
         except Exception as e:
             log.warning(f"LLM summarization failed: {e}")
-            # Fallback: return raw snippets
             return "\n".join(
                 f"# {s['title']}\n{s['content'][:500]}" for s in sources[:3]
             )
@@ -591,12 +545,10 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
 
         GitHub HTML pages require JS rendering. Raw URLs return plain text.
         """
-        # github.com/owner/repo -> raw README
         match = re.match(r'https?://github\.com/([^/]+/[^/]+)/?$', url)
         if match:
             return f"https://raw.githubusercontent.com/{match.group(1)}/HEAD/README.md"
 
-        # github.com/owner/repo/blob/branch/path -> raw
         match = re.match(
             r'https?://github\.com/([^/]+/[^/]+)/blob/([^/]+)/(.*)', url
         )
@@ -618,7 +570,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
         3. Targeted doc search for capability-relevant pages
         """
         try:
-            # 1. PyPI JSON API — full README as Markdown
             url = self.PYPI_API_URL.format(package)
             response = await self.http_client.get(url)
 
@@ -631,11 +582,9 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
 
             content_type = info.get("description_content_type", "") or ""
 
-            # Extract code blocks based on content type
             code_blocks: list[str] = []
 
             if "rst" in content_type.lower():
-                # reStructuredText: .. code-block:: python
                 rst_blocks = re.findall(
                     r'\.\.\s+code(?:-block)?::\s*\w*\s*\n((?:\s+.+\n?)+)',
                     description,
@@ -644,7 +593,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
                     b.replace("\n    ", "\n").strip() for b in rst_blocks
                 )
 
-            # Markdown fenced code blocks (works for md and as fallback for rst)
             fenced = re.findall(
                 r'```\w*\s*\n(.*?)```',
                 description,
@@ -652,7 +600,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
             )
             code_blocks.extend(fenced)
 
-            # Indented code blocks (4 spaces, preceded by blank line)
             indented = re.findall(
                 r'\n\n((?:    .+\n?)+)',
                 description,
@@ -661,7 +608,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
                 b.replace("\n    ", "\n").lstrip() for b in indented
             )
 
-            # Deduplicate, sort by length, take top 5
             seen: set[str] = set()
             unique_blocks: list[str] = []
             for b in code_blocks:
@@ -675,7 +621,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
                 f"```\n{b}\n```" for b in unique_blocks[:5]
             )
 
-            # Package summary (first 500 chars of description without code blocks)
             clean = re.sub(r'```.*?```', '', description, flags=re.DOTALL)
             clean = re.sub(r'\.\.\s+code(?:-block)?::\s*\w*\s*\n(?:\s+.+\n?)+', '', clean)
             summary = clean.strip()[:500]
@@ -684,7 +629,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
             if code_section:
                 result += f"\n\n## Code Examples\n{code_section}"
 
-            # 2. Try to fetch official docs — landing page + targeted search
             project_urls = info.get("project_urls") or {}
             docs_url = (
                 project_urls.get("Documentation")
@@ -696,7 +640,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
                 if docs_content:
                     result += f"\n\n## Official Docs ({docs_url})\n{docs_content[:2000]}"
 
-                # Try common quickstart/getting-started subpages (parallel)
                 base = docs_url.rstrip("/")
                 quickstart_paths = [
                     "/quickstart", "/getting-started", "/tutorial",
@@ -711,9 +654,8 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
                     if isinstance(qs_content, str) and len(qs_content) > 200:
                         qs_url = base + quickstart_paths[i]
                         result += f"\n\n## Getting Started ({qs_url})\n{qs_content[:2000]}"
-                        break  # one quickstart page is enough
+                        break
 
-            # 3. Search docs for capability-specific pages
             docs_extra = await self._search_library_docs(
                 package, docs_url, capability
             )
@@ -742,12 +684,10 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
         results: list[str] = []
 
         try:
-            # 1. ReadTheDocs search API
             rtd_base = None
             if docs_url and "readthedocs" in docs_url:
                 rtd_base = docs_url.rstrip("/")
             else:
-                # Try common ReadTheDocs URL pattern
                 rtd_base = self.READTHEDOCS_URL.format(package.replace("-", "")).rstrip("/")
 
             if rtd_base:
@@ -761,16 +701,14 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
                         for hit in data.get("results", [])[:3]:
                             page_url = hit.get("domain", rtd_base) + hit.get("path", "")
                             title = hit.get("title", "")
-                            # Fetch the actual page for code examples
                             page_content = await self._fetch_page_content(page_url)
                             if page_content and len(page_content) > 100:
                                 results.append(
                                     f"### {title}\n_Source: {page_url}_\n{page_content[:1500]}"
                                 )
                 except Exception:
-                    pass  # RTD search not available, fall through
+                    pass
 
-            # 2. Fallback: DuckDuckGo site-scoped search
             if not results and docs_url:
                 from urllib.parse import urlparse
                 domain = urlparse(docs_url).netloc
@@ -785,7 +723,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
                                 f"### {sr.get('title', '')}\n_Source: {sr['url']}_\n{page_content[:1500]}"
                             )
 
-            # 3. Fallback: general search for package + capability docs
             if not results:
                 search_results = await self._search_web(
                     f"{package} python documentation {capability} example"
@@ -808,7 +745,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
     async def _find_similar_skills(self, capability: str) -> list[dict]:
         """Find similar successful skills in the database."""
         try:
-            # Search for skills with similar names/descriptions
             cap_words = set(capability.lower().split())
 
             result = await self.db.execute(
@@ -818,7 +754,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
 
             similar = []
             for skill in skills:
-                # Calculate similarity
                 skill_words = set(skill.name.lower().replace("_", " ").split())
                 if skill.description:
                     skill_words.update(skill.description.lower().split())
@@ -835,7 +770,6 @@ Be concise. Focus on what a developer needs to write a working `def execute(inpu
                             if skill.skill_metadata else [],
                         })
 
-            # Sort by score
             similar.sort(key=lambda x: x["score"], reverse=True)
             return similar[:5]
 
@@ -886,7 +820,6 @@ Return as JSON:
                 max_tokens=1000,
             )
 
-            # Parse response
             content = response.content
             json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
             if json_match:
@@ -957,9 +890,7 @@ Return as JSON:
 
             if cached:
                 cached.usage_count += 1
-                # Update rolling success rate
                 current_rate = cached.success_rate or 0.0
-                # Weighted average with more weight on recent results
                 cached.success_rate = (current_rate * 0.7) + (1.0 if success else 0.0) * 0.3
                 await self.db.commit()
 

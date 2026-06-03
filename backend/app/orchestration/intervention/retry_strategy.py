@@ -1,4 +1,3 @@
-"""Retry strategy for intervention with approach variation."""
 import asyncio
 import logging
 from dataclasses import dataclass
@@ -93,7 +92,6 @@ class ApproachSelector:
         Returns:
             ApproachConfig for this attempt
         """
-        # Clamp to valid range
         attempt = max(1, min(attempt_number, 5))
         return cls.APPROACHES[attempt]
 
@@ -146,13 +144,11 @@ class RetryStrategy:
     Per RESEARCH: Progressive backoff with increasing delays.
     """
 
-    # Delay between attempts (seconds)
-    # Progressive: quick retry -> moderate -> longer waits
     RETRY_DELAYS: dict[int, int] = {
-        1: 30,   # After attempt 1, wait 30s
-        2: 60,   # After attempt 2, wait 60s
-        3: 120,  # After attempt 3, wait 2 min
-        4: 300,  # After attempt 4, wait 5 min
+        1: 30,
+        2: 60,
+        3: 120,
+        4: 300,
     }
 
     MAX_ATTEMPTS = 5

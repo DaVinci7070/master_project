@@ -1,12 +1,3 @@
-"""
-Telemetry service for managing execution telemetry.
-
-This service provides a high-level interface for:
-- Starting execution telemetry with input hashing
-- Completing execution telemetry with output hashing and metrics
-- Checking for duplicate inputs (deduplication via DB-08)
-- Retrieving execution history and aggregations
-"""
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -25,7 +16,6 @@ from app.repositories.telemetry_repository import TelemetryRepository, compute_h
 
 log = logging.getLogger(__name__)
 
-# Get the tracer for this module
 tracer = trace.get_tracer(__name__)
 
 
@@ -84,10 +74,8 @@ class TelemetryService:
         """
         log.info(f"Starting telemetry for agent={agent_id[:8]}..., execution={execution_id[:8]}...")
 
-        # Compute input hash for deduplication
         input_hash = compute_hash(input_data)
 
-        # Get current OpenTelemetry span context
         trace_id = None
         span_id = None
         current_span = trace.get_current_span()
@@ -97,13 +85,12 @@ class TelemetryService:
                 trace_id = format(span_context.trace_id, '032x')
                 span_id = format(span_context.span_id, '016x')
 
-        # Create telemetry record
         create_data = ExecutionTelemetryCreate(
             agent_id=agent_id,
             execution_id=execution_id,
             started_at=datetime.now(timezone.utc),
             input_hash=input_hash,
-            outcome="running",  # Will be updated on completion
+            outcome="running",
             trace_id=trace_id,
             span_id=span_id,
             execution_metadata=metadata or {},
@@ -184,25 +171,20 @@ class TelemetryService:
         """
         log.info(f"Completing telemetry id={telemetry_id}, outcome={outcome}")
 
-        # Get existing record to calculate latency
         existing = await self.repository.get_by_id(telemetry_id)
         if not existing:
             log.warning(f"Cannot complete telemetry: record not found id={telemetry_id}")
             return None
 
-        # Calculate completion time and latency
         completed_at = datetime.now(timezone.utc)
         latency_ms = (completed_at - existing.started_at).total_seconds() * 1000
 
-        # Compute output hash
         output_hash = compute_hash(output_data)
 
-        # Merge metadata if provided
         merged_metadata = existing.execution_metadata.copy() if existing.execution_metadata else {}
         if metadata_updates:
             merged_metadata.update(metadata_updates)
 
-        # Prepare update data
         update_data = ExecutionTelemetryUpdate(
             completed_at=completed_at,
             latency_ms=latency_ms,
@@ -216,10 +198,8 @@ class TelemetryService:
             execution_metadata=merged_metadata,
         )
 
-        # Update record
         telemetry = await self.repository.update(telemetry_id, update_data)
 
-        # Set OpenTelemetry span attributes
         current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
             current_span.set_attribute("telemetry.id", telemetry_id)
@@ -234,8 +214,7 @@ class TelemetryService:
             f"tokens={tokens_input + tokens_output}, output_hash={output_hash[:16]}..."
         )
 
-        # Call completion callback if provided and execution was successful
-        if on_complete and outcome == "success":
+        if on_complete and outcome in ("success", "failed"):
             try:
                 await on_complete(existing.execution_id)
             except Exception as e:

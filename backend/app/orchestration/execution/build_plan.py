@@ -1,9 +1,3 @@
-"""
-Build Plan Service for generating capability build plans.
-
-Analyzes gaps and creates actionable build plans for user approval
-or automatic execution (when auto_apply is enabled).
-"""
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -19,7 +13,6 @@ from app.models.sql.intervention_models import BlockedChallenge, UserSettings
 
 logger = logging.getLogger(__name__)
 
-# Default user ID for single-user mode
 DEFAULT_USER_ID = "default"
 
 
@@ -62,15 +55,12 @@ class BuildPlanService:
             if severity == "critical":
                 critical_count += 1
 
-            # Map gap type to build action
             action_type = self._map_gap_to_action(gap_type)
 
-            # Generate human-readable description
             action_description = self._generate_action_description(
                 action_type, affected_cap, description
             )
 
-            # Estimate complexity based on gap type and severity
             complexity = self._estimate_complexity(gap_type, severity)
 
             item = BuildPlanItem(
@@ -78,7 +68,7 @@ class BuildPlanService:
                 target_capability=affected_cap,
                 description=action_description,
                 estimated_complexity=complexity,
-                affected_agents=[],  # Will be populated during execution
+                affected_agents=[],
                 gap_severity=severity
             )
             items.append(item)
@@ -186,7 +176,6 @@ class BuildPlanService:
         settings = result.scalar_one_or_none()
 
         if not settings:
-            # Create default settings
             settings = UserSettings(
                 user_id=user_id,
                 auto_apply=False,

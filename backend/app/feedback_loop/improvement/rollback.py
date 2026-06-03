@@ -1,10 +1,3 @@
-"""
-Rollback service for granular artifact rollback.
-
-This service orchestrates rollbacks for failed improvements using
-the existing VersionService. Designed to complete rollbacks within
-5 minutes via a single method call.
-"""
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -72,7 +65,6 @@ class RollbackService:
             f"reason={reason}"
         )
 
-        # Check version_before is set (can't rollback if no baseline)
         if attempt.version_before is None:
             log.error(
                 f"Cannot rollback attempt={attempt.id}: "
@@ -81,7 +73,6 @@ class RollbackService:
             return False
 
         try:
-            # Rollback via VersionService
             rolled_back = await self.version_service.rollback(
                 artifact_type=attempt.artifact_type,
                 artifact_id=attempt.artifact_id,
@@ -95,7 +86,6 @@ class RollbackService:
                 )
                 return False
 
-            # Update attempt status to "rolled_back"
             await self.improvement_repo.update_status(
                 attempt_id=str(attempt.id),
                 status="rolled_back",
@@ -111,8 +101,7 @@ class RollbackService:
                 f"duration={duration:.2f}s"
             )
 
-            # Warn if approaching 5-minute target
-            if duration > 240:  # 4 minutes warning threshold
+            if duration > 240:
                 log.warning(
                     f"Rollback took {duration:.2f}s, approaching 5-minute target"
                 )
@@ -184,8 +173,8 @@ class RollbackService:
             comparison = await self.version_service.compare_versions(
                 artifact_type=attempt.artifact_type,
                 artifact_id=attempt.artifact_id,
-                version_a=attempt.version_after,  # Current (improvement)
-                version_b=attempt.version_before,  # Target (baseline)
+                version_a=attempt.version_after,
+                version_b=attempt.version_before,
             )
 
             return {

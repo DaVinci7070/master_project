@@ -1,14 +1,3 @@
-"""
-Skill Team Orchestrator - Team-based skill development.
-
-Coordinates multiple specialized roles for high-quality skill development:
-1. Researcher: Finds packages, examples, approaches
-2. Architect: Designs API, test cases, dependencies
-3. Implementer: Writes the actual code
-4. Reviewer: Reviews for quality and security
-5. Tester: Runs tests and validates output
-"""
-
 import ast
 import json
 import logging
@@ -28,6 +17,7 @@ from app.skills.testing.docker_sandbox import DynamicSandboxService
 from app.feedback_loop.analysis.failure_analyzer import FailureAnalyzer
 from app.skills.testing.semantic_validator import SemanticValidator
 from app.skills.testing.code_validator import CodeValidatorService
+from app.skills.testing.code_alignment_validator import CodeAlignmentValidator
 from app.skills.building.research import ResearchService
 from app.skills.runtime.directory import SkillDirectoryService
 from app.skills.runtime.registry import SkillRegistry
@@ -42,6 +32,7 @@ from app.models.schemas.skill_build_schemas import (
     ReviewResult,
     ReviewFinding,
     SemanticValidationResult,
+    AlignmentResult,
     SkillBuildResult,
     SkillIntegrationPlan,
     ErrorType,
@@ -117,9 +108,12 @@ class SkillTeamOrchestrator:
         self.semantic_validator = semantic_validator or SemanticValidator(
             self.llm, self.config.semantic_similarity_threshold
         )
+        self.alignment_validator = CodeAlignmentValidator(
+            llm_client=LLMClient(model=settings.code_alignment_model) if settings.code_alignment_model else self.llm,
+            threshold=settings.code_alignment_threshold,
+        ) if settings.code_alignment_enabled else None
         self.failure_analyzer = failure_analyzer or FailureAnalyzer(session_factory, self.llm)
 
-        # Role-specific LLM clients (can use different models)
         self._role_llms: dict[TeamRole, LLMClient] = {}
 
     def _get_role_llm(self, role: TeamRole) -> LLMClient:
@@ -127,7 +121,6 @@ class SkillTeamOrchestrator:
         if role in self._role_llms:
             return self._role_llms[role]
 
-        # Check config for role-specific model
         model = None
         if role == TeamRole.RESEARCHER and self.config.researcher_model:
             model = self.config.researcher_model
@@ -174,35 +167,30 @@ class SkillTeamOrchestrator:
         log.info(f"Starting team-based skill development for: {capability}")
 
         try:
-            # Get failure history BEFORE starting (Self-Improving Loop)
             failure_history = await self.failure_analyzer.get_failure_history(capability)
             failure_context = self.failure_analyzer.format_failure_context(failure_history)
 
             if failure_history:
                 log.info(f"Found {len(failure_history)} previous failures to learn from")
 
-            # Phase 1: Research (with failure awareness)
             phase_start = time.time()
             research = await self._research_phase(capability, hints, failure_context)
             phase_times["research"] = int((time.time() - phase_start) * 1000)
             log.info(f"Research complete: {len(research.pip_packages)} packages found")
 
-            # Phase 2: Architecture (with failure awareness)
             phase_start = time.time()
             challenge_context = (hints or {}).get("challenge_context", "")
             design = await self._architecture_phase(capability, research, failure_context, challenge_context)
             phase_times["architecture"] = int((time.time() - phase_start) * 1000)
             log.info(f"Architecture complete: {len(design.test_cases)} test cases defined")
 
-            # Resolve agent name -> ID in integration plan
             if design.integration_plan:
                 agents = await self._get_available_agents()
                 design.integration_plan = self._resolve_agent_id_by_name(design.integration_plan, agents)
 
-            # Phase 3: Implementation (Self-Healing Double-Loop)
             phase_start = time.time()
             impl_result = await self._implementation_phase(
-                capability, design, research, input_files
+                capability, design, research, input_files, test_input
             )
             phase_times["implementation"] = int((time.time() - phase_start) * 1000)
 
@@ -220,11 +208,9 @@ class SkillTeamOrchestrator:
                 )
 
             code = impl_result.code
-            # Requirements aus Self-Healing propagieren (Requirement-Drift)
             design.pip_requirements = impl_result.pip_requirements
             design.system_requirements = impl_result.system_requirements
 
-            # Phase 4: Review
             phase_start = time.time()
             code, review = await self._review_phase(capability, code, design)
             phase_times["review"] = int((time.time() - phase_start) * 1000)
@@ -243,7 +229,6 @@ class SkillTeamOrchestrator:
                     attempt_id=attempt_id,
                 )
 
-            # Phase 5: Test in sandbox
             phase_start = time.time()
             test_result = await self._test_phase(
                 code, design, test_input, input_files
@@ -265,7 +250,6 @@ class SkillTeamOrchestrator:
                     attempt_id=attempt_id,
                 )
 
-            # Phase 6: Semantic validation (if enabled)
             semantic_result: Optional[SemanticValidationResult] = None
             if self.config.require_semantic_validation and expected_output is not None:
                 phase_start = time.time()
@@ -293,14 +277,48 @@ class SkillTeamOrchestrator:
                         attempt_id=attempt_id,
                     )
 
-            # Phase 7: Parent regression check (if evolving an existing skill)
+            alignment_result: Optional[AlignmentResult] = None
+            if self.alignment_validator and self.config.require_alignment_validation:
+                phase_start = time.time()
+                alignment_result = await self.alignment_validator.validate_alignment(
+                    description=capability,
+                    code=code,
+                )
+                phase_times["alignment_validation"] = int((time.time() - phase_start) * 1000)
+
+                if not alignment_result.is_aligned:
+                    log.warning(
+                        f"Alignment validation failed for {capability}: "
+                        f"score={alignment_result.alignment_score:.2f}, "
+                        f"discrepancies={alignment_result.discrepancies}, "
+                        f"violations={alignment_result.constitution_violations}"
+                    )
+                    return SkillBuildResult(
+                        success=False,
+                        failure_phase=TeamRole.TESTER,
+                        failure_reason=(
+                            f"Code-Description alignment failed (score={alignment_result.alignment_score:.2f}). "
+                            f"Discrepancies: {alignment_result.discrepancies}. "
+                            f"Constitution violations: {alignment_result.constitution_violations}"
+                        ),
+                        error_type=ErrorType.SEMANTIC_ERROR,
+                        research=research,
+                        design=design,
+                        review=review,
+                        semantic_validation=semantic_result,
+                        alignment_validation=alignment_result,
+                        final_code=code,
+                        total_time_ms=int((time.time() - start_time) * 1000),
+                        phase_times=phase_times,
+                        attempt_id=attempt_id,
+                    )
+
             existing_skill = await self._find_existing_skill(capability)
             if existing_skill and existing_skill.code:
                 phase_start = time.time()
                 from app.skills.runtime.validator import SkillValidator
                 validator = SkillValidator(self.session_factory, self.sandbox)
 
-                # Build a temporary Skill-like object for the new code
                 candidate = Skill(
                     id=str(uuid.uuid4()),
                     name=f"skill_{capability.lower().replace(' ', '_').replace('-', '_')}",
@@ -331,22 +349,18 @@ class SkillTeamOrchestrator:
                     )
                 log.info(f"Parent validation passed: {activation.reason}")
 
-            # Success! Persist the skill
             skill = await self._persist_skill(capability, code, design, research)
 
-            # Generate requirements.txt
             requirements_txt = self._generate_requirements_txt(design.pip_requirements)
 
             total_time_ms = int((time.time() - start_time) * 1000)
 
-            # Self-Improving Loop: Learn from success
             await self.failure_analyzer.learn_from_success(
                 capability=capability,
                 pip_requirements=design.pip_requirements,
                 code=code,
             )
 
-            # Record successful attempt for future learning
             await self.failure_analyzer.record_attempt(
                 capability=capability,
                 code=code,
@@ -375,6 +389,7 @@ class SkillTeamOrchestrator:
                 design=design,
                 review=review,
                 semantic_validation=semantic_result,
+                alignment_validation=alignment_result,
                 integration_plan=design.integration_plan,
                 final_code=code,
                 requirements_txt=requirements_txt,
@@ -422,7 +437,6 @@ class SkillTeamOrchestrator:
         log.info(f"Starting planning skill development for: {capability}")
 
         try:
-            # 1. Load failure history
             failure_history = await self.failure_analyzer.get_failure_history(capability)
             failure_context = self.failure_analyzer.format_failure_context(failure_history)
             if failure_traces:
@@ -430,7 +444,6 @@ class SkillTeamOrchestrator:
                     f"- {t[:200]}" for t in failure_traces[:5]
                 )
 
-            # 2. Load existing planning skills for dedup
             async with self.session_factory() as db:
                 result = await db.execute(
                     select(Skill).where(Skill.skill_type == "planning", Skill.is_active == True)
@@ -441,7 +454,6 @@ class SkillTeamOrchestrator:
                 for s in existing_skills
             ) or "None"
 
-            # 3. Proposer LLM call
             llm = self._get_role_llm(TeamRole.PROPOSER) if hasattr(TeamRole, 'PROPOSER') else self.llm
             prompt = get_proposer_prompt(
                 capability=capability,
@@ -458,7 +470,6 @@ class SkillTeamOrchestrator:
                 max_tokens=2000,
             )
 
-            # 4. Parse structured output
             data = self._extract_json(response.content)
             if not data or "instructions" not in data:
                 return SkillBuildResult(
@@ -469,7 +480,6 @@ class SkillTeamOrchestrator:
                     attempt_id=attempt_id,
                 )
 
-            # 5. Persist planning skill
             skill = await self._persist_planning_skill(
                 capability=capability,
                 name=data.get("name", f"planning_{capability.lower().replace(' ', '_')}"),
@@ -480,7 +490,6 @@ class SkillTeamOrchestrator:
 
             total_time_ms = int((time.time() - start_time) * 1000)
 
-            # 6. Record attempt
             related_ids = [a.id for a in failure_history[:5]]
             await self.failure_analyzer.record_attempt(
                 capability=capability,
@@ -522,7 +531,6 @@ class SkillTeamOrchestrator:
     ) -> Skill:
         """Persist a planning skill to database."""
         async with self.session_factory() as db:
-            # Dedup check
             result = await db.execute(
                 select(Skill).where(Skill.name == name)
             )
@@ -576,19 +584,16 @@ class SkillTeamOrchestrator:
     ) -> ResearchContext:
         """Execute research phase with failure awareness."""
         if not self.config.enable_researcher:
-            # Skip research, use hints only
             return ResearchContext(
                 capability=capability,
                 pip_packages=hints.get("pip", []) if hints else [],
                 system_packages=hints.get("apt", []) if hints else [],
             )
 
-        # Add failure context to hints for research service
         enhanced_hints = hints.copy() if hints else {}
         if failure_context:
             enhanced_hints["failure_context"] = failure_context
 
-        # Lazy-init research service mit frischer Session
         if self.research_service is None:
             async with self.session_factory() as db:
                 research_service = ResearchService(db, self.llm)
@@ -611,7 +616,6 @@ class SkillTeamOrchestrator:
     ) -> ArchitectureDesign:
         """Execute architecture phase with failure awareness."""
         if not self.config.enable_architect:
-            # Skip architecture, use defaults
             return ArchitectureDesign(
                 capability=capability,
                 function_signature="def execute(input_data: dict) -> dict",
@@ -629,7 +633,6 @@ class SkillTeamOrchestrator:
 
         llm = self._get_role_llm(TeamRole.ARCHITECT)
 
-        # Build research context string
         research_context = json.dumps({
             "pip_packages": research.pip_packages,
             "system_packages": research.system_packages,
@@ -637,10 +640,8 @@ class SkillTeamOrchestrator:
             "code_examples": research.code_examples[:2] if research.code_examples else [],
         }, indent=2)
 
-        # Load available agents for integration planning
         available_agents = await self._get_available_agents()
 
-        # Infrastruktur-Kontext für realistische Test-Cases
         infra_context = settings.get_sandbox_infrastructure_context()
 
         prompt = get_architect_prompt(
@@ -658,7 +659,6 @@ class SkillTeamOrchestrator:
             max_tokens=2000,
         )
 
-        # Parse response
         return self._parse_architecture(response.content, capability, research)
 
     def _parse_architecture(
@@ -682,7 +682,6 @@ class SkillTeamOrchestrator:
                         expected_keys=tc.get("expected_keys", ["success"]),
                     ))
 
-                # Parse integration plan from target_agent block
                 integration_plan = None
                 target_agent = data.get("target_agent")
                 if target_agent and isinstance(target_agent, dict):
@@ -716,7 +715,6 @@ class SkillTeamOrchestrator:
         except Exception as e:
             log.warning(f"Failed to parse architecture: {e}")
 
-        # Fallback to defaults
         return ArchitectureDesign(
             capability=capability,
             function_signature="def execute(input_data: dict) -> dict",
@@ -759,7 +757,6 @@ class SkillTeamOrchestrator:
                 break
         return plan
 
-    # -- Self-Healing Hilfsmethoden (portiert aus AutonomousSkillBuilder) --
 
     def _extract_imports(self, code: str) -> list[str]:
         """AST-basierte Import-Extraktion aus Code."""
@@ -894,7 +891,6 @@ class SkillTeamOrchestrator:
         """Debug code with error-type-specific strategy routing."""
         llm = self._get_role_llm(TeamRole.IMPLEMENTER)
 
-        # Gather fix hints from propose_strategy
         proposal = await self.failure_analyzer.propose_strategy(
             capability=capability,
             error_type_classified=error_type_classified,
@@ -902,7 +898,6 @@ class SkillTeamOrchestrator:
         )
         fix_hints = "; ".join(proposal.hints[:3]) if proposal.hints else ""
 
-        # Extract missing module for import errors
         missing_module = ""
         if error_type_classified == "IMPORT_ERROR":
             missing_module = self.failure_analyzer.extract_missing_module(error_message) or ""
@@ -941,6 +936,7 @@ class SkillTeamOrchestrator:
         design: ArchitectureDesign,
         research: ResearchContext,
         input_files: Optional[dict[str, bytes]] = None,
+        test_input: Optional[dict] = None,
     ) -> Optional[ImplementationResult]:
         """
         Self-Healing Implementation mit Double-Loop und Error-Type-Routing.
@@ -974,13 +970,11 @@ class SkillTeamOrchestrator:
                 while iteration < max_iterations:
                     log.info(f"Implementation iteration {iteration + 1}/{max_iterations}")
 
-                    # Code generieren oder nach Regeneration-Schwelle neu erzeugen
                     if code is None:
                         code = await self._generate_code(
                             capability, design, research, failure_context,
                         )
 
-                    # AST Structure Validation
                     structure_result = validator.validate_structure(code)
                     if not structure_result.is_valid:
                         error_msg = "; ".join(structure_result.errors)
@@ -1002,7 +996,6 @@ class SkillTeamOrchestrator:
                             iteration += 1
                             continue
 
-                    # Pfad-Hardcoding prüfen (Skills müssen Pfade als Parameter empfangen)
                     path_result = validator.validate_paths(code)
                     if not path_result.is_valid:
                         error_msg = "; ".join(path_result.errors)
@@ -1024,17 +1017,15 @@ class SkillTeamOrchestrator:
                             iteration += 1
                             continue
 
-                    # Proaktiver Import-Scan: neue Packages erkennen bevor Sandbox läuft
                     new_imports = self._extract_imports(code)
                     new_packages = self._resolve_new_packages(new_imports, current_pip)
                     if new_packages:
                         log.info(f"Proaktiv erkannte neue Packages: {new_packages}")
                         current_pip.extend(new_packages)
                         iteration += 1
-                        break  # → Session-Restart mit neuen Packages
+                        break
 
-                    # Sandbox-Test
-                    test_code = self._build_test_code(code, design)
+                    test_code = self._build_test_code(code, design, test_input)
                     result = await session.execute_code(code=test_code)
 
                     if result.success:
@@ -1047,7 +1038,6 @@ class SkillTeamOrchestrator:
                             iteration_errors=iteration_errors,
                         )
 
-                    # Fehler klassifizieren
                     error_msg = result.error or result.stderr or "Unknown error"
                     error_type = self.failure_analyzer.classify_error(
                         error_msg, result.stderr or ""
@@ -1077,13 +1067,11 @@ class SkillTeamOrchestrator:
                         lesson_learned=f"{error_type_classified}: {error_msg[:200]}",
                     )
 
-                    # -- Error-Type-Routing --
 
                     if error_type_classified == "IMPORT_ERROR":
                         module = self._extract_missing_module(error_msg)
                         if module:
                             package = self._module_to_package(module)
-                            # In-Session pip install versuchen
                             install_result = await session.execute_code(
                                 f"import subprocess; subprocess.check_call("
                                 f"['pip', 'install', '-q', '{package}'])"
@@ -1092,11 +1080,11 @@ class SkillTeamOrchestrator:
                                 current_pip.append(package)
                                 log.info(f"In-Session pip install erfolgreich: {package}")
                                 iteration += 1
-                                continue  # Gleiche Session, nächster Versuch
+                                continue
                             else:
                                 current_pip.append(package)
                                 iteration += 1
-                                break  # → Session-Restart
+                                break
 
                     elif "No matching distribution found for" in error_msg:
                         bad_pkg = self._extract_bad_package(error_msg)
@@ -1107,7 +1095,7 @@ class SkillTeamOrchestrator:
                             if correct:
                                 current_pip.append(correct)
                             iteration += 1
-                            break  # → Session-Restart
+                            break
 
                     elif error_type_classified in ("RUNTIME_ERROR", "LOGIC_ERROR"):
                         if self._should_switch_approach(iteration_errors):
@@ -1122,7 +1110,7 @@ class SkillTeamOrchestrator:
                                 if bad_lib not in p.lower().replace("-", "_")
                             ]
                             iteration += 1
-                            break  # → Session-Restart ohne die fehlerhafte Library
+                            break
                         else:
                             code = await self._debug_code(
                                 code, error_type_classified, error_msg,
@@ -1130,22 +1118,19 @@ class SkillTeamOrchestrator:
                             )
 
                     else:
-                        # SEMANTIC_ERROR, STRUCTURE_ERROR, TIMEOUT_ERROR etc.
                         code = await self._debug_code(
                             code, error_type_classified, error_msg,
                             capability, design, research,
                         )
 
-                    # Proaktiver Import-Scan nach Debug
                     new_imports = self._extract_imports(code)
                     new_packages = self._resolve_new_packages(new_imports, current_pip)
                     if new_packages:
                         log.info(f"Proaktiv erkannte neue Packages nach Debug: {new_packages}")
                         current_pip.extend(new_packages)
                         iteration += 1
-                        break  # → Session-Restart
+                        break
 
-                    # Regeneration-Schwelle: nach 5 Iterationen mit oszillierenden Errors
                     if iteration >= 5 and self._errors_oscillating(iteration_errors):
                         log.warning("Error-Types oszillieren — erzwinge komplette Neugenerierung")
                         code = None
@@ -1188,7 +1173,6 @@ class SkillTeamOrchestrator:
     ) -> tuple[str, ReviewResult]:
         """Execute review phase with potential revisions."""
         if not self.config.enable_reviewer:
-            # Skip review
             return code, ReviewResult(
                 approved=True,
                 overall_score=0.8,
@@ -1225,12 +1209,10 @@ class SkillTeamOrchestrator:
             if review.approved:
                 return code, review
 
-            # Nicht approved — Revision versuchen (außer letzte Iteration)
             if iteration < self.config.max_review_iterations - 1:
                 code_before = code
                 code = await self._revision_phase(code, review)
 
-                # Quick-Re-Test: Revision darf Code nicht brechen
                 quick_result = await self._quick_test(code, design)
                 if not quick_result["success"]:
                     log.warning(
@@ -1241,14 +1223,12 @@ class SkillTeamOrchestrator:
                     review.approved = True
                     return code, review
 
-        # Alle Revisionen gescheitert — funktionierenden Code trotzdem akzeptieren
         log.warning("Review-Iterationen erschöpft, akzeptiere pre-review Code")
         review.approved = True
         return code, review
 
     def _extract_json(self, response: str) -> Optional[dict]:
         """Extract JSON from LLM response, trying multiple strategies."""
-        # Strategy 1: Markdown code block
         md_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', response, re.DOTALL)
         if md_match:
             try:
@@ -1256,8 +1236,6 @@ class SkillTeamOrchestrator:
             except json.JSONDecodeError:
                 pass
 
-        # Strategy 2: Find outermost JSON object
-        # Use a bracket-counting approach instead of greedy regex
         start = response.find('{')
         if start != -1:
             depth = 0
@@ -1313,7 +1291,7 @@ class SkillTeamOrchestrator:
             log.warning(f"Failed to parse review: {e}")
 
         return ReviewResult(
-            approved=True,  # Default to approved if parsing fails
+            approved=True,
             overall_score=0.7,
         )
 
@@ -1367,7 +1345,6 @@ class SkillTeamOrchestrator:
 
         output = None
         if result.success:
-            # Try to extract output
             output = self._parse_output(result.stdout)
 
         return {
@@ -1386,7 +1363,6 @@ class SkillTeamOrchestrator:
                 return True
         return False
 
-    # Keys die auf Infrastruktur-Services verweisen (DB, Qdrant, etc.)
     _INFRA_KEY_MAP: dict[str, str] = {
         "database_url": "DATABASE_URL",
         "db_url": "DATABASE_URL",
@@ -1397,13 +1373,22 @@ class SkillTeamOrchestrator:
         "vector_db_url": "QDRANT_URL",
     }
 
+    _KNOWN_SANDBOX_HOSTS = {"benchmark-db", "lumari-postgres", "lumari-qdrant"}
+
     def _inject_infrastructure_values(self, test_input: dict) -> dict:
-        """Ersetzt fiktive Service-URLs im Test-Input durch echte Sandbox-Werte."""
+        """Ersetzt fiktive Service-URLs im Test-Input durch echte Sandbox-Werte.
+
+        Überspringt Werte die bereits auf bekannte Sandbox-Hosts zeigen,
+        damit z.B. benchmark-db nicht blind durch lumari-postgres ersetzt wird.
+        """
         env = settings.get_sandbox_env_vars()
         patched = dict(test_input)
         for key in patched:
             env_key = self._INFRA_KEY_MAP.get(key.lower())
             if env_key and env_key in env:
+                current = str(patched[key])
+                if any(h in current for h in self._KNOWN_SANDBOX_HOSTS):
+                    continue
                 patched[key] = env[env_key]
         return patched
 
@@ -1414,15 +1399,14 @@ class SkillTeamOrchestrator:
         test_input: Optional[dict] = None,
     ) -> str:
         """Build test wrapper code."""
-        test_input = test_input or {}
-        if design.test_cases:
-            test_input = design.test_cases[0].input_data or test_input
+        caller_input = test_input or {}
+        test_input = {}
+        if design.test_cases and design.test_cases[0].input_data:
+            test_input = dict(design.test_cases[0].input_data)
+        test_input.update(caller_input)
 
-        # Infrastruktur-Werte in Test-Input einsetzen
         test_input = self._inject_infrastructure_values(test_input)
 
-        # If no real test input or input references non-existent files,
-        # do a smoke test (imports + callable check)
         if not test_input or self._has_file_references(test_input):
             return f'''{code}
 
@@ -1483,7 +1467,6 @@ if __name__ == "__main__":
         if code_match:
             return code_match.group(1).strip()
 
-        # Try to find code starting with import or def
         lines = response.strip().split('\n')
         code_lines = []
         in_code = False
@@ -1538,7 +1521,6 @@ if __name__ == "__main__":
         skill_name = f"skill_{capability.lower().replace(' ', '_').replace('-', '_')}"
 
         async with self.session_factory() as db:
-            # Check for existing
             result = await db.execute(
                 select(Skill).where(Skill.name == skill_name)
             )
@@ -1554,7 +1536,6 @@ if __name__ == "__main__":
                 "design_notes": design.design_notes,
             }
 
-            # Build formal interface from architect's schema
             interface = {
                 "input": design.input_schema,
                 "output": design.output_schema,
@@ -1569,11 +1550,9 @@ if __name__ == "__main__":
                 await db.commit()
                 log.info(f"Updated existing skill: {existing.id}")
 
-                # Also update directory if enabled
                 if settings.skill_directory_enabled:
                     await self._save_skill_directory(existing, code, design)
 
-                # Hot-reload into registry if enabled
                 if settings.hot_reload_enabled:
                     await self._hot_reload_skill(existing)
 
@@ -1596,11 +1575,9 @@ if __name__ == "__main__":
 
             log.info(f"Created new skill: {skill.id}")
 
-            # Also save as directory (SKILL.md format) if enabled
             if settings.skill_directory_enabled:
                 await self._save_skill_directory(skill, code, design)
 
-            # Hot-load into registry if enabled
             if settings.hot_reload_enabled:
                 await self._hot_reload_skill(skill)
 
@@ -1635,7 +1612,6 @@ if __name__ == "__main__":
             )
             log.info(f"Saved skill directory: {skill.name}")
         except Exception as e:
-            # Don't fail the whole operation if directory save fails
             log.warning(f"Failed to save skill directory for {skill.name}: {e}")
 
     async def _hot_reload_skill(self, skill: Skill) -> None:
@@ -1649,5 +1625,4 @@ if __name__ == "__main__":
             await registry.reload_skill(skill)
             log.info(f"Hot-reloaded skill into registry: {skill.name}")
         except Exception as e:
-            # Don't fail the whole operation if hot-reload fails
             log.warning(f"Failed to hot-reload skill {skill.name}: {e}")

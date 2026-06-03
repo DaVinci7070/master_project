@@ -1,13 +1,3 @@
-"""
-Package Resolver Service - Dynamic module to pip package resolution.
-
-This service replaces hardcoded import→pip mappings with a dynamic system:
-1. Check database cache for known mappings
-2. Fall back to hardcoded mappings for reliability
-3. Query PyPI API for unknown modules
-4. Learn from successful builds
-"""
-
 import asyncio
 import hashlib
 import logging
@@ -25,7 +15,6 @@ from app.models.sql.skill_build_models import PackageMapping
 log = logging.getLogger(__name__)
 
 
-# Hardcoded fallback mappings for reliability
 HARDCODED_MAPPINGS = {
     "cv2": "opencv-python",
     "PIL": "Pillow",
@@ -65,7 +54,6 @@ HARDCODED_MAPPINGS = {
     "qdrant_client": "qdrant-client",
 }
 
-# Standard library modules (don't need pip install)
 STDLIB_MODULES = {
     "os", "sys", "json", "re", "time", "datetime", "pathlib", "io",
     "subprocess", "tempfile", "shutil", "glob", "copy", "math",
@@ -146,27 +134,22 @@ class PackageResolver:
         Returns:
             Pip package name (e.g., "opencv-python", "Pillow") or None
         """
-        # Skip stdlib modules
         if self.is_stdlib(module_name):
             return None
 
-        # 1. Check database cache
         cached = await self._get_cached_mapping(module_name)
         if cached:
             log.debug(f"Resolved {module_name} -> {cached} (from cache)")
             return cached
 
-        # 2. Check hardcoded mappings
         if module_name in HARDCODED_MAPPINGS:
             package = HARDCODED_MAPPINGS[module_name]
-            # Cache it for faster future lookups
             await self._cache_mapping(
                 module_name, package, source="hardcoded", confidence=1.0
             )
             log.debug(f"Resolved {module_name} -> {package} (hardcoded)")
             return package
 
-        # 3. Try PyPI query
         if self.enable_pypi_query:
             package = await self._query_pypi(module_name)
             if package:
@@ -176,7 +159,6 @@ class PackageResolver:
                 log.debug(f"Resolved {module_name} -> {package} (PyPI)")
                 return package
 
-        # 4. Assume module name == package name
         log.debug(f"Assuming {module_name} == {module_name} (fallback)")
         return module_name
 
@@ -224,7 +206,6 @@ class PackageResolver:
     ) -> None:
         """Cache a mapping in the database."""
         try:
-            # Check if exists
             result = await self.db.execute(
                 select(PackageMapping).where(
                     PackageMapping.module_name == module_name
@@ -233,14 +214,12 @@ class PackageResolver:
             existing = result.scalar_one_or_none()
 
             if existing:
-                # Update if we have higher confidence
                 if confidence > existing.confidence:
                     existing.package_name = package_name
                     existing.confidence = confidence
                     existing.source = source
                     existing.updated_at = datetime.now(timezone.utc)
             else:
-                # Create new
                 mapping = PackageMapping(
                     id=str(uuid.uuid4()),
                     module_name=module_name,
@@ -258,14 +237,12 @@ class PackageResolver:
     async def _query_pypi(self, module_name: str) -> Optional[str]:
         """Query PyPI API to find package for module."""
         try:
-            # First try exact module name
             url = self.PYPI_SEARCH_URL.format(module_name)
             response = await self.http_client.get(url)
 
             if response.status_code == 200:
                 return module_name
 
-            # Try with underscore replaced by hyphen
             alt_name = module_name.replace("_", "-")
             if alt_name != module_name:
                 url = self.PYPI_SEARCH_URL.format(alt_name)
@@ -273,7 +250,6 @@ class PackageResolver:
                 if response.status_code == 200:
                     return alt_name
 
-            # Try python- prefix
             prefixed = f"python-{module_name}"
             url = self.PYPI_SEARCH_URL.format(prefixed)
             response = await self.http_client.get(url)
@@ -314,7 +290,6 @@ class PackageResolver:
                 mapping.confidence = min(1.0, mapping.confidence + 0.1)
                 mapping.updated_at = datetime.now(timezone.utc)
             else:
-                # Create new learned mapping
                 mapping = PackageMapping(
                     id=str(uuid.uuid4()),
                     module_name=module_name,
@@ -385,7 +360,6 @@ class PackageResolver:
         """
         alternatives = []
 
-        # Check if we have alternatives in the database
         if module_name:
             result = await self.db.execute(
                 select(PackageMapping).where(
@@ -397,9 +371,7 @@ class PackageResolver:
             if mapping and mapping.alternatives:
                 alternatives.extend(mapping.alternatives)
 
-        # Common alternative patterns
         if not alternatives:
-            # Try different naming conventions
             base_name = failed_package.lower().replace("-", "_").replace("python_", "")
 
             alternatives_to_try = [
@@ -413,7 +385,7 @@ class PackageResolver:
                 if alt != failed_package and alt not in alternatives:
                     alternatives.append(alt)
 
-        return alternatives[:5]  # Limit to 5 suggestions
+        return alternatives[:5]
 
     async def get_high_confidence_mappings(
         self,

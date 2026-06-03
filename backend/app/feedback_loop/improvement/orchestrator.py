@@ -1,20 +1,3 @@
-"""
-Improvement Orchestrator Service for executing approved improvements.
-
-This service orchestrates the flow from Control Agent decision to A/B test:
-1. Receives approved ImprovementAction from ControlAgentService
-2. Routes prompt improvements to PromptEngineerService (modify_prompt)
-3. Routes skill improvements to ToolBuilderService (modify_tool) with sandbox validation
-4. Creates A/B test via ABTestService after artifact is modified
-5. Tracks improvement attempt status throughout the flow
-
-Flow:
-    ControlAgentService.evaluate_findings() -> ImprovementAction
-    -> ImprovementOrchestrator.execute_improvement()
-    -> PromptEngineerService.modify_prompt() OR ToolBuilderService.modify_tool()
-    -> SandboxExecutorService.execute_tests() (for skills)
-    -> ABTestService.create_test()
-"""
 import hashlib
 import logging
 import re
@@ -74,7 +57,6 @@ class ImprovementOrchestrator:
         prompt_engineer: PromptEngineerService,
         prompt_repo: PromptRepository,
         ab_test_service: ABTestService,
-        # Phase 6 dependencies (optional for backward compatibility)
         tool_builder: Optional[ToolBuilderService] = None,
         sandbox_executor: Optional[SandboxExecutorService] = None,
         skill_repo: Optional[SkillRepository] = None,
@@ -95,7 +77,6 @@ class ImprovementOrchestrator:
         self.prompt_engineer = prompt_engineer
         self.prompt_repo = prompt_repo
         self.ab_test_service = ab_test_service
-        # Phase 6
         self.tool_builder = tool_builder
         self.sandbox_executor = sandbox_executor
         self.skill_repo = skill_repo
@@ -124,13 +105,10 @@ class ImprovementOrchestrator:
             f"{action.artifact_id[:8]}..."
         )
 
-        # Generate fingerprint from finding for tracking
         fingerprint = self._generate_fingerprint(finding)
 
-        # Get current attempt count for this finding
         attempt_count = await self.improvement_repo.get_attempt_count(fingerprint)
 
-        # Calculate version_before
         if action.artifact_type == "prompt":
             children = await self.prompt_repo.get_children(action.artifact_id)
             version_before = len(children)
@@ -138,21 +116,18 @@ class ImprovementOrchestrator:
             children = await self.skill_repo.get_children(action.artifact_id)
             version_before = len(children)
         else:
-            # For agents, version tracking TBD in Phase 7
             version_before = 0
 
-        # Create ImprovementAttempt record
         attempt_data = ImprovementAttemptCreate(
             finding_fingerprint=fingerprint,
             artifact_type=action.artifact_type,
             artifact_id=action.artifact_id,
             version_before=version_before,
             attempt_number=attempt_count + 1,
-            ab_test_id=None  # Will be set after A/B test creation
+            ab_test_id=None
         )
         improvement_attempt = await self.improvement_repo.create(attempt_data)
 
-        # Route based on artifact_type
         if action.artifact_type == "prompt":
             return await self._execute_prompt_improvement(
                 action=action,
@@ -169,7 +144,6 @@ class ImprovementOrchestrator:
                 improvement_attempt_id=improvement_attempt.id,
             )
         elif action.artifact_type == "agent":
-            # Agent improvements = prompt + schema modification
             return await self._execute_prompt_improvement(
                 action=action,
                 finding=finding,
@@ -203,7 +177,6 @@ class ImprovementOrchestrator:
             A/B test ID if created, None if queued or failed.
         """
         try:
-            # Fetch current prompt
             current_prompt = await self.prompt_repo.get_by_id(action.artifact_id)
             if not current_prompt:
                 log.error(f"Prompt not found: id={action.artifact_id}")
@@ -214,19 +187,16 @@ class ImprovementOrchestrator:
                 )
                 return None
 
-            # Calculate version_baseline (children count = version index)
             children = await self.prompt_repo.get_children(action.artifact_id)
             version_baseline = len(children)
 
-            # Build PromptModificationRequest
             request = PromptModificationRequest(
                 prompt_id=action.artifact_id,
                 finding_description=f"{finding.evidence} {finding.suggested_fix}",
                 improvement_direction=action.improvement_description,
-                preserve_sections=[]  # Let meta-prompt handle
+                preserve_sections=[]
             )
 
-            # Call PromptEngineerService.modify_prompt()
             log.info(
                 f"Calling PromptEngineerService.modify_prompt for prompt="
                 f"{action.artifact_id[:8]}..."
@@ -235,10 +205,8 @@ class ImprovementOrchestrator:
                 request, improvement_attempt_id
             )
 
-            # Calculate version_improvement (new child created)
             version_improvement = version_baseline + 1
 
-            # Create A/B test
             log.info(
                 f"Creating A/B test for improvement_attempt_id={improvement_attempt_id[:8]}..."
             )
@@ -258,7 +226,6 @@ class ImprovementOrchestrator:
             return test.id
 
         except ValueError as e:
-            # Test queued (active test already running)
             log.info(f"A/B test queued: {e}")
             return None
 
@@ -315,7 +282,6 @@ class ImprovementOrchestrator:
             A/B test ID if created, None if failed or queued.
         """
         try:
-            # 1. Fetch current skill
             current_skill = await self.skill_repo.get_by_id(action.artifact_id)
             if not current_skill:
                 log.error(f"Skill not found: id={action.artifact_id}")
@@ -326,11 +292,9 @@ class ImprovementOrchestrator:
                 )
                 return None
 
-            # 2. Calculate version baseline
             children = await self.skill_repo.get_children(action.artifact_id)
             version_baseline = len(children)
 
-            # 3. Build modification request and call ToolBuilderService
             request = ToolModificationRequest(
                 skill_id=action.artifact_id,
                 finding_description=f"{finding.evidence} {finding.suggested_fix}",
@@ -345,7 +309,6 @@ class ImprovementOrchestrator:
                 request, improvement_attempt_id
             )
 
-            # 4. Check for duplicates via fingerprint
             fingerprint = new_skill.skill_metadata.get("code_fingerprint")
             if fingerprint:
                 existing = await self.skill_repo.find_by_fingerprint(fingerprint)
@@ -360,10 +323,8 @@ class ImprovementOrchestrator:
                     )
                     return None
 
-            # 5. Execute tests in sandbox
             log.info(f"Executing tests in sandbox for skill={new_skill.id[:8]}...")
 
-            # Build combined test code from test_cases
             test_code = self._build_test_file(new_skill)
 
             sandbox_result = await self.sandbox_executor.execute_tests(
@@ -385,7 +346,6 @@ class ImprovementOrchestrator:
 
             log.info(f"Skill tests passed: {sandbox_result.tests_passed} tests")
 
-            # 6. Create A/B test
             version_improvement = version_baseline + 1
 
             test = await self.ab_test_service.create_test(
@@ -401,7 +361,6 @@ class ImprovementOrchestrator:
             return test.id
 
         except ValueError as e:
-            # Test queued or validation error
             log.info(f"Skill improvement queued or invalid: {e}")
             return None
 
@@ -442,7 +401,6 @@ class ImprovementOrchestrator:
         Returns:
             Combined test file content.
         """
-        # Extract function name from skill (assume first def in code)
         match = re.search(r'def\s+(\w+)\s*\(', skill.code)
         func_name = match.group(1) if match else "unknown_function"
 
@@ -477,7 +435,6 @@ class ImprovementOrchestrator:
         Returns:
             64-character hex string (SHA-256 hash).
         """
-        # Normalize: lowercase and first 200 chars of suggested_fix
         normalized_fix = finding.suggested_fix[:200].lower().strip()
         content = f"{finding.category}:{normalized_fix}"
 

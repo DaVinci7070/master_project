@@ -1,13 +1,3 @@
-"""
-F15 — Gatekeeper Security Benchmark.
-
-Tests 40 skills (20 safe, 20 unsafe) directly against CodeValidatorService.
-Reports TP/FP/TN/FN counts and per-skill results.
-
-Usage:
-    python -m scripts.evaluation.gatekeeper_test
-    python -m scripts.evaluation.gatekeeper_test --output results/gatekeeper.json
-"""
 from __future__ import annotations
 
 import argparse
@@ -99,7 +89,6 @@ def run_gatekeeper_test(args: argparse.Namespace) -> dict:
         "results": results,
     }
 
-    # Summary
     print(f"\n{'='*60}")
     print(f"Gatekeeper Test Results")
     print(f"{'='*60}")

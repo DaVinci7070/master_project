@@ -1,10 +1,3 @@
-"""
-A/B test models for tracking test state and results.
-
-This module implements ABTest and ABTestSample models for statistical
-A/B testing infrastructure. Used in Phase 4 to validate improvements
-through randomized controlled trials with significance testing.
-"""
 import uuid
 from datetime import datetime, timezone
 
@@ -27,7 +20,6 @@ class ABTest(Base):
     """
     __tablename__ = "ab_test"
 
-    # Primary key
     id = Column(
         String(36),
         primary_key=True,
@@ -35,7 +27,6 @@ class ABTest(Base):
         doc="UUID primary key"
     )
 
-    # Test configuration
     improvement_attempt_id = Column(
         String(36),
         nullable=False,
@@ -68,7 +59,6 @@ class ABTest(Base):
         doc="Weights for composite score: {quality, latency, error_rate}"
     )
 
-    # Test status
     status = Column(
         String(32),
         nullable=False,
@@ -76,7 +66,6 @@ class ABTest(Base):
         doc="Status: pending, running, completed, cancelled"
     )
 
-    # Sample counts
     samples_baseline = Column(
         Integer,
         nullable=False,
@@ -90,7 +79,6 @@ class ABTest(Base):
         doc="Number of samples collected for improvement variant"
     )
 
-    # Statistical results (set when completed)
     p_value = Column(
         Float,
         nullable=True,
@@ -117,7 +105,6 @@ class ABTest(Base):
         doc="Upper bound of 95% confidence interval for difference"
     )
 
-    # Timestamps
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -130,7 +117,6 @@ class ABTest(Base):
         doc="When the test completed"
     )
 
-    # Queue management for one-test-per-artifact constraint
     queued_ids = Column(
         JSON,
         nullable=False,
@@ -138,11 +124,8 @@ class ABTest(Base):
         doc="List of improvement_attempt_ids waiting to test on this artifact"
     )
 
-    # Indexes for common query patterns
     __table_args__ = (
-        # Composite index for "one test per artifact" lookups
         Index('ix_ab_test_artifact', 'artifact_type', 'artifact_id'),
-        # Index on status for active test queries
         Index('ix_ab_test_status', 'status'),
     )
 
@@ -171,7 +154,6 @@ class ABTestSample(Base):
     """
     __tablename__ = "ab_test_sample"
 
-    # Primary key
     id = Column(
         String(36),
         primary_key=True,
@@ -179,7 +161,6 @@ class ABTestSample(Base):
         doc="UUID primary key"
     )
 
-    # Test reference (index defined in __table_args__)
     test_id = Column(
         String(36),
         nullable=False,
@@ -191,14 +172,12 @@ class ABTestSample(Base):
         doc="Reference to ExecutionTelemetry for tracing"
     )
 
-    # Variant assignment
     variant = Column(
         String(16),
         nullable=False,
         doc="Variant assignment: 'baseline' or 'improvement'"
     )
 
-    # Raw metrics
     quality_score = Column(
         Float,
         nullable=False,
@@ -216,14 +195,12 @@ class ABTestSample(Base):
         doc="1 if execution error, 0 if success"
     )
 
-    # Computed composite score
     composite_score = Column(
         Float,
         nullable=False,
         doc="Weighted composite score (higher is better)"
     )
 
-    # Timestamp
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -231,11 +208,8 @@ class ABTestSample(Base):
         doc="When the sample was created"
     )
 
-    # Indexes for common query patterns
     __table_args__ = (
-        # Index on test_id for collecting samples per test
         Index('ix_ab_test_sample_test_id', 'test_id'),
-        # Index on variant for filtering by variant
         Index('ix_ab_test_sample_variant', 'variant'),
     )
 

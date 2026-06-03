@@ -1,9 +1,3 @@
-"""
-Prompt Engineer Prompts.
-
-System-Prompt geladen aus config/agents/prompt_engineer.yaml.
-Modification-Prompt bleibt hier (kein Agent, sondern operativer Prompt).
-"""
 from app.orchestration.agents.definitions import get_agent_prompt
 
 PROMPT_ENGINEER_SYSTEM_PROMPT = get_agent_prompt("prompt_engineer")

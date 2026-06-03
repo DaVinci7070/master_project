@@ -1,14 +1,3 @@
-"""
-F17 — Ablation Mode Switch.
-
-Defines three evaluation modes (baseline, no_memory, full) and provides
-a CLI that applies the mode via ENV vars before spawning the benchmark runner.
-
-Usage:
-    python -m scripts.evaluation.ablation_modes --list
-    python -m scripts.evaluation.ablation_modes --mode baseline --suite dummy_smoke_test --output results/baseline.json
-    python -m scripts.evaluation.ablation_modes --mode full --dry-run
-"""
 from __future__ import annotations
 
 import argparse
@@ -57,7 +46,6 @@ def run_ablation(args: argparse.Namespace):
             print(f"  {k}={v}")
         return
 
-    # Build runner command
     runner_cmd = [
         sys.executable, "-m", "scripts.evaluation.benchmark_runner",
         "--suite", args.suite,
@@ -70,7 +58,6 @@ def run_ablation(args: argparse.Namespace):
     if args.csv:
         runner_cmd.extend(["--csv", args.csv])
 
-    # Merge mode flags into environment
     env = {**os.environ, **flags}
 
     print(f"Ablation mode: {mode}")

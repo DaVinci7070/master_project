@@ -1,10 +1,3 @@
-"""
-Improvement models for tracking improvement attempts.
-
-This module implements ImprovementAttempt model for tracking each time
-the system attempts to fix a finding. The 3-strike rule uses this model
-to prevent infinite improvement loops on the same finding.
-"""
 import uuid
 from datetime import datetime, timezone
 
@@ -29,7 +22,6 @@ class ImprovementAttempt(Base):
     """
     __tablename__ = "improvement_attempt"
 
-    # Primary key
     id = Column(
         String(36),
         primary_key=True,
@@ -37,7 +29,6 @@ class ImprovementAttempt(Base):
         doc="UUID primary key"
     )
 
-    # Finding identification for 3-strike rule
     finding_fingerprint = Column(
         String(64),
         nullable=False,
@@ -45,7 +36,6 @@ class ImprovementAttempt(Base):
         doc="Hash of finding for 3-strike tracking"
     )
 
-    # Attempt tracking
     attempt_number = Column(
         Integer,
         nullable=False,
@@ -53,7 +43,6 @@ class ImprovementAttempt(Base):
         doc="Which attempt this is (1, 2, or 3)"
     )
 
-    # Artifact being modified
     artifact_type = Column(
         String(32),
         nullable=False,
@@ -65,7 +54,6 @@ class ImprovementAttempt(Base):
         doc="UUID of the artifact being modified"
     )
 
-    # Version tracking for rollback
     version_before = Column(
         Integer,
         nullable=False,
@@ -77,7 +65,6 @@ class ImprovementAttempt(Base):
         doc="Version index after change (set after improvement applied)"
     )
 
-    # Status tracking
     status = Column(
         String(32),
         nullable=False,
@@ -90,14 +77,12 @@ class ImprovementAttempt(Base):
         doc="Reason for failure if status is failed"
     )
 
-    # A/B testing reference (Phase 4)
     ab_test_id = Column(
         String(36),
         nullable=True,
         doc="Reference to A/B test (Phase 4)"
     )
 
-    # Timestamps
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -110,11 +95,8 @@ class ImprovementAttempt(Base):
         doc="When the attempt completed (success or failure)"
     )
 
-    # Indexes for common query patterns
     __table_args__ = (
-        # Filter by fingerprint for 3-strike rule
         Index('ix_improvement_fingerprint', 'finding_fingerprint'),
-        # Filter by status for active attempts
         Index('ix_improvement_status', 'status'),
     )
 

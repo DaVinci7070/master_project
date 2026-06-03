@@ -1,4 +1,3 @@
-"""Generic Artifact model for session-scoped data passing."""
 from datetime import datetime, timezone
 from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator
@@ -37,7 +36,6 @@ class Artifact(BaseModel):
         description="Creation timestamp"
     )
 
-    # Optional metadata
     execution_id: Optional[str] = Field(
         default=None,
         description="Execution run this artifact belongs to"
@@ -55,7 +53,7 @@ class Artifact(BaseModel):
             raise ValueError("artifact_type must be alphanumeric with underscores/hyphens")
         return v.lower()
 
-    model_config = {"frozen": True}  # Immutable once created
+    model_config = {"frozen": True}
 
 
 class ArtifactDeclaration(BaseModel):

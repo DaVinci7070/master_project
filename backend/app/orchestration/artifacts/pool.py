@@ -1,4 +1,3 @@
-"""Session-scoped artifact pool for inter-agent communication."""
 import asyncio
 import logging
 from typing import Optional
@@ -42,7 +41,6 @@ class ArtifactPool:
         self._by_type: dict[str, list[Artifact]] = {}
         self._lock = asyncio.Lock()
 
-        # Registered agent contracts for pre-validation
         self._contracts: dict[str, AgentArtifactContract] = {}
 
     async def register_contract(self, contract: AgentArtifactContract) -> None:
@@ -54,7 +52,6 @@ class ArtifactPool:
         async with self._lock:
             self._contracts[contract.agent_id] = contract
 
-            # Register schemas from contract
             for decl in contract.declarations:
                 if decl.payload_schema and decl.direction == "produces":
                     self.validator.register_schema_from_json(
@@ -81,7 +78,6 @@ class ArtifactPool:
         Raises:
             ValueError: If validation fails
         """
-        # Validate at write time (per CONTEXT decision)
         if validate:
             is_valid, error = self.validator.validate(
                 artifact.artifact_type,
@@ -93,9 +89,7 @@ class ArtifactPool:
                 )
 
         async with self._lock:
-            # Add execution_id if not set
             if artifact.execution_id is None and self.execution_id:
-                # Create new artifact with execution_id (immutable model)
                 artifact = Artifact(
                     artifact_type=artifact.artifact_type,
                     payload=artifact.payload,
@@ -141,7 +135,6 @@ class ArtifactPool:
                         continue
                     results.append(artifact)
 
-            # Sort by timestamp (newest first)
             results.sort(key=lambda a: a.timestamp, reverse=True)
 
             if limit:

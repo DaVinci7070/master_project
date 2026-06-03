@@ -83,4 +83,3 @@ class TemplateService:
 
     async def delete_template(self, user_id: str, template_id: str) -> bool:
         return self.qdrant_repo.delete_template(user_id=user_id, template_id=template_id)
-

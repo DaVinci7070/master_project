@@ -1,8 +1,3 @@
-"""
-API endpoints for Execution History.
-
-Provides access to persisted execution records for history view.
-"""
 import logging
 from typing import Optional
 
@@ -49,7 +44,6 @@ async def list_executions(
         result = await session.execute(stmt)
         executions = list(result.scalars().all())
 
-        # Get total count
         count_stmt = select(Execution)
         if status:
             count_stmt = count_stmt.where(Execution.status == status)

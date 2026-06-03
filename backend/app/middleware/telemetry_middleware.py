@@ -1,15 +1,3 @@
-"""
-OpenTelemetry middleware for FastAPI instrumentation.
-
-This module sets up distributed tracing and telemetry collection for
-the application, implementing DB-07 (execution telemetry) requirements.
-
-Features:
-- Automatic request/response tracing
-- Service resource identification
-- Console span export for local development
-- OTLP export support for production collectors
-"""
 import logging
 from typing import Optional, Tuple
 
@@ -23,7 +11,6 @@ from fastapi import FastAPI, Request
 
 log = logging.getLogger(__name__)
 
-# Version of the telemetry middleware
 MIDDLEWARE_VERSION = "1.0.0"
 
 
@@ -38,13 +25,11 @@ def _server_request_hook(span: Span, scope: dict) -> None:
         scope: ASGI scope dictionary containing request info.
     """
     if span and span.is_recording():
-        # Add request path and method
         if "path" in scope:
             span.set_attribute("http.target", scope.get("path", ""))
         if "method" in scope:
             span.set_attribute("http.method", scope.get("method", ""))
 
-        # Add client IP if available
         if "client" in scope and scope["client"]:
             client_host = scope["client"][0] if scope["client"] else None
             if client_host:
@@ -76,8 +61,7 @@ def _client_response_hook(span: Span, message: dict) -> None:
         message: Response message dictionary.
     """
     if span and span.is_recording():
-        # Response status code is typically in message body
-        pass  # Standard attributes are auto-captured
+        pass
 
 
 def setup_telemetry(
@@ -112,26 +96,22 @@ def setup_telemetry(
     """
     log.info(f"Setting up OpenTelemetry for {service_name} v{service_version}")
 
-    # Create resource identifying this service
     resource = Resource.create({
         SERVICE_NAME: service_name,
         SERVICE_VERSION: service_version,
         "service.namespace": "lumari",
-        "deployment.environment": "development",  # TODO: Make configurable
+        "deployment.environment": "development",
         "telemetry.sdk.name": "opentelemetry",
         "telemetry.middleware.version": MIDDLEWARE_VERSION,
     })
 
-    # Create TracerProvider
     provider = TracerProvider(resource=resource)
 
-    # Add console exporter for local development
     if enable_console_export:
         console_processor = BatchSpanProcessor(ConsoleSpanExporter())
         provider.add_span_processor(console_processor)
         log.info("Console span exporter enabled")
 
-    # Add OTLP exporter for production collectors
     if otlp_endpoint:
         try:
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
@@ -149,10 +129,8 @@ def setup_telemetry(
         except Exception as e:
             log.error(f"Failed to configure OTLP exporter: {e}")
 
-    # Set as global tracer provider
     trace.set_tracer_provider(provider)
 
-    # Instrument FastAPI with hooks
     FastAPIInstrumentor.instrument_app(
         app,
         server_request_hook=_server_request_hook,

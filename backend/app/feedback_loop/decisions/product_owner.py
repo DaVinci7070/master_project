@@ -1,10 +1,3 @@
-"""
-Product Owner Service for prioritizing findings and identifying patterns.
-
-This service implements the Product Owner agent from the Developer Team,
-which reviews Analyzer findings, identifies patterns across executions,
-and prioritizes improvements for downstream agents (Control Agent in Phase 3).
-"""
 import logging
 from collections import Counter
 from typing import Optional
@@ -94,7 +87,6 @@ class ProductOwnerService:
             f"execution={execution_id[:8]}..., agent={agent_id[:8]}..."
         )
 
-        # If no findings, return empty with generic direction
         if not current_findings:
             log.info("No findings to prioritize")
             return PriorityList(
@@ -103,26 +95,22 @@ class ProductOwnerService:
             )
 
         try:
-            # Get historical findings for pattern detection
             pattern_context = await self.get_pattern_context(agent_id)
 
-            # Build the priority prompt
             user_prompt = self._build_priority_prompt(
                 current_findings=current_findings,
                 pattern_context=pattern_context,
                 execution_id=execution_id,
             )
 
-            # Build JSON schema for structured output
             json_schema = self._build_json_schema()
 
-            # Call LLM with structured output
             response = await self.llm.chat(
                 messages=[
                     {"role": "system", "content": PRODUCT_OWNER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.3,  # Slightly creative for synthesis
+                temperature=0.3,
                 response_format={
                     "type": "json_schema",
                     "json_schema": {
@@ -135,7 +123,6 @@ class ProductOwnerService:
 
             log.debug(f"LLM response: {response.content[:200]}...")
 
-            # Parse and validate the response
             result = PriorityList.model_validate_json(response.content)
 
             log.info(
@@ -196,7 +183,6 @@ class ProductOwnerService:
         try:
             findings = await self.finding_repo.get_by_agent_id(agent_id, limit=limit)
 
-            # Convert to response schema
             responses = [
                 AnalysisFindingResponse.model_validate(finding)
                 for finding in findings
@@ -231,7 +217,6 @@ class ProductOwnerService:
         """
         lines = ["## Current Findings to Prioritize", ""]
 
-        # List current findings with indices
         for i, finding in enumerate(current_findings):
             lines.append(f"### Finding {i}")
             lines.append(f"- **Category**: {finding.category}")
@@ -240,14 +225,12 @@ class ProductOwnerService:
             lines.append(f"- **Suggested Fix**: {finding.suggested_fix}")
             lines.append("")
 
-        # Add pattern context
         lines.append("## Historical Context (Recent Findings)")
         lines.append("")
 
         if not pattern_context:
             lines.append("No historical findings available for pattern detection.")
         else:
-            # Compute summary statistics
             severity_counts = Counter(f.severity for f in pattern_context)
             category_counts = Counter(f.category for f in pattern_context)
 
@@ -259,13 +242,11 @@ class ProductOwnerService:
             )
             lines.append("")
 
-            # Show category breakdown
             lines.append("Category breakdown:")
             for category, count in category_counts.most_common():
                 lines.append(f"  - {category}: {count}")
             lines.append("")
 
-            # Identify potential patterns (repeated categories or suggested fixes)
             repeated_categories = [cat for cat, count in category_counts.items() if count >= 2]
             if repeated_categories:
                 lines.append("**Potential patterns detected:**")
@@ -273,9 +254,8 @@ class ProductOwnerService:
                     lines.append(f"  - '{cat}' issues appearing {category_counts[cat]} times")
                 lines.append("")
 
-            # List recent findings briefly
             lines.append("Recent findings (most recent first):")
-            for finding in pattern_context[:5]:  # Limit to 5 for prompt length
+            for finding in pattern_context[:5]:
                 lines.append(
                     f"  - [{finding.severity}] {finding.category}: "
                     f"{finding.suggested_fix[:80]}..."

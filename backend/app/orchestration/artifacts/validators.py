@@ -1,4 +1,3 @@
-"""Runtime schema validation for artifacts using Pydantic."""
 import logging
 from typing import Any, Optional
 
@@ -32,7 +31,6 @@ class ArtifactSchemaValidator:
             schema: Dict mapping field names to (type, Field) tuples
                    Example: {"score": (float, Field(ge=0, le=1))}
         """
-        # Convert schema dict to Pydantic model
         model = create_model(
             f"Artifact_{artifact_type}",
             **schema
@@ -96,7 +94,6 @@ class ArtifactSchemaValidator:
             (is_valid, error_message)
         """
         if artifact_type not in self._schema_cache:
-            # No schema registered - allow any payload
             logger.debug(f"No schema registered for {artifact_type}, skipping validation")
             return True, None
 

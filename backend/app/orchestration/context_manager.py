@@ -1,4 +1,3 @@
-"""Context budget management for LLM context window allocation."""
 import tiktoken
 from typing import Any
 
@@ -53,12 +52,10 @@ class ContextBudgetManager:
             text = item.get(key, "")
             tokens = self.count_tokens(str(text))
 
-            # Soft limit: try to stay under target_items
             if len(selected) < self.target_items:
                 if total_tokens + tokens <= max_tokens:
                     selected.append(item)
                     total_tokens += tokens
-            # Hard limit: stop at max_items
             elif len(selected) < self.max_items:
                 if total_tokens + tokens <= max_tokens:
                     selected.append(item)

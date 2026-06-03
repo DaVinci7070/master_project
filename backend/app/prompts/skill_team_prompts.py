@@ -1,14 +1,3 @@
-"""
-Prompts for team-based skill development.
-
-Each team role has specialized prompts:
-- Researcher: Finds packages, examples, approaches
-- Architect: Designs API, test cases, dependencies
-- Implementer: Writes the actual code
-- Reviewer: Reviews for quality and security
-"""
-
-
 RESEARCHER_PROMPT = """You are a Python Research Specialist for autonomous skill development.
 
 Your role is to research how to implement a specific capability in Python.
@@ -127,6 +116,9 @@ Respond with a JSON object:
 - All file/directory paths must be defined as required input_schema properties (type: string), never hardcoded — skills must work with any path passed at runtime for reuse
 - For target_agent: Choose the agent whose role best matches this capability. Consider the agent's existing skills and purpose.
 - If the capability requires database or service access, use the sandbox infrastructure info above for realistic test_cases
+- For skills that connect to external services: specify retry_attempts=3 and connect_timeout=10 in the design
+- For skills that write data (DB inserts, file creation): include a verification step in the design that checks the output is correct before returning success
+- For multi-step skills (ETL, pipeline): design intermediate checkpoints — verify each step succeeded before proceeding to the next
 
 ## Challenge Context (the original task this skill will be used for):
 {challenge_context}
@@ -157,6 +149,28 @@ The code will be executed in a Docker sandbox (python:3.11-slim) with network ac
 7. NEVER restrict which hosts, ports, or databases the skill can connect to.
    No hostname whitelists, no port checks, no hardcoded allowed-hosts lists.
    The caller controls what the skill connects to via `input_data` — the skill just executes.
+8. For ALL external connections (database, HTTP, APIs), implement retry with backoff:
+   - 3 attempts with exponential backoff (2s, 4s, 8s)
+   - Catch connection errors (ConnectionRefusedError, TimeoutError, OperationalError)
+   - Always set connect_timeout=10 for database connections
+   - Pattern:
+     for attempt in range(3):
+         try:
+             conn = psycopg2.connect(input_data["database_url"], connect_timeout=10)
+             break
+         except (psycopg2.OperationalError, ConnectionError) as e:
+             if attempt == 2: raise
+             time.sleep(2 ** (attempt + 1))
+9. ALWAYS validate your output before returning success:
+   - After writing to a database: verify with SELECT COUNT(*) that expected rows exist
+   - After reading/transforming data: verify the result is non-empty and plausible
+   - After aggregation queries: sanity-check totals (e.g., SUM should be > 0)
+   - If validation fails, return success=False with a diagnostic error message
+   - Pattern:
+     cursor.execute("SELECT COUNT(*) FROM my_table")
+     count = cursor.fetchone()[0]
+     if count == 0:
+         return {{"success": False, "error": "Data load verification failed: 0 rows in my_table"}}
 
 ## DO NOT:
 - Define a class instead of a function
@@ -258,6 +272,9 @@ Respond with a JSON object:
    - Handles all input cases
    - Returns correct output format
    - Error handling is appropriate
+   - External connections use retry with backoff (not bare connect)
+   - Output is validated before returning success=True
+   - Database writes are verified with a read-back check
 
 3. **Performance**
    - No obvious performance issues
@@ -534,7 +551,7 @@ def get_debug_prompt(
             error_message=error_message,
             code=code,
         )
-    else:  # LOGIC_ERROR and everything else
+    else:
         return DEBUG_LOGIC_PROMPT.format(
             error_message=error_message,
             code=code,

@@ -1,9 +1,3 @@
-"""
-Tests for DynamicSandboxService.
-
-Run with: pytest tests/test_dynamic_sandbox.py -v
-"""
-
 import pytest
 from app.skills.testing.docker_sandbox import DynamicSandboxService, SandboxResult
 
@@ -164,7 +158,6 @@ print("Combined install successful!")
     assert "Combined install successful!" in result.stdout
 
 
-# Integration test for audio transcription (the original use case)
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Requires GPU/large download - run manually")
 async def test_whisper_transcription(sandbox):

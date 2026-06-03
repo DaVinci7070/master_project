@@ -1,4 +1,3 @@
-"""Data structures for dynamic agent topology."""
 from datetime import datetime, timezone
 from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -47,7 +46,6 @@ class AgentNode(BaseModel):
         description="Whether agent is active in topology"
     )
 
-    # IO Schema for runtime validation
     input_schema: Optional[dict[str, Any]] = Field(
         default=None,
         description="JSON Schema for agent input"
@@ -57,7 +55,6 @@ class AgentNode(BaseModel):
         description="JSON Schema for agent output"
     )
 
-    # Artifact declarations for pre-validation
     consumes_artifacts: list[str] = Field(
         default_factory=list,
         description="Artifact types this agent consumes"

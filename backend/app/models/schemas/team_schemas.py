@@ -1,4 +1,3 @@
-"""Schemas für Dynamic Team Assembly und Verify-Adapt Loop."""
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -62,7 +61,6 @@ class VerificationResult(BaseModel):
     feedback_for_retry: str = ""
     capability_gap: bool = False
     gap_indicators: list[str] = []
-    # CoT-Felder (Sprint 1: Reflexion)
     aspect_scores: dict[str, float] = {}
     reasoning_chain: str = ""
     self_reflection: str = ""

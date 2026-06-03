@@ -1,22 +1,11 @@
-"""
-Pydantic schemas for control and safety operations.
-
-These schemas handle validation for:
-- ImprovementAttempt creation and response
-- 3-strike rule enforcement data
-- Control Agent decision output (ControlDecision, ImprovementAction)
-- A/B test results interface (ABTestResult)
-"""
 from datetime import datetime
 from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, ConfigDict
 
 
-# Status types for improvement attempts
 ImprovementStatusType = Literal["pending", "testing", "success", "failed", "rolled_back"]
 
-# Artifact types that can be improved
 ArtifactType = Literal["prompt", "agent", "skill"]
 
 

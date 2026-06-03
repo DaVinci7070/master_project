@@ -1,10 +1,7 @@
-"""Pydantic schemas for the Evaluation Dashboard endpoints."""
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-
-# ── Cold / Warm Reset ──────────────────────────────────────────────
 
 class ColdResetRequest(BaseModel):
     skip_seed: bool = False
@@ -43,8 +40,6 @@ class SnapshotInfo(BaseModel):
     modified_at: str
 
 
-# ── Suites ─────────────────────────────────────────────────────────
-
 class SuiteInfo(BaseModel):
     name: str
     description: str | None = None
@@ -64,8 +59,6 @@ class SuiteDetailResponse(BaseModel):
     description: str | None = None
     tasks: list[SuiteTaskInfo]
 
-
-# ── Benchmark Runs ─────────────────────────────────────────────────
 
 class StartRunRequest(BaseModel):
     suite: str
@@ -122,8 +115,6 @@ class RunSummary(BaseModel):
     completed_at: str | None = None
 
 
-# ── Persistent Run Schemas ────────────────────────────────────────
-
 class TaskResultResponse(BaseModel):
     task_id: str
     level: str | None = None
@@ -179,4 +170,4 @@ class RunCompareItem(BaseModel):
 
 class RunCompareResponse(BaseModel):
     runs: list[RunCompareItem]
-    delta: dict = {}  # Difference between runs (pass_at_1, tokens, duration)
+    delta: dict = {}

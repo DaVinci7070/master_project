@@ -1,10 +1,3 @@
-"""
-Control Agent Service for evaluating findings and deciding on improvements.
-
-This service implements the Control Agent from the Developer Team, which
-receives prioritized findings from Product Owner, enforces the 3-strike rule,
-and uses LLM reasoning to decide which improvements should go to A/B testing.
-"""
 import hashlib
 import logging
 from typing import Optional
@@ -106,7 +99,6 @@ class ControlAgentService:
             f"for agent={agent_id[:8]}..."
         )
 
-        # If no priorities, return empty decision
         if not priority_list.priorities:
             log.info("No priorities to evaluate")
             return ControlDecision(
@@ -117,7 +109,6 @@ class ControlAgentService:
             )
 
         try:
-            # Pre-filter 3-strike findings
             remaining_findings: list[tuple[int, Finding, PriorityItem]] = []
             pre_rejected: list[int] = []
             failed_attempts: dict[str, int] = {}
@@ -133,7 +124,6 @@ class ControlAgentService:
                 finding = findings[finding_idx]
                 fingerprint = self._generate_fingerprint(finding)
 
-                # Check 3-strike rule
                 should_skip = await self.improvement_repo.should_skip_finding(
                     fingerprint, max_attempts=settings.control_agent_max_strikes
                 )
@@ -146,14 +136,12 @@ class ControlAgentService:
                     pre_rejected.append(finding_idx)
                 else:
                     remaining_findings.append((finding_idx, finding, priority))
-                    # Get attempt count for context
                     attempts = await self.improvement_repo.get_by_fingerprint(
                         fingerprint, limit=settings.control_agent_max_strikes
                     )
                     if attempts:
                         failed_attempts[fingerprint] = len(attempts)
 
-            # If all findings were pre-rejected, return early
             if not remaining_findings:
                 log.info("All findings exhausted 3-strike rule, none to evaluate")
                 return ControlDecision(
@@ -163,18 +151,14 @@ class ControlAgentService:
                     reasoning="All findings have exhausted their 3-strike limit."
                 )
 
-            # Get historical context
             history = await self._get_historical_context(agent_id)
 
-            # Build LLM prompt
             user_prompt = self._build_decision_prompt(
                 remaining_findings, history, failed_attempts
             )
 
-            # Build JSON schema for structured output
             json_schema = self._build_json_schema()
 
-            # Call LLM with structured output
             response = await self.llm.chat(
                 messages=[
                     {"role": "system", "content": CONTROL_AGENT_SYSTEM_PROMPT},
@@ -193,10 +177,8 @@ class ControlAgentService:
 
             log.debug(f"LLM response: {response.content[:200]}...")
 
-            # Parse and validate the response
             llm_decision = ControlDecision.model_validate_json(response.content)
 
-            # Merge pre-rejected findings
             merged_rejected = list(set(llm_decision.rejected_findings + pre_rejected))
 
             result = ControlDecision(
@@ -221,7 +203,6 @@ class ControlAgentService:
             log.warning(
                 f"LLM error during control evaluation for agent={agent_id[:8]}: {e}"
             )
-            # Graceful degradation: defer all findings for next cycle
             all_indices = [p.finding_index for p in priority_list.priorities]
             return ControlDecision(
                 approved_improvements=[],
@@ -268,7 +249,6 @@ class ControlAgentService:
         Returns:
             64-character hex string (SHA-256 hash).
         """
-        # Normalize: lowercase and first 200 chars of suggested_fix
         normalized_fix = finding.suggested_fix[:200].lower().strip()
         content = f"{finding.category}:{normalized_fix}"
 
@@ -290,7 +270,7 @@ class ControlAgentService:
         Returns:
             List of recent findings for context.
         """
-        limit = settings.control_agent_history_days * 3  # ~3 findings per day
+        limit = settings.control_agent_history_days * 3
         log.debug(
             f"Getting historical context for agent={agent_id[:8]}..., limit={limit}"
         )
@@ -323,7 +303,6 @@ class ControlAgentService:
         """
         lines = ["## Prioritized Findings to Evaluate", ""]
 
-        # List each finding with its priority and any failed attempt history
         for idx, finding, priority in findings:
             fingerprint = self._generate_fingerprint(finding)
             attempt_count = failed_attempts.get(fingerprint, 0)
@@ -342,14 +321,12 @@ class ControlAgentService:
                 )
             lines.append("")
 
-        # Add historical context
         lines.append("## Historical Context (Recent Agent Findings)")
         lines.append("")
 
         if not history:
             lines.append("No historical findings available.")
         else:
-            # Summary statistics
             severity_counts: dict[str, int] = {}
             category_counts: dict[str, int] = {}
             for h in history:
@@ -364,7 +341,6 @@ class ControlAgentService:
             )
             lines.append("")
 
-            # Pattern detection
             repeated = [cat for cat, count in category_counts.items() if count >= 3]
             if repeated:
                 lines.append("**Recurring patterns (3+ occurrences):**")
@@ -372,7 +348,6 @@ class ControlAgentService:
                     lines.append(f"  - {cat}: {category_counts[cat]} times")
                 lines.append("")
 
-            # Recent findings brief
             lines.append("Recent findings (most recent first):")
             for h in history[:5]:
                 lines.append(

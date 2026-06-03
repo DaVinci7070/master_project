@@ -1,9 +1,3 @@
-"""
-Version service for managing versioned artifacts.
-
-Provides a unified interface for version operations across
-prompts, agents, and skills (DB-02 rollback capability).
-"""
 from typing import Optional, List, Literal, Union
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,13 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.sql.versioned_models import Prompt, Agent, Skill
 from app.repositories.version_repository import VersionRepository
 
-# Supported artifact types
 ArtifactType = Literal["prompt", "agent", "skill"]
 
-# Type alias for any versioned model
 VersionedModel = Union[Prompt, Agent, Skill]
 
-# Mapping from artifact type string to model class
 MODEL_MAP: dict[ArtifactType, type] = {
     "prompt": Prompt,
     "agent": Agent,
@@ -181,7 +172,6 @@ class VersionService:
         if data_b is None:
             raise ValueError(f"Version {version_b} not found for {artifact_type} {artifact_id}")
 
-        # Find changed fields
         all_keys = set(data_a.keys()) | set(data_b.keys())
         changed_fields = []
         changes = {}

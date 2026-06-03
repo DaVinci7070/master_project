@@ -419,7 +419,6 @@ class QdrantReportsRepository(ReportsIndex, TemplatesIndex):
             return None
 
 
-
     def get_user_stats(self, user_id: str) -> dict[str, Any]:
         cname = self.user_collection_name(user_id)
         if not self.client.collection_exists(cname):

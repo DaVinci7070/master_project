@@ -1,4 +1,3 @@
-"""Capability injector for runtime capability insertion."""
 import asyncio
 import logging
 from typing import Literal, Optional
@@ -31,7 +30,6 @@ class CapabilityInjector:
     - Add short delay after commit to ensure DB consistency
     """
 
-    # Delay after commit before reload (ms)
     POST_COMMIT_DELAY_MS = 100
 
     def __init__(
@@ -71,35 +69,27 @@ class CapabilityInjector:
             f"Injecting capability: type={artifact_type}, id={artifact_id[:8]}..."
         )
 
-        # 1. Verify artifact exists and is active in database
         artifact = await self._verify_artifact_exists(artifact_type, artifact_id)
         if not artifact:
             return False, f"Artifact {artifact_id} not found in database"
 
-        # 2. Ensure artifact is marked active
         if hasattr(artifact, 'is_active') and not artifact.is_active:
             await self._activate_artifact(artifact_type, artifact_id)
 
-        # 3. Small delay to ensure DB consistency (per RESEARCH pitfall 1)
         await asyncio.sleep(self.POST_COMMIT_DELAY_MS / 1000)
 
-        # 4. Force topology reload (per CONTEXT decision)
-        # Note: reload() has no parameters - it internally calls load(force_reload=True)
         try:
             topology, validation = await self.topology.reload()
 
             if not validation.is_valid:
-                # Topology invalid after injection
                 logger.error(
                     f"Topology invalid after injection: {validation.errors}"
                 )
 
-                # Rollback: deactivate the artifact
                 await self._deactivate_artifact(artifact_type, artifact_id)
 
                 return False, f"Topology validation failed: {validation.errors[0] if validation.errors else 'Unknown error'}"
 
-            # 5. Verify capability is now available in topology
             is_present = await self._verify_capability_present(
                 topology, artifact_type, artifact_id
             )
@@ -108,9 +98,7 @@ class CapabilityInjector:
                 logger.warning(
                     f"Capability {artifact_type}/{artifact_id[:8]}... not found in reloaded topology"
                 )
-                # Skills may not be bound if no agent has matching capability
                 if artifact_type == "skill":
-                    # Log warning - skill exists but no agent has matching capability
                     logger.warning(
                         "Skill injected but not bound to any agent - "
                         "ensure an agent has the matching capability declared"
@@ -149,7 +137,6 @@ class CapabilityInjector:
         Returns:
             (success, message)
         """
-        # Fallback to generic inject if no target agent
         if not plan.target_agent_id:
             logger.info("No target_agent_id in integration plan, falling back to generic inject")
             return await self.inject(artifact_type="skill", artifact_id=skill_id)
@@ -159,13 +146,11 @@ class CapabilityInjector:
             f"target_agent={plan.target_agent_id[:8]}..., rationale={plan.rationale}"
         )
 
-        # 1. Verify skill exists
         skill = await self._verify_artifact_exists("skill", skill_id)
         if not skill:
             return False, f"Skill {skill_id} not found in database"
 
         async with self.session_factory() as db:
-            # 2. Verify target agent exists and is active
             agent_result = await db.execute(
                 select(Agent).where(Agent.id == plan.target_agent_id, Agent.is_active == True)
             )
@@ -177,11 +162,9 @@ class CapabilityInjector:
                 )
                 return await self.inject(artifact_type="skill", artifact_id=skill_id)
 
-            # 3. Activate skill if inactive
             if hasattr(skill, 'is_active') and not skill.is_active:
                 await self._activate_artifact("skill", skill_id)
 
-            # 4. Create skill binding
             existing_binding = await db.execute(
                 select(SkillBinding).where(
                     SkillBinding.skill_id == skill_id,
@@ -201,11 +184,9 @@ class CapabilityInjector:
                 await db.commit()
                 logger.info(f"Created skill binding: skill={skill_id[:8]}... -> agent={plan.target_agent_id[:8]}...")
 
-            # 5. Apply dependency changes if specified
             if plan.dependency_changes:
                 await self._apply_dependency_changes(plan.target_agent_id, plan.dependency_changes)
 
-        # 6. Post-commit delay + topology reload
         await asyncio.sleep(self.POST_COMMIT_DELAY_MS / 1000)
 
         try:
@@ -215,7 +196,6 @@ class CapabilityInjector:
                 logger.error(f"Topology invalid after plan-based injection: {validation.errors}")
                 return False, f"Topology validation failed: {validation.errors[0] if validation.errors else 'Unknown'}"
 
-            # 7. Verify skill is on the target agent
             is_present = await self._verify_capability_present(topology, "skill", skill_id)
             if not is_present:
                 logger.warning(
@@ -337,22 +317,18 @@ class CapabilityInjector:
     ) -> bool:
         """Verify artifact is present in reloaded topology."""
         if artifact_type == "agent":
-            # Check if agent is in topology
             agent_node = topology.get_agent(artifact_id)
             return agent_node is not None
 
         elif artifact_type == "skill":
-            # Check if skill is in loaded skills cache
             loaded_skills = self.topology.get_all_loaded_skills()
             return artifact_id in loaded_skills
 
         elif artifact_type == "prompt":
-            # Check if any agent references this prompt
             for agent in topology.agents:
                 if agent.prompt_id == artifact_id:
                     return True
-            # Prompts may be created but not yet assigned
-            return True  # Accept unassigned prompts
+            return True
 
         return False
 
@@ -381,7 +357,6 @@ class CapabilityInjector:
                 logger.error(f"Rollback failed for {artifact_type}/{artifact_id}: {e}")
 
         if rolled_back > 0:
-            # Reload topology to reflect deactivations
             await self.topology.reload()
 
         logger.info(f"Rolled back {rolled_back}/{len(artifact_ids)} capabilities")
@@ -399,7 +374,6 @@ class CapabilityInjector:
         provisional = []
 
         async with self.session_factory() as db:
-            # Query skills with provisional metadata
             skill_result = await db.execute(
                 select(Skill).where(Skill.is_active == True)
             )
@@ -412,7 +386,6 @@ class CapabilityInjector:
                         "created_at": str(skill.created_at) if hasattr(skill, 'created_at') else None
                     })
 
-            # Query agents with provisional metadata
             agent_result = await db.execute(
                 select(Agent).where(Agent.is_active == True)
             )

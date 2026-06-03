@@ -1,11 +1,3 @@
-"""
-SQLAlchemy models for Shared Memory (Facts, Hypotheses, Relations).
-
-These models store metadata for hybrid memory architecture.
-Vector embeddings are stored in Qdrant, not in SQL.
-
-Note: Shared Memory is append-only, not versioned with Continuum.
-"""
 import uuid
 from sqlalchemy import Column, String, Text, JSON, Float, DateTime, ForeignKey, func
 from sqlalchemy.orm import relationship
@@ -33,10 +25,8 @@ class Fact(Base):
     supersedes_id = Column(String(36), ForeignKey("facts.id"), nullable=True)
     embedding_id = Column(String(255), nullable=True)
 
-    # Self-referential relationship for versioning
     supersedes = relationship("Fact", remote_side=[id], backref="superseded_by")
 
-    # Relationships for relations
     caused_relations = relationship(
         "Relation",
         foreign_keys="Relation.source_fact_id",
@@ -89,7 +79,6 @@ class Relation(Base):
     project_id = Column(String(36), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships to facts
     source_fact = relationship(
         "Fact",
         foreign_keys=[source_fact_id],

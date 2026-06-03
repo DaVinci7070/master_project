@@ -1,11 +1,3 @@
-"""
-DI helpers for the Autonomous Evolution Loop (Sprint 1).
-
-Provides both:
-- build_evolution_loop_service(session): plain builder for the background task
-  spawned by HybridOrchestrator (isolated session).
-- get_evolution_loop_service(): FastAPI Depends factory for API endpoints.
-"""
 import logging
 
 from fastapi import Depends
@@ -49,14 +41,12 @@ def build_evolution_loop_service(
     """
     llm_client = LLMClient()
 
-    # Repositories
     telemetry_repo = TelemetryRepository(session)
     finding_repo = FindingRepository(session)
     improvement_repo = ImprovementRepository(session)
     prompt_repo = PromptRepository(session)
     ab_test_repo = ABTestRepository(session)
 
-    # AnalysisPipeline (analyzer + product owner + findings storage)
     telemetry_service = TelemetryService(telemetry_repo)
     analyzer = AnalyzerService(llm_client)
     product_owner = ProductOwnerService(llm_client, finding_repo)
@@ -67,17 +57,14 @@ def build_evolution_loop_service(
         finding_repository=finding_repo,
     )
 
-    # ControlAgent
     control_agent = ControlAgentService(
         llm_client=llm_client,
         improvement_repo=improvement_repo,
         finding_repo=finding_repo,
     )
 
-    # ImprovementOrchestrator (prompts + A/B tests; skills optional best-effort)
     prompt_engineer = PromptEngineerService(llm_client, prompt_repo)
 
-    # A/B testing stack — needs quality judge, stats, and rollback plumbing.
     version_service = VersionService(session)
     quality_judge = QualityJudgeService(llm_client)
     statistical_analyzer = StatisticalAnalyzer()
@@ -90,7 +77,6 @@ def build_evolution_loop_service(
         rollback_service=rollback_service,
     )
 
-    # Phase-6 Services: Skill-Improvement (graceful degradation)
     code_validator = CodeValidatorService()
     skill_repo = None
     tool_builder = None

@@ -1,12 +1,3 @@
-"""
-Skill Registry - In-memory skill registry with hot-reload support.
-
-Provides instant skill availability without server restart:
-- Skills are compiled and loaded into memory
-- Updates are reflected immediately
-- Tracks execution statistics per skill
-"""
-
 import asyncio
 import logging
 from dataclasses import dataclass, field
@@ -28,8 +19,8 @@ class LoadedSkill:
 
     id: str
     name: str
-    code: str  # Source code
-    compiled: CodeType  # Compiled code object
+    code: str
+    compiled: CodeType
     metadata: dict
     loaded_at: datetime
     execution_count: int = 0
@@ -93,8 +84,8 @@ class SkillRegistry:
     def __init__(self):
         """Initialize the registry (use get_instance() instead)."""
         self._skills: dict[str, LoadedSkill] = {}
-        self._name_index: dict[str, str] = {}  # name -> id
-        self._capability_index: dict[str, list[str]] = {}  # capability -> [skill_ids]
+        self._name_index: dict[str, str] = {}
+        self._capability_index: dict[str, list[str]] = {}
         self._initialized: bool = False
         self._on_rebuild_needed: Optional[Callable] = None
 
@@ -142,7 +133,6 @@ class SkillRegistry:
             self._skills[skill.id] = loaded
             self._name_index[skill.name] = skill.id
 
-            # Index by capability
             capability = loaded.metadata.get("affected_capability")
             if capability:
                 if capability not in self._capability_index:
@@ -169,11 +159,9 @@ class SkillRegistry:
 
             skill = self._skills.pop(skill_id)
 
-            # Remove from name index
             if skill.name in self._name_index:
                 del self._name_index[skill.name]
 
-            # Remove from capability index
             for capability, skill_ids in self._capability_index.items():
                 if skill_id in skill_ids:
                     skill_ids.remove(skill_id)
@@ -246,12 +234,10 @@ class SkillRegistry:
                 if failure_reason:
                     skill.last_failure_reason = failure_reason
 
-            # Update rolling average execution time
             if execution_time_ms > 0:
                 total_time = skill.avg_execution_ms * (skill.execution_count - 1)
                 skill.avg_execution_ms = (total_time + execution_time_ms) / skill.execution_count
 
-            # Auto-flag for rebuild if failure threshold exceeded
             if not skill.needs_rebuild and skill.should_rebuild():
                 skill.needs_rebuild = True
                 skill.rebuild_requested_at = datetime.now(timezone.utc)
@@ -428,7 +414,6 @@ class SkillRegistry:
         log.info("Skill registry cleared")
 
 
-# Convenience functions for global access
 def get_registry() -> SkillRegistry:
     """Get the global skill registry instance."""
     return SkillRegistry.get_instance()

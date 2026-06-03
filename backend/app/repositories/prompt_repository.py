@@ -1,8 +1,3 @@
-"""
-Prompt repository for database operations.
-
-Provides CRUD operations for prompt storage and retrieval.
-"""
 import logging
 from typing import List, Optional
 
@@ -154,7 +149,6 @@ class PromptRepository:
             log.warning(f"Prompt not found for update: id={prompt_id}")
             return None
 
-        # Update allowed fields
         allowed_fields = {"name", "content", "prompt_metadata", "is_active"}
 
         for key, value in kwargs.items():

@@ -1,34 +1,3 @@
-"""
-Container Image Manager - Caches Docker images with pre-installed packages.
-
-Part of Phase 3: Container-Caching & Optimierung
-
-This service manages a cache of Docker images that have common package combinations
-pre-installed. When a skill needs to run, we first check if there's a cached image
-that already has the required packages, which can reduce startup time from ~30s to <5s.
-
-Architecture:
-    ┌─────────────────────────────────────────────────────────────────┐
-    │  ContainerImageManager                                          │
-    │                                                                 │
-    │  find_best_image(pip, apt) → CachedContainerImage or None      │
-    │  build_image(pip, apt) → CachedContainerImage                  │
-    │  cleanup_old_images(max_age_days) → int                        │
-    │                                                                 │
-    └─────────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-    ┌─────────────────────────────────────────────────────────────────┐
-    │  Docker Engine                                                  │
-    │                                                                 │
-    │  lumari-sandbox:base          (python:3.11-slim)               │
-    │  lumari-sandbox:audio-abc123  (+ faster-whisper, ffmpeg)       │
-    │  lumari-sandbox:pdf-def456    (+ pypdf, pdfplumber)            │
-    │  lumari-sandbox:ocr-ghi789    (+ pytesseract, tesseract-ocr)   │
-    │                                                                 │
-    └─────────────────────────────────────────────────────────────────┘
-"""
-
 import asyncio
 import hashlib
 import logging
@@ -48,7 +17,6 @@ from app.models.sql.cached_container_models import CachedContainerImage
 log = logging.getLogger(__name__)
 
 
-# Capability type detection based on packages
 CAPABILITY_DETECTION = {
     "audio": ["faster-whisper", "openai-whisper", "pydub", "speechrecognition", "pyaudio"],
     "pdf": ["pypdf", "pdfplumber", "PyMuPDF", "pdf2image"],
@@ -130,10 +98,8 @@ class ContainerImageManager:
         Returns None if no suitable image exists.
         """
         if not pip_requirements and not system_packages:
-            # No requirements = use base image (no cache needed)
             return None
 
-        # Query all ready images
         result = await self.db.execute(
             select(CachedContainerImage).where(
                 CachedContainerImage.status == "ready"
@@ -144,7 +110,6 @@ class ContainerImageManager:
         if not cached_images:
             return None
 
-        # Find images that fully cover requirements
         candidates = []
         for image in cached_images:
             if image.matches_requirements(pip_requirements, system_packages):
@@ -154,7 +119,6 @@ class ContainerImageManager:
             log.debug(f"No cached image covers requirements: pip={pip_requirements}, apt={system_packages}")
             return None
 
-        # Sort by: usage_count (desc), last_used_at (desc)
         candidates.sort(
             key=lambda img: (img.usage_count, img.last_used_at or datetime.min.replace(tzinfo=timezone.utc)),
             reverse=True
@@ -163,7 +127,6 @@ class ContainerImageManager:
         best = candidates[0]
         log.info(f"Found cached image: {best.image_tag} (usage={best.usage_count})")
 
-        # Update usage stats
         best.usage_count += 1
         best.last_used_at = datetime.now(timezone.utc)
         await self.db.commit()
@@ -182,11 +145,9 @@ class ContainerImageManager:
         This is an expensive operation (can take 30-60 seconds) so it should
         only be called when no suitable cached image exists.
         """
-        # Detect capability type if not provided
         if not capability_type:
             capability_type = self._detect_capability_type(pip_requirements)
 
-        # Generate unique image tag
         package_hash = self._generate_package_hash(pip_requirements, system_packages)
         image_tag = f"{self.IMAGE_PREFIX}:{capability_type or 'custom'}-{package_hash[:8]}"
 
@@ -194,12 +155,10 @@ class ContainerImageManager:
         log.info(f"  pip: {pip_requirements}")
         log.info(f"  apt: {system_packages}")
 
-        # Check if image already exists in Docker
         try:
             existing = self.docker.images.get(image_tag)
             log.info(f"Image already exists in Docker: {image_tag}")
 
-            # Make sure it's in our database
             await self._ensure_db_record(
                 image_tag=image_tag,
                 pip_packages=pip_requirements,
@@ -214,9 +173,8 @@ class ContainerImageManager:
                 size_bytes=existing.attrs.get("Size"),
             )
         except ImageNotFound:
-            pass  # Need to build
+            pass
 
-        # Prüfen ob Record schon existiert (Race-Condition-sicher mit Fallback)
         existing = await self.db.execute(
             select(CachedContainerImage).where(
                 CachedContainerImage.image_tag == image_tag
@@ -252,7 +210,6 @@ class ContainerImageManager:
                 )
                 cache_record = result.scalar_one()
 
-        # Build the image (with semaphore to limit concurrent builds)
         async with self._build_semaphore:
             start_time = datetime.now(timezone.utc)
 
@@ -266,7 +223,6 @@ class ContainerImageManager:
                 build_time_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
                 if result.success:
-                    # Update DB record
                     cache_record.status = "ready"
                     cache_record.size_bytes = result.size_bytes
                     cache_record.build_time_ms = build_time_ms
@@ -299,18 +255,14 @@ class ContainerImageManager:
         system_packages: list[str],
     ) -> ImageBuildResult:
         """Build the Docker image using a Dockerfile."""
-        # Generate Dockerfile
         dockerfile = self._generate_dockerfile(pip_requirements, system_packages)
 
         log.debug(f"Dockerfile:\n{dockerfile}")
 
-        # Build image
         try:
-            # Docker SDK build requires a context directory or fileobj
             import io
             import tarfile
 
-            # Create in-memory tar with Dockerfile
             dockerfile_bytes = dockerfile.encode("utf-8")
             tar_buffer = io.BytesIO()
 
@@ -321,7 +273,6 @@ class ContainerImageManager:
 
             tar_buffer.seek(0)
 
-            # Build (this is blocking, but we're in an async context with semaphore)
             loop = asyncio.get_event_loop()
             image, build_logs = await loop.run_in_executor(
                 None,
@@ -329,13 +280,12 @@ class ContainerImageManager:
                     fileobj=tar_buffer,
                     custom_context=True,
                     tag=image_tag,
-                    rm=True,  # Remove intermediate containers
-                    forcerm=True,  # Always remove intermediate containers
-                    pull=True,  # Pull base image
+                    rm=True,
+                    forcerm=True,
+                    pull=True,
                 )
             )
 
-            # Get image size
             image.reload()
             size_bytes = image.attrs.get("Size", 0)
 
@@ -369,7 +319,6 @@ class ContainerImageManager:
             "",
         ]
 
-        # Install system packages
         if system_packages:
             packages = " ".join(system_packages)
             lines.extend([
@@ -380,7 +329,6 @@ class ContainerImageManager:
                 "",
             ])
 
-        # Install pip packages
         if pip_requirements:
             packages = " ".join(pip_requirements)
             lines.extend([
@@ -408,7 +356,6 @@ class ContainerImageManager:
         system_packages: list[str],
     ) -> str:
         """Generate a hash of the package combination for cache keying."""
-        # Normalize and sort for consistent hashing
         pip_sorted = sorted(self._normalize_pkg(p) for p in (pip_requirements or []))
         sys_sorted = sorted(system_packages or [])
 
@@ -500,7 +447,6 @@ class ContainerImageManager:
         age_cutoff = now - timedelta(days=max_age_days)
         unused_cutoff = now - timedelta(days=max_unused_days)
 
-        # Find images to delete
         result = await self.db.execute(
             select(CachedContainerImage).where(
                 (CachedContainerImage.status == "error") |
@@ -513,7 +459,6 @@ class ContainerImageManager:
         )
         candidates = result.scalars().all()
 
-        # Count ready images
         ready_result = await self.db.execute(
             select(CachedContainerImage).where(
                 CachedContainerImage.status == "ready"
@@ -521,15 +466,12 @@ class ContainerImageManager:
         )
         ready_images = ready_result.scalars().all()
 
-        # Don't delete if it would leave us below minimum
         ready_count = len(ready_images)
         ready_to_delete = [c for c in candidates if c.status == "ready"]
         error_to_delete = [c for c in candidates if c.status == "error"]
 
-        # Always delete error images
         to_delete = error_to_delete.copy()
 
-        # Delete ready images only if we have enough
         for img in ready_to_delete:
             if ready_count - len([d for d in to_delete if d.status == "ready"]) > keep_min_images:
                 to_delete.append(img)
@@ -537,14 +479,12 @@ class ContainerImageManager:
         removed_count = 0
         for image in to_delete:
             try:
-                # Remove from Docker
                 try:
                     self.docker.images.remove(image.image_tag, force=True)
                     log.info(f"Removed Docker image: {image.image_tag}")
                 except ImageNotFound:
-                    pass  # Already gone
+                    pass
 
-                # Remove from DB
                 await self.db.delete(image)
                 removed_count += 1
 
@@ -568,7 +508,6 @@ class ContainerImageManager:
         total_size = sum(i.size_bytes or 0 for i in ready_images)
         total_usage = sum(i.usage_count for i in ready_images)
 
-        # Group by capability
         by_capability = {}
         for img in ready_images:
             cap = img.capability_type or "unknown"

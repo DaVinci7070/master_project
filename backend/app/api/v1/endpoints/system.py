@@ -1,8 +1,3 @@
-"""
-API endpoints for system control and snapshots.
-
-Provides emergency stop, snapshot management, and system restore.
-"""
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -21,11 +16,9 @@ router = APIRouter(prefix="/system", tags=["system"])
 log = logging.getLogger(__name__)
 
 
-# In-memory snapshot storage (production would use database)
 _snapshots: dict[str, dict] = {}
 
 
-# Response models
 class EmergencyStopResponse(BaseModel):
     """Response after triggering emergency stop."""
     success: bool
@@ -102,7 +95,6 @@ async def emergency_stop(
     affected = []
 
     try:
-        # Cancel all active A/B tests
         active_tests_stmt = (
             select(ABTest)
             .where(ABTest.status.in_(["pending", "running"]))
@@ -114,7 +106,6 @@ async def emergency_stop(
             test.status = "cancelled"
             affected.append(f"ab_test:{test.id[:8]}")
 
-        # Mark all agents as inactive
         await session.execute(
             update(Agent).values(is_active=False)
         )
@@ -165,7 +156,6 @@ async def reset_system(
     log.warning("SYSTEM RESET triggered")
 
     try:
-        # Get prompt IDs linked to system-generated agents
         sg_prompt_ids_result = await session.execute(
             select(Agent.prompt_id).where(
                 Agent.source == "system_generated",
@@ -174,12 +164,10 @@ async def reset_system(
         )
         sg_prompt_ids = list(sg_prompt_ids_result.scalars().all())
 
-        # Delete system-generated agents
         deleted_agents = (await session.execute(
             delete(Agent).where(Agent.source == "system_generated")
         )).rowcount
 
-        # Delete all tables that reference skills (FK dependencies)
         from sqlalchemy import text
         for dep_table in ("skill_build_attempts", "skill_bindings", "research_cache"):
             try:
@@ -187,12 +175,10 @@ async def reset_system(
             except Exception:
                 pass
 
-        # Delete all skills
         deleted_skills = (await session.execute(
             delete(Skill)
         )).rowcount
 
-        # Delete orphaned prompts
         deleted_prompts = 0
         for prompt_id in sg_prompt_ids:
             remaining = (await session.execute(
@@ -202,7 +188,6 @@ async def reset_system(
                 await session.execute(delete(Prompt).where(Prompt.id == prompt_id))
                 deleted_prompts += 1
 
-        # Clean up topology change logs
         deleted_events = 0
         try:
             from app.models.sql.topology_models import TopologyChangeLog
@@ -212,7 +197,6 @@ async def reset_system(
         except Exception:
             pass
 
-        # Clean up agent execution events
         try:
             from app.models.sql.agent_event_models import AgentExecutionEvent
             deleted_events += (await session.execute(
@@ -221,12 +205,10 @@ async def reset_system(
         except Exception:
             pass
 
-        # Count remaining default agents
         remaining_default = (await session.execute(
             select(func.count()).select_from(Agent).where(Agent.source == "initial")
         )).scalar()
 
-        # Re-activate all default agents
         await session.execute(
             update(Agent).where(Agent.source == "initial").values(is_active=True)
         )
@@ -269,7 +251,6 @@ async def list_snapshots(
     """
     log.info(f"Listing snapshots: limit={limit}, offset={offset}")
 
-    # Get snapshots (in-memory for now)
     all_snapshots = list(_snapshots.values())
     all_snapshots.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
@@ -307,7 +288,6 @@ async def create_snapshot(
 
     from app.models.sql.versioned_models import Skill, Prompt
 
-    # Get current state
     agents_result = await session.execute(select(Agent))
     agents = list(agents_result.scalars().all())
 
@@ -317,7 +297,6 @@ async def create_snapshot(
     prompts_result = await session.execute(select(Prompt))
     prompts = list(prompts_result.scalars().all())
 
-    # Create snapshot
     snapshot_id = str(uuid.uuid4())
     snapshot = {
         "id": snapshot_id,
@@ -422,7 +401,6 @@ async def restore_snapshot(
     skills_restored = 0
     prompts_restored = 0
 
-    # Restore agent active states
     for agent_data in snapshot.get("agents", []):
         await session.execute(
             update(Agent)
@@ -431,7 +409,6 @@ async def restore_snapshot(
         )
         agents_restored += 1
 
-    # For skills and prompts, just count (full restore would be more complex)
     skills_restored = len(snapshot.get("skills", []))
     prompts_restored = len(snapshot.get("prompts", []))
 

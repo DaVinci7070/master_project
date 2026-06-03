@@ -1,8 +1,3 @@
-"""
-Agent execution event models for real-time timeline streaming.
-
-Stores agent start/complete/error events for SSE delivery.
-"""
 import uuid
 from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, Index
 from sqlalchemy.sql import func

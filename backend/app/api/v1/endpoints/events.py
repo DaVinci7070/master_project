@@ -1,8 +1,3 @@
-"""
-API endpoints for Server-Sent Events (SSE) streaming.
-
-Provides real-time updates for execution monitoring and topology changes.
-"""
 import asyncio
 import json
 import logging
@@ -24,7 +19,6 @@ router = APIRouter(prefix="/events", tags=["events"])
 log = logging.getLogger(__name__)
 
 
-# Event type constants
 EVENT_EXECUTION_STARTED = "execution_started"
 EVENT_EXECUTION_PROGRESS = "execution_progress"
 EVENT_EXECUTION_COMPLETED = "execution_completed"
@@ -59,10 +53,9 @@ async def execution_event_generator(
 
     start_time = asyncio.get_event_loop().time()
     last_challenge_status = None
-    last_event_id = None  # Track last processed agent event
+    last_event_id = None
     heartbeat_counter = 0
 
-    # Emit start event
     yield format_sse_event("start", {
         "type": "start",
         "execution_id": execution_id,
@@ -71,7 +64,6 @@ async def execution_event_generator(
     })
 
     while True:
-        # Check timeout
         elapsed = asyncio.get_event_loop().time() - start_time
         if elapsed > timeout:
             yield format_sse_event("timeout", {
@@ -80,10 +72,8 @@ async def execution_event_generator(
             })
             break
 
-        # Create fresh session for each poll iteration
         async with AsyncSessionLocal() as session:
             try:
-                # Poll AgentExecutionEvent table for real-time agent events
                 try:
                     agent_event_stmt = select(AgentExecutionEvent).where(
                         AgentExecutionEvent.execution_id == execution_id
@@ -92,7 +82,6 @@ async def execution_event_generator(
                     agent_event_result = await session.execute(agent_event_stmt)
                     agent_events = list(agent_event_result.scalars().all())
 
-                    # Yield new agent events that we haven't sent yet
                     for agent_event in agent_events:
                         if last_event_id is None or agent_event.id > last_event_id:
                             event_data = {
@@ -112,10 +101,8 @@ async def execution_event_generator(
                             yield format_sse_event(agent_event.event_type, event_data)
                             last_event_id = agent_event.id
                 except Exception as agent_err:
-                    # Table may not exist yet - continue silently
                     log.debug(f"Agent events query failed: {agent_err}")
 
-                # Check BlockedChallenge status (primary source for challenge execution)
                 challenge_stmt = select(BlockedChallenge).where(
                     BlockedChallenge.execution_id == execution_id
                 )
@@ -140,13 +127,13 @@ async def execution_event_generator(
                             "agents_executed": results.get("agents_executed", 0),
                         }
                         yield format_sse_event("complete", event_data)
-                        return  # Exit generator
+                        return
                     elif challenge.status == "failed":
                         event_data["type"] = "error"
                         results = challenge.execution_results or {}
                         event_data["error"] = results.get("error", "Execution failed")
                         yield format_sse_event("error", event_data)
-                        return  # Exit generator
+                        return
                     else:
                         yield format_sse_event("progress", event_data)
 
@@ -155,9 +142,8 @@ async def execution_event_generator(
             except Exception as e:
                 log.error(f"Error polling execution: {e}")
 
-        # Periodic heartbeat to keep connection alive
         heartbeat_counter += 1
-        if heartbeat_counter % 20 == 0:  # Every 10 seconds at 0.5s interval
+        if heartbeat_counter % 20 == 0:
             yield format_sse_event(EVENT_HEARTBEAT, {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "elapsed_seconds": elapsed,
@@ -182,14 +168,12 @@ async def topology_event_generator(
     last_agent_states: dict[str, bool] = {}
     heartbeat_counter = 0
 
-    # Get initial state
     try:
         async with AsyncSessionLocal() as session:
             result = await session.execute(select(Agent))
             agents = list(result.scalars().all())
             last_agent_states = {a.id: a.is_active for a in agents}
 
-            # Emit initial topology
             yield format_sse_event(EVENT_TOPOLOGY_CHANGED, {
                 "type": "initial",
                 "agent_count": len(agents),
@@ -200,7 +184,6 @@ async def topology_event_generator(
         log.error(f"Error getting initial topology: {e}")
 
     while True:
-        # Check timeout
         elapsed = asyncio.get_event_loop().time() - start_time
         if elapsed > timeout:
             yield format_sse_event("timeout", {
@@ -210,15 +193,12 @@ async def topology_event_generator(
 
         async with AsyncSessionLocal() as session:
             try:
-                # Poll for changes
                 result = await session.execute(select(Agent))
                 agents = list(result.scalars().all())
                 current_states = {a.id: a.is_active for a in agents}
 
-                # Detect changes
                 for agent_id, is_active in current_states.items():
                     if agent_id not in last_agent_states:
-                        # New agent
                         agent = next((a for a in agents if a.id == agent_id), None)
                         yield format_sse_event(EVENT_TOPOLOGY_CHANGED, {
                             "type": "agent_added",
@@ -228,7 +208,6 @@ async def topology_event_generator(
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         })
                     elif is_active != last_agent_states[agent_id]:
-                        # Status changed
                         agent = next((a for a in agents if a.id == agent_id), None)
                         yield format_sse_event(EVENT_AGENT_STATUS, {
                             "agent_id": agent_id,
@@ -238,7 +217,6 @@ async def topology_event_generator(
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         })
 
-                # Detect removed agents
                 for agent_id in last_agent_states:
                     if agent_id not in current_states:
                         yield format_sse_event(EVENT_TOPOLOGY_CHANGED, {
@@ -252,9 +230,8 @@ async def topology_event_generator(
             except Exception as e:
                 log.error(f"Error polling topology: {e}")
 
-        # Periodic heartbeat
         heartbeat_counter += 1
-        if heartbeat_counter % 15 == 0:  # Every 30 seconds at 2s interval
+        if heartbeat_counter % 15 == 0:
             yield format_sse_event(EVENT_HEARTBEAT, {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "elapsed_seconds": elapsed,
@@ -294,7 +271,7 @@ async def stream_execution(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Accel-Buffering": "no",
         },
     )
 

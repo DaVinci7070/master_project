@@ -1,8 +1,3 @@
-"""
-API endpoints for Gap Plan monitoring and management.
-
-Provides endpoints for viewing gap plan progress, history, and retry operations.
-"""
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -18,10 +13,6 @@ from app.models.sql.gap_plan_models import GapPlanStatus, GapStatus
 router = APIRouter(prefix="/gap-plans", tags=["gap-plans"])
 log = logging.getLogger(__name__)
 
-
-# ============================================================================
-# Response Models
-# ============================================================================
 
 class GapProgressResponse(BaseModel):
     """Progress summary for a gap plan."""
@@ -93,15 +84,10 @@ class RetryGapResponse(BaseModel):
     message: str
 
 
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
 def _plan_to_response(plan) -> GapPlanResponse:
     """Convert a CapabilityGapPlan to GapPlanResponse."""
     gaps = plan.gaps or []
 
-    # Calculate progress
     completed = sum(1 for g in gaps if g.get("status") == GapStatus.COMPLETED.value)
     failed = sum(1 for g in gaps if g.get("status") == GapStatus.FAILED.value)
     pending = len(gaps) - completed - failed
@@ -115,7 +101,6 @@ def _plan_to_response(plan) -> GapPlanResponse:
         percentage=round(percentage, 1)
     )
 
-    # Convert gaps to response format
     gap_items = [
         GapItemResponse(
             id=g.get("id", ""),
@@ -162,10 +147,6 @@ def _plan_to_summary(plan) -> GapPlanSummaryResponse:
     )
 
 
-# ============================================================================
-# Endpoints
-# ============================================================================
-
 @router.get("/{plan_id}", response_model=GapPlanResponse)
 async def get_gap_plan(
     plan_id: str,
@@ -203,11 +184,9 @@ async def get_current_gap_plan(
 
     service = GapPlanService(AsyncSessionLocal)
 
-    # Try to get active plan first
     plan = await service.get_active_plan(challenge_id)
 
     if not plan:
-        # Fall back to latest plan
         plan = await service.get_latest_plan(challenge_id)
 
     if not plan:
@@ -263,7 +242,6 @@ async def retry_gap(
     if not plan:
         raise HTTPException(status_code=404, detail=f"Gap plan not found: {plan_id}")
 
-    # Find the gap
     target_gap = None
     for gap in (plan.gaps or []):
         if gap.get("id") == gap_id:
@@ -275,7 +253,6 @@ async def retry_gap(
 
     current_status = target_gap.get("status", "pending")
 
-    # Check if retry is allowed
     if current_status == GapStatus.COMPLETED.value and not request.force:
         raise HTTPException(
             status_code=400,
@@ -288,7 +265,6 @@ async def retry_gap(
             detail="Gap is currently being built. Please wait."
         )
 
-    # Reset gap to pending for retry
     await service.update_gap_status(
         plan_id=plan_id,
         gap_id=gap_id,
@@ -298,7 +274,6 @@ async def retry_gap(
         error_message=None
     )
 
-    # Trigger rebuild in background
     background_tasks.add_task(
         _rebuild_single_gap,
         plan_id=plan_id,
@@ -339,25 +314,21 @@ async def _rebuild_single_gap(
         try:
             service = GapPlanService(AsyncSessionLocal)
 
-            # Mark as building
             await service.update_gap_status(
                 plan_id=plan_id,
                 gap_id=gap_id,
                 status=GapStatus.BUILDING.value
             )
 
-            # Get plan to access challenge info
             plan = await service.get_plan(plan_id)
             if not plan:
                 log.error(f"Plan not found during rebuild: {plan_id}")
                 return
 
-            # Get challenge text from initial assessment
             challenge_text = ""
             if plan.initial_assessment:
                 challenge_text = plan.initial_assessment.get("challenge_text", "")
 
-            # Create builder dependencies
             llm_client = LLMClient()
             registry = RuntimeAgentRegistry(max_concurrent_agents=5)
             spawner = AgentSpawnerService(registry, llm_client)
@@ -372,9 +343,7 @@ async def _rebuild_single_gap(
             description = gap_dict.get("description", "")
             severity = gap_dict.get("severity", "important")
 
-            # Route to appropriate builder
             if gap_type == "weak_prompt":
-                # Use prompt improver
                 async def llm_wrapper(messages):
                     return await llm_client.chat(messages)
 
@@ -385,7 +354,6 @@ async def _rebuild_single_gap(
                     challenge_context=challenge_text
                 )
             else:
-                # Use capability builder
                 builder = CapabilityBuilder(developer_team, AsyncSessionLocal)
 
                 gap = CapabilityGap(
@@ -403,7 +371,6 @@ async def _rebuild_single_gap(
                 )
 
             if result.success and result.artifact_id:
-                # Inject capability
                 topology_loader = TopologyLoader(AsyncSessionLocal)
                 await topology_loader.load()
                 injector = CapabilityInjector(topology_loader, AsyncSessionLocal)
@@ -452,10 +419,6 @@ async def _rebuild_single_gap(
             except Exception:
                 pass
 
-
-# ============================================================================
-# Challenge-scoped Endpoints (aliases for convenience)
-# ============================================================================
 
 @router.get("/by-challenge/{challenge_id}", response_model=GapPlanResponse)
 async def get_gap_plan_by_challenge(

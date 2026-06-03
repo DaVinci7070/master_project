@@ -1,4 +1,3 @@
-"""Runtime artifact schema registry backed by database."""
 import logging
 from typing import Optional
 
@@ -55,7 +54,6 @@ class ArtifactSchemaRegistry:
         )
         schemas = result.scalars().all()
 
-        # Clear validator and register all schemas
         self.validator.clear()
         self._schemas.clear()
 
@@ -87,7 +85,6 @@ class ArtifactSchemaRegistry:
         if artifact_type in self._schemas:
             return self._schemas[artifact_type]
 
-        # Try loading from database if not cached
         result = await self.db.execute(
             select(ArtifactSchema).where(
                 ArtifactSchema.artifact_type == artifact_type,
@@ -143,7 +140,6 @@ class ArtifactSchemaRegistry:
         await self.db.commit()
         await self.db.refresh(schema)
 
-        # Register with validator
         self._register_schema(schema)
 
         return schema
@@ -183,7 +179,6 @@ class ArtifactSchemaRegistry:
         await self.db.commit()
         await self.db.refresh(schema)
 
-        # Re-register with validator
         self._register_schema(schema)
 
         logger.info(f"Updated schema: {artifact_type} to version {schema.version}")
@@ -209,7 +204,6 @@ class ArtifactSchemaRegistry:
         schema.is_active = False
         await self.db.commit()
 
-        # Remove from cache
         self._schemas.pop(artifact_type, None)
 
         logger.info(f"Deactivated schema: {artifact_type}")

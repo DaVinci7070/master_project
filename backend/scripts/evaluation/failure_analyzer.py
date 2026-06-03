@@ -1,21 +1,3 @@
-"""
-Failure-Kategorisierung für Benchmark-Runs.
-
-Analysiert benchmark_task_results aus der DB und kategorisiert Failures:
-- Zero-Token (Pipeline-Timeout vor Execution)
-- Build-Timeout / Build-Failure (Developer-Team hat nicht rechtzeitig gebaut)
-- Execution-Timeout (Polling-Limit erreicht)
-- Near-Miss (Score >= 0.70 aber nicht bestanden)
-- Fehlerhafte Execution (Error-Feld gesetzt)
-
-Zeigt außerdem Per-Task Pass-Raten über alle Runs und identifiziert
-die unzuverlässigsten Tasks.
-
-Usage:
-    cd backend && python -m scripts.evaluation.failure_analyzer
-    cd backend && python -m scripts.evaluation.failure_analyzer --run-id <id>
-    cd backend && python -m scripts.evaluation.failure_analyzer --suite progressive_complexity_30
-"""
 from __future__ import annotations
 
 from dotenv import load_dotenv
@@ -27,7 +9,6 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-# Projekt-Root in sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sqlalchemy import select, func, text
@@ -39,8 +20,6 @@ from app.models.sql.evaluation_models import BenchmarkRun, BenchmarkTaskResult
 from app.models.sql.intervention_models import BlockedChallenge
 
 
-# ── Failure-Kategorien ────────────────────────────────────────────
-
 def categorize_failure(result: BenchmarkTaskResult) -> str:
     """Ordnet ein fehlgeschlagenes Ergebnis einer Kategorie zu."""
     if result.passed:
@@ -48,36 +27,28 @@ def categorize_failure(result: BenchmarkTaskResult) -> str:
 
     status = (result.status or "").lower()
 
-    # Build-Phase Failures
     if status == "build_timeout":
         return "BUILD_TIMEOUT"
     if status == "build_failed":
         return "BUILD_FAILED"
 
-    # Execution Timeout (vom Polling)
     if status == "timeout":
         return "EXEC_TIMEOUT"
 
-    # Zero-Token = Timeout vor Agent-Execution
     if (result.tokens_total or 0) == 0 and status in ("failed", "resolved", "error"):
         return "ZERO_TOKEN"
 
-    # Error mit Traceback
     if result.error:
         return "ERROR"
 
-    # Near-Miss: guter Score aber nicht bestanden
     if (result.score or 0.0) >= 0.70:
         return "NEAR_MISS"
 
-    # Allgemein schlecht
     if (result.score or 0.0) > 0:
         return "LOW_SCORE"
 
     return "ZERO_SCORE"
 
-
-# ── DB-Abfragen ──────────────────────────────────────────────────
 
 async def load_results(
     run_id: str | None = None,
@@ -88,7 +59,6 @@ async def load_results(
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as db:
-        # Runs laden
         run_q = select(BenchmarkRun).where(BenchmarkRun.status == "completed")
         if run_id:
             run_q = run_q.where(BenchmarkRun.id == run_id)
@@ -103,7 +73,6 @@ async def load_results(
             print("Keine abgeschlossenen Runs gefunden.")
             return [], []
 
-        # Task-Results laden
         result_q = (
             select(BenchmarkTaskResult)
             .where(BenchmarkTaskResult.run_id.in_(run_ids))
@@ -111,7 +80,6 @@ async def load_results(
         )
         results = (await db.execute(result_q)).scalars().all()
 
-        # Blocked Challenges laden (für Routing-Info)
         challenge_ids = [r.challenge_id for r in results if r.challenge_id]
         blocked = {}
         if challenge_ids:
@@ -125,8 +93,6 @@ async def load_results(
     await engine.dispose()
     return runs, results
 
-
-# ── Analyse-Funktionen ───────────────────────────────────────────
 
 def print_header(title: str):
     print(f"\n{'='*70}")
@@ -156,7 +122,6 @@ def analyze_failure_categories(results: list[BenchmarkTaskResult]):
         categories[cat].append(r)
 
     total = len(results)
-    # Sortierung: PASSED zuerst, dann nach Häufigkeit
     order = ["PASSED", "NEAR_MISS", "LOW_SCORE", "ZERO_SCORE", "ZERO_TOKEN",
              "EXEC_TIMEOUT", "BUILD_TIMEOUT", "BUILD_FAILED", "ERROR"]
 
@@ -186,7 +151,6 @@ def analyze_failure_categories(results: list[BenchmarkTaskResult]):
         ) else ""
         print(f"{cat:<18} {len(items):>7} {pct:>7.1f}%  {desc}{marker}")
 
-    # Near-Miss Details
     near_misses = categories.get("NEAR_MISS", [])
     if near_misses:
         print(f"\n  Near-Miss Details ({len(near_misses)} Tasks):")
@@ -217,7 +181,6 @@ def analyze_per_task_reliability(results: list[BenchmarkTaskResult]):
         if r.passed:
             task_stats[tid]["passed"] += 1
 
-    # Sortieren nach Pass-Rate aufsteigend (schlechteste zuerst)
     sorted_tasks = sorted(
         task_stats.items(),
         key=lambda x: (x[1]["passed"] / max(x[1]["total"], 1), x[1]["level"]),
@@ -232,7 +195,6 @@ def analyze_per_task_reliability(results: list[BenchmarkTaskResult]):
         cats = {k: v for k, v in stats["categories"].items() if k != "PASSED"}
         cat_str = ", ".join(f"{k}:{v}" for k, v in sorted(cats.items(), key=lambda x: -x[1]))
 
-        # Farbmarkierung
         marker = ""
         if rate < 0.25:
             marker = " ⚠️"
@@ -279,7 +241,6 @@ def analyze_timing_distribution(results: list[BenchmarkTaskResult]):
     durations = [(r.task_id, r.duration_ms or 0, r.status, r.passed) for r in results]
     durations.sort(key=lambda x: -x[1])
 
-    # Buckets
     buckets = {"<30s": 0, "30-60s": 0, "60-120s": 0, "120-300s": 0, ">300s": 0}
     for _, d, _, _ in durations:
         d_s = d / 1000
@@ -300,7 +261,6 @@ def analyze_timing_distribution(results: list[BenchmarkTaskResult]):
         bar = "█" * int(count / max(total, 1) * 40)
         print(f"  {bucket:<10} {count:>5} ({count/max(total,1)*100:>5.1f}%)  {bar}")
 
-    # Langsamste Tasks
     print(f"\nTop 10 langsamste Tasks:")
     print(f"{'Task':<45} {'Duration':>10} {'Status':<15} {'Passed'}")
     print("-" * 80)
@@ -316,10 +276,8 @@ def analyze_error_messages(results: list[BenchmarkTaskResult]):
 
     print_header("HÄUFIGE FEHLER")
 
-    # Fehler nach erstem Satz gruppieren
     error_groups: dict[str, list[str]] = defaultdict(list)
     for tid, err in errors:
-        # Erste Zeile als Schlüssel
         key = err.split("\n")[0][:100]
         error_groups[key].append(tid)
 
@@ -357,8 +315,6 @@ def analyze_missing_claims(results: list[BenchmarkTaskResult]):
         print(f"{claim[:60]:<60} {count:>8} {n_tasks:>6}")
 
 
-# ── Main ─────────────────────────────────────────────────────────
-
 async def main():
     parser = argparse.ArgumentParser(description="Benchmark Failure-Analyse")
     parser.add_argument("--run-id", help="Nur einen bestimmten Run analysieren")
@@ -387,7 +343,6 @@ async def main():
     analyze_error_messages(results)
     analyze_missing_claims(results)
 
-    # Zusammenfassung
     print_header("ZUSAMMENFASSUNG")
     total = len(results)
     passed = sum(1 for r in results if r.passed)

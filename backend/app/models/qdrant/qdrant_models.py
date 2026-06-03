@@ -100,4 +100,3 @@ class QdrantTemplatePayload:
     tags: List[str]
     created_at: str
     metadata: Dict[str, Any]
-

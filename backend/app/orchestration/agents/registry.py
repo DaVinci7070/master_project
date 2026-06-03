@@ -1,16 +1,3 @@
-"""
-Runtime Agent Registry for tracking dynamically spawned coding agents.
-
-This registry exists separately from static YAML agent configs (agents_registry.yaml).
-It tracks ephemeral agents that are spawned at runtime for complex tasks and
-cleaned up after completion.
-
-Key features:
-- Async-safe with asyncio.Lock
-- Semaphore-based concurrency limiting (max_concurrent_agents)
-- Agent lifecycle tracking (pending -> running -> completed/failed)
-- OpenTelemetry trace correlation
-"""
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -79,7 +66,6 @@ class RuntimeAgentRegistry:
         Returns:
             True if slot acquired, False if at capacity.
         """
-        # Try to acquire without blocking
         acquired = self._semaphore.locked() is False
         if acquired:
             await self._semaphore.acquire()
@@ -113,7 +99,6 @@ class RuntimeAgentRegistry:
         Raises:
             ValueError: If agent_id already registered.
         """
-        # Get OpenTelemetry trace context
         trace_id = None
         span_id = None
         current_span = trace.get_current_span()
@@ -170,7 +155,6 @@ class RuntimeAgentRegistry:
                 log.warning(f"Cannot update status: agent not found id={agent_id}")
                 return None
 
-            # Create updated agent (Pydantic models are immutable-ish)
             update_data = {"status": status}
             if process_id is not None:
                 update_data["process_id"] = process_id

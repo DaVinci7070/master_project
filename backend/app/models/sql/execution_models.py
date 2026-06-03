@@ -1,8 +1,3 @@
-"""
-Execution models for history persistence.
-
-Stores complete execution records for history view and analytics.
-"""
 import uuid
 from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, Index
 from sqlalchemy.sql import func

@@ -1,8 +1,3 @@
-"""
-Service for tracking and logging topology changes.
-
-Provides audit trail for all agent, skill, and prompt modifications.
-"""
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -211,7 +206,6 @@ class TopologyService:
 
     async def get_topology_stats(self) -> dict:
         """Get statistics about topology and changes."""
-        # Count agents by source
         agents_query = select(Agent)
         agents_result = await self.db.execute(agents_query)
         agents = list(agents_result.scalars().all())
@@ -220,7 +214,6 @@ class TopologyService:
         system_count = sum(1 for a in agents if a.source == "system_generated")
         manual_count = sum(1 for a in agents if a.source == "manual")
 
-        # Count recent changes
         recent_query = select(TopologyChangeLog).order_by(
             desc(TopologyChangeLog.created_at)
         ).limit(100)

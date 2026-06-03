@@ -1,15 +1,3 @@
-"""
-Enhanced observability for Developer Team spawned agents.
-
-Provides utilities for:
-- Setting up agent-specific OpenTelemetry tracing
-- Creating spans with agent context attributes
-- Propagating trace context to spawned agents
-- Structured event logging for agent lifecycle
-
-This extends the existing telemetry infrastructure (Phase 1) with
-patterns specific to dynamic agent spawning and multi-agent coordination.
-"""
 import logging
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -20,7 +8,6 @@ from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 log = logging.getLogger(__name__)
 
-# Agent-specific tracer (separate from module tracers for filtering)
 AGENT_TRACER_NAME = "lumari.developer_team.agents"
 
 
@@ -193,7 +180,7 @@ class AgentMetrics:
         self.spawns_failed = 0
         self.total_tokens = 0
         self.total_duration_seconds = 0.0
-        self._lock = None  # Will use asyncio.Lock in async context
+        self._lock = None
 
     def record_spawn(self, success: bool, tokens: int = 0, duration: float = 0) -> None:
         """Record a spawn completion."""
@@ -224,7 +211,6 @@ class AgentMetrics:
         }
 
 
-# Global metrics instance (singleton)
 _agent_metrics: Optional[AgentMetrics] = None
 
 

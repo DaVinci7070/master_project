@@ -1,30 +1,3 @@
-"""
-Autonomous Executor Service - Integrates dynamic sandbox with skill auto-building.
-
-Phase 4: Integration & Hardening
-
-This service provides the execution layer for the GenericAgentExecutor that:
-1. Executes skills in the dynamic sandbox (with pip/apt support)
-2. Uses cached container images for fast startup
-3. Automatically builds missing skills when capability gaps are detected
-4. Provides monitoring and metrics
-
-Architecture:
-    GenericAgentExecutor
-            │
-            ▼
-    AutonomousExecutorService
-            │
-    ┌───────┴───────┐
-    ▼               ▼
-    DynamicSandbox  AutonomousSkillBuilder
-    (execute)       (build missing skills)
-            │
-            ▼
-    ContainerImageManager
-    (cache images)
-"""
-
 import ast
 import asyncio
 import json
@@ -137,12 +110,10 @@ class AutonomousExecutorService:
         self._enable_auto_build = enable_auto_build
         self._enable_caching = enable_caching
 
-        # Initialize image manager if caching enabled and db available
         self._image_manager = image_manager
         if enable_caching and db and not image_manager:
             self._image_manager = ContainerImageManager(db=db)
 
-        # Initialize sandbox with image manager
         self._sandbox = sandbox
         if not sandbox:
             self._sandbox = DynamicSandboxService(
@@ -150,10 +121,8 @@ class AutonomousExecutorService:
                 enable_image_caching=enable_caching,
             )
 
-        # Metrics
         self._metrics = ExecutionMetrics()
 
-        # Skill builder (lazy initialized)
         self._skill_builder = None
 
     @property
@@ -213,7 +182,6 @@ class AutonomousExecutorService:
         start_time = time.time()
         self._metrics.total_executions += 1
 
-        # Auto-detect packages if not provided
         if not pip_requirements:
             detected_pip, detected_apt = self._detect_required_packages(code)
             if detected_pip:
@@ -221,10 +189,8 @@ class AutonomousExecutorService:
                 pip_requirements = detected_pip
                 system_packages = list(set((system_packages or []) + detected_apt))
 
-        # Build execution code
         exec_code = self._build_execution_code(code, function_name, arguments or {})
 
-        # Execute in sandbox
         result = await self._sandbox.execute(
             code=exec_code,
             pip_requirements=pip_requirements,
@@ -233,13 +199,11 @@ class AutonomousExecutorService:
             timeout=timeout,
         )
 
-        # Auto-retry on ModuleNotFoundError (in case auto-detection missed something)
         if not result.success and self._is_module_not_found_error(result):
             log.info("Detected ModuleNotFoundError, re-analyzing dependencies...")
             detected_pip, detected_apt = self._detect_required_packages(code)
 
             if detected_pip:
-                # Merge with any existing requirements
                 all_pip = list(set((pip_requirements or []) + detected_pip))
                 all_apt = list(set((system_packages or []) + detected_apt))
                 log.info(f"Retrying with packages: pip={all_pip}, apt={all_apt}")
@@ -255,7 +219,6 @@ class AutonomousExecutorService:
         execution_time_ms = int((time.time() - start_time) * 1000)
         self._metrics.total_execution_time_ms += execution_time_ms
 
-        # Update cache metrics
         if result.used_cached_image:
             self._metrics.cache_hits += 1
         elif pip_requirements or system_packages:
@@ -264,7 +227,6 @@ class AutonomousExecutorService:
         if result.success:
             self._metrics.successful_executions += 1
 
-            # JSON-Ausgabe suchen (von hinten, Libraries koennen nach dem Result loggen)
             output = None
             if result.stdout:
                 for line in reversed(result.stdout.strip().split('\n')):
@@ -319,7 +281,6 @@ class AutonomousExecutorService:
         from app.models.sql.versioned_models import Skill
         from sqlalchemy import select
 
-        # Look for existing skill
         skill_name = f"skill_{capability.lower().replace(' ', '_')}"
 
         if self.db:
@@ -333,7 +294,6 @@ class AutonomousExecutorService:
             if existing_skill:
                 log.info(f"Found existing skill for '{capability}': {existing_skill.name}")
 
-                # Get requirements from skill metadata
                 metadata = existing_skill.skill_metadata or {}
                 pip_requirements = metadata.get("pip_requirements", [])
                 system_packages = metadata.get("system_packages", [])
@@ -347,7 +307,6 @@ class AutonomousExecutorService:
                     input_files=input_files,
                 )
 
-        # No existing skill - try to build one
         if not allow_auto_build or not self._enable_auto_build:
             return ExecutionResult(
                 success=False,
@@ -356,7 +315,6 @@ class AutonomousExecutorService:
 
         log.info(f"No skill found for '{capability}', attempting to build...")
 
-        # Build skill
         build_result = await self._build_skill_for_capability(
             capability=capability,
             test_input=input_data,
@@ -372,7 +330,6 @@ class AutonomousExecutorService:
 
         self._metrics.skills_auto_built += 1
 
-        # Execute the newly built skill
         if build_result.skill:
             metadata = build_result.skill.skill_metadata or {}
             pip_requirements = metadata.get("pip_requirements", [])
@@ -404,7 +361,6 @@ class AutonomousExecutorService:
         if not self.db:
             raise RuntimeError("Database session required for skill building")
 
-        # Lazy initialize skill builder
         if self._skill_builder is None:
             from app.skills.building.autonomous_builder import AutonomousSkillBuilder
             self._skill_builder = AutonomousSkillBuilder(
@@ -471,7 +427,6 @@ if __name__ == "__main__":
         Returns:
             Tuple of (pip_packages, apt_packages).
         """
-        # Import name -> pip package mapping
         import_to_pip = {
             'cv2': 'opencv-python',
             'PIL': 'Pillow',
@@ -505,7 +460,6 @@ if __name__ == "__main__":
             'plotly': 'plotly',
         }
 
-        # Packages that need system dependencies
         pip_to_apt = {
             'faster-whisper': ['ffmpeg'],
             'openai-whisper': ['ffmpeg'],
@@ -517,7 +471,6 @@ if __name__ == "__main__":
             'soundfile': ['libsndfile1'],
         }
 
-        # Standard library (skip these)
         stdlib = {
             'os', 'sys', 'json', 're', 'time', 'datetime', 'pathlib', 'io',
             'subprocess', 'tempfile', 'shutil', 'glob', 'copy', 'math',
@@ -535,7 +488,6 @@ if __name__ == "__main__":
         pip_packages = []
         apt_packages = []
 
-        # Extract imports from code using AST
         imports = set()
         try:
             tree = ast.parse(code)
@@ -547,12 +499,10 @@ if __name__ == "__main__":
                     if node.module:
                         imports.add(node.module.split('.')[0])
         except SyntaxError:
-            # Fallback to regex if AST parsing fails
             import_matches = re.findall(r'^import\s+(\w+)', code, re.MULTILINE)
             from_matches = re.findall(r'^from\s+(\w+)', code, re.MULTILINE)
             imports = set(import_matches + from_matches)
 
-        # Convert imports to pip packages
         for imp in imports:
             if imp in stdlib:
                 continue
@@ -561,7 +511,6 @@ if __name__ == "__main__":
             if pip_name not in pip_packages:
                 pip_packages.append(pip_name)
 
-            # Check if this package needs apt dependencies
             for apt_dep in pip_to_apt.get(pip_name, []):
                 if apt_dep not in apt_packages:
                     apt_packages.append(apt_dep)
@@ -602,7 +551,6 @@ if __name__ == "__main__":
         }
 
 
-# Singleton instance for app-wide use
 _executor_instance: Optional[AutonomousExecutorService] = None
 
 

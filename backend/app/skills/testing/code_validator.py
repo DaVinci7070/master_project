@@ -1,18 +1,3 @@
-"""
-Code Validator Service for AST-based code security validation.
-
-This service provides pre-execution security validation for generated code:
-- Parses code to AST (catches syntax errors)
-- Checks for blocked constructs (eval, exec, etc.)
-- Validates imports against allowlist
-- Detects dangerous patterns (pickle, __import__, etc.)
-- Generates fingerprints for deduplication
-
-Flow:
-    ToolBuilder generates code -> CodeValidatorService.validate()
-    -> Pass: proceed to sandbox execution
-    -> Fail: reject code, report blocked constructs
-"""
 import ast
 import hashlib
 import logging
@@ -68,11 +53,8 @@ class CodeValidatorService:
         fingerprint = validator.fingerprint(code)
     """
 
-    # Allowed imports - safe standard library modules
     IMPORT_ALLOWLIST: set[str] = {
-        # Built-in types (always available)
         "typing",
-        # Safe standard library
         "math",
         "json",
         "datetime",
@@ -89,40 +71,31 @@ class CodeValidatorService:
         "copy",
         "enum",
         "dataclasses",
-        # Testing
         "pytest",
     }
 
-    # Blocked function/attribute names - dangerous constructs
     BLOCKED_NAMES: set[str] = {
-        # Code execution
         "eval",
         "exec",
         "compile",
         "__import__",
-        # File I/O
         "open",
         "file",
-        # System access
         "os",
         "sys",
         "subprocess",
         "shutil",
-        # Network
         "socket",
         "urllib",
         "http",
         "requests",
-        # Serialization (RCE via __reduce__)
         "pickle",
         "shelve",
         "marshal",
         "dill",
         "cloudpickle",
-        # Dynamic imports
         "importlib",
         "imp",
-        # Dangerous builtins
         "globals",
         "locals",
         "vars",
@@ -166,7 +139,6 @@ class CodeValidatorService:
 
         self.log.info("Validating code for security issues...")
 
-        # Step 1: Parse code to AST
         try:
             tree = ast.parse(code)
         except SyntaxError as e:
@@ -181,12 +153,10 @@ class CodeValidatorService:
                 imports_used=imports_used,
             )
 
-        # Step 2: Walk AST and check each node
         for node in ast.walk(tree):
-            # Check imports
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    module_name = alias.name.split(".")[0]  # Get top-level module
+                    module_name = alias.name.split(".")[0]
                     imports_used.add(module_name)
                     is_allowed, name = self._check_import_name(module_name)
                     if not is_allowed:
@@ -197,7 +167,7 @@ class CodeValidatorService:
 
             elif isinstance(node, ast.ImportFrom):
                 if node.module:
-                    module_name = node.module.split(".")[0]  # Get top-level module
+                    module_name = node.module.split(".")[0]
                     imports_used.add(module_name)
                     is_allowed, name = self._check_import_name(module_name)
                     if not is_allowed:
@@ -206,7 +176,6 @@ class CodeValidatorService:
                         blocked_constructs.append(f"from {name}")
                         self.log.warning(error_msg)
 
-            # Check Name nodes (function calls, variable references)
             elif isinstance(node, ast.Name):
                 is_blocked, name = self._check_name(node)
                 if is_blocked:
@@ -215,7 +184,6 @@ class CodeValidatorService:
                     blocked_constructs.append(name)
                     self.log.warning(error_msg)
 
-            # Check Attribute nodes (object.attr access)
             elif isinstance(node, ast.Attribute):
                 is_blocked, attr_name = self._check_attribute(node)
                 if is_blocked:
@@ -261,7 +229,6 @@ class CodeValidatorService:
                 errors=[f"Syntax error at line {e.lineno}: {e.msg}"],
             )
 
-        # Find top-level execute function
         execute_funcs = [
             node for node in ast.iter_child_nodes(tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -341,14 +308,10 @@ class CodeValidatorService:
             SHA-256 hex digest of normalized code.
         """
         try:
-            # Parse to AST
             tree = ast.parse(code)
-            # Use ast.unparse() to normalize (removes comments, normalizes whitespace)
             normalized = ast.unparse(tree)
-            # Hash the normalized code
             return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
         except SyntaxError:
-            # Fallback to raw hash if code has syntax errors
             self.log.debug("Fingerprinting with raw hash due to syntax error")
             return hashlib.sha256(code.encode("utf-8")).hexdigest()
 
@@ -362,11 +325,9 @@ class CodeValidatorService:
         Returns:
             Tuple of (is_allowed, module_name).
         """
-        # Check if module is in blocklist (takes priority)
         if module_name in self.BLOCKED_NAMES:
             return False, module_name
 
-        # Check if module is in allowlist
         is_allowed = module_name in self.IMPORT_ALLOWLIST
         return is_allowed, module_name
 

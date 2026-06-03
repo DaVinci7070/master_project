@@ -1,14 +1,3 @@
-"""
-Tests for SkillExecutor and skill validation.
-
-Covers:
-- Basic code execution
-- Safe module imports
-- Forbidden code patterns (exec, eval, dangerous imports)
-- Test case validation
-- Timeout handling
-- Error scenarios
-"""
 import pytest
 from app.skills.runtime.executor import (
     SkillExecutor,
@@ -365,9 +354,9 @@ def execute(data):
     return data.get("value", 0) * 2
 '''
         test_cases = [
-            {"input": {"value": 5}, "expected_output": 10},  # Pass
-            {"input": {"value": 3}, "expected_output": 100},  # Fail - wrong expectation
-            {"input": {"value": 7}, "expected_output": 14},  # Pass
+            {"input": {"value": 5}, "expected_output": 10},
+            {"input": {"value": 3}, "expected_output": 100},
+            {"input": {"value": 7}, "expected_output": 14},
         ]
 
         passed, results = await skill_executor.validate_skill(
@@ -401,8 +390,8 @@ def execute(data):
     return 100 / data.get("value", 0)
 '''
         test_cases = [
-            {"input": {"value": 10}, "expected_output": 10},  # Pass
-            {"input": {"value": 0}, "expected_output": 0},  # Error - division by zero
+            {"input": {"value": 10}, "expected_output": 10},
+            {"input": {"value": 0}, "expected_output": 0},
         ]
 
         passed, results = await skill_executor.validate_skill(
@@ -454,7 +443,6 @@ def execute(data):
     return data.get("value", 0) / 3.0
 '''
         test_cases = [
-            # 1/3 has infinite decimal places
             {"input": {"value": 1}, "expected_output": 0.3333333333333333}
         ]
 

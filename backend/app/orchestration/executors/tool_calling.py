@@ -1,14 +1,3 @@
-"""
-Tool Calling support for GenericAgentExecutor.
-
-Enables agents to call skills during execution using structured JSON output
-validated by Instructor/Pydantic.
-
-Design decisions:
-- JSON + Instructor for provider-agnostic, validated outputs
-- SandboxExecutorService for secure execution
-- Max 15 tool calls per agent run
-"""
 import json
 import logging
 from typing import Any, Optional, Union, Literal
@@ -16,8 +5,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# Fallback-Default für Tool-Calls pro Agent (konfigurierbar via AgentNode.config)
-DEFAULT_MAX_TOOL_CALLS = 15
+DEFAULT_MAX_TOOL_CALLS = 25
 
 
 class ToolCallRequest(BaseModel):
@@ -63,10 +51,8 @@ class AgentResponse(BaseModel):
         ...,
         description="Whether this is a tool call or final answer"
     )
-    # Tool call fields (optional)
     tool: Optional[str] = Field(None, description="Tool name if action=tool_call")
     arguments: Optional[dict[str, Any]] = Field(None, description="Tool arguments if action=tool_call")
-    # Final answer fields (optional)
     response: Optional[str] = Field(None, description="Final response if action=final_answer")
 
     def is_tool_call(self) -> bool:
@@ -118,18 +104,15 @@ class ToolCallDetector:
         Returns:
             AgentResponse if valid tool call/final answer JSON found, None otherwise
         """
-        # Quick check - only try to parse if it looks like a tool call
         if not self.is_likely_tool_call(text):
             return None
 
-        # Try to extract JSON from text
         json_str = self._extract_json(text)
         if not json_str:
             return None
 
         try:
             data = json.loads(json_str)
-            # Only parse as AgentResponse if it has the action field
             if "action" not in data:
                 return None
             return AgentResponse(**data)
@@ -141,9 +124,7 @@ class ToolCallDetector:
         """Extract JSON from text, handling markdown code blocks."""
         text = text.strip()
 
-        # Try direct JSON parse first
         if text.startswith("{"):
-            # Find matching closing brace
             brace_count = 0
             for i, char in enumerate(text):
                 if char == "{":
@@ -152,9 +133,8 @@ class ToolCallDetector:
                     brace_count -= 1
                     if brace_count == 0:
                         return text[:i+1]
-            return text  # Return whole text if no matching brace found
+            return text
 
-        # Try extracting from markdown code block
         if "```json" in text:
             start = text.find("```json") + 7
             end = text.find("```", start)
@@ -198,9 +178,7 @@ def build_tool_prompt_section(skills: list[dict[str, Any]]) -> str:
         description = skill.get("description", "No description")
         params = skill.get("parameters", {})
 
-        # Build parameter signature from JSON Schema properties
         param_sig = ""
-        # params may be a full JSON Schema with "properties" key, or a flat dict
         properties = params.get("properties", params) if isinstance(params, dict) else {}
         if properties:
             param_parts = []

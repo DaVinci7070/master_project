@@ -1,13 +1,3 @@
-"""
-Analysis Pipeline for orchestrating post-execution analysis.
-
-This service orchestrates the full analysis flow:
-Analyzer -> Store findings -> Product Owner -> Update priorities.
-
-Analysis runs automatically after every successful execution,
-triggered via TelemetryService callback, and runs asynchronously
-via FastAPI BackgroundTasks to avoid blocking the main execution response.
-"""
 import logging
 from typing import Optional
 
@@ -101,13 +91,11 @@ class AnalysisPipeline:
         """
         log.info(f"Starting analysis pipeline for execution_id={execution_id[:8]}...")
 
-        # Empty priority list used for early-return paths
         empty_priorities = PriorityList(
             priorities=[],
             improvement_direction="no findings",
         )
 
-        # Step 1: Get telemetry for this execution
         telemetry = await self.telemetry.get_by_execution_id(execution_id)
         if not telemetry:
             log.warning(f"No telemetry found for execution {execution_id}")
@@ -118,14 +106,12 @@ class AnalysisPipeline:
             f"outcome={telemetry.outcome}"
         )
 
-        # Step 2: Get historical telemetry for pattern detection (N=10)
         history = await self.telemetry.get_execution_history(
             agent_id=telemetry.agent_id,
             limit=10,
         )
         log.info(f"Retrieved {len(history)} historical executions for pattern context")
 
-        # Step 3: Run Analyzer to generate findings
         analysis = await self.analyzer.analyze_execution(
             telemetry=telemetry,
             history=history,
@@ -141,7 +127,6 @@ class AnalysisPipeline:
             log.info("No findings generated - pipeline complete")
             return [], empty_priorities
 
-        # Step 4: Store findings in database
         stored_findings = []
         for finding in analysis.findings:
             create_data = AnalysisFindingCreate(
@@ -158,7 +143,6 @@ class AnalysisPipeline:
 
         log.info(f"Stored {len(stored_findings)} findings in database")
 
-        # Step 5: Run Product Owner for prioritization
         priorities = await self.product_owner.prioritize_findings(
             current_findings=analysis.findings,
             execution_id=execution_id,
@@ -169,7 +153,6 @@ class AnalysisPipeline:
             f"direction='{priorities.improvement_direction[:50]}...'"
         )
 
-        # Step 6: Update findings with priorities
         for priority in priorities.priorities:
             if priority.finding_index < len(stored_findings):
                 finding = stored_findings[priority.finding_index]
@@ -183,8 +166,6 @@ class AnalysisPipeline:
             f"findings={len(stored_findings)}"
         )
 
-        # Return findings as response schemas + the PriorityList for downstream
-        # consumers like the Evolution Loop (Sprint 1).
         response = [
             AnalysisFindingResponse.model_validate(f)
             for f in stored_findings
@@ -227,22 +208,18 @@ async def run_analysis_pipeline(
     log.info(f"Background task: starting analysis for execution_id={execution_id[:8]}...")
 
     try:
-        # Import dependencies inside function to avoid circular imports
         from app.dependencies.dependencies import AsyncSessionLocal
         from app.core.llm_client import LLMClient
 
         async with AsyncSessionLocal() as session:
-            # Create repositories
             telemetry_repo = TelemetryRepository(session)
             finding_repo = FindingRepository(session)
 
-            # Create services
             telemetry_service = TelemetryService(telemetry_repo)
             llm_client = LLMClient()
             analyzer = AnalyzerService(llm_client)
             product_owner = ProductOwnerService(llm_client, finding_repo)
 
-            # Create and run pipeline
             pipeline = AnalysisPipeline(
                 telemetry_service=telemetry_service,
                 analyzer_service=analyzer,
@@ -250,15 +227,11 @@ async def run_analysis_pipeline(
                 finding_repository=finding_repo,
             )
 
-            # Tuple return; we discard it here — the existing callback flow
-            # only needs the side effects (DB writes of findings + priorities).
             await pipeline.run(execution_id, input_content, output_content)
 
         log.info(f"Background task: analysis complete for execution_id={execution_id[:8]}...")
 
     except Exception as e:
-        # Catch all exceptions to prevent background task crashes
-        # Log the error but don't re-raise
         log.error(
             f"Analysis pipeline failed for execution {execution_id}: {e}",
             exc_info=True,

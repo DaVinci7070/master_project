@@ -1,9 +1,3 @@
-"""
-Telemetry repository for execution telemetry data access.
-
-This module implements DB-07 (execution telemetry) and DB-08 (input/output hashing)
-storage operations. ExecutionTelemetry records are append-only for audit trail.
-"""
 import hashlib
 import json
 import logging
@@ -43,18 +37,13 @@ def compute_hash(data: Any) -> str:
         >>> compute_hash("simple string")
         '9f86d081884c7d659a2fea...'
     """
-    # Normalize to JSON with sorted keys for consistent hashing
     if isinstance(data, str):
-        # If already a string, use as-is
         normalized = data
     else:
-        # Serialize to JSON with sorted keys for deterministic output
         normalized = json.dumps(data, sort_keys=True, separators=(',', ':'))
 
-    # Compute SHA-256 hash
     hash_bytes = hashlib.sha256(normalized.encode('utf-8')).hexdigest()
 
-    # Return full 64-character hash (SHA-256 produces 64 hex chars)
     return hash_bytes[:64]
 
 
@@ -136,7 +125,6 @@ class TelemetryRepository:
             log.warning(f"Telemetry record not found: {telemetry_id}")
             return None
 
-        # Update only provided fields
         update_dict = update_data.model_dump(exclude_none=True)
         for field, value in update_dict.items():
             setattr(record, field, value)
@@ -259,14 +247,12 @@ class TelemetryRepository:
         Returns:
             TelemetryAggregation with computed statistics.
         """
-        # Build base query with time filters
         base_filter = [ExecutionTelemetry.agent_id == agent_id]
         if start_time:
             base_filter.append(ExecutionTelemetry.started_at >= start_time)
         if end_time:
             base_filter.append(ExecutionTelemetry.started_at <= end_time)
 
-        # Count by outcome
         stmt = (
             select(
                 func.count().label("total"),
@@ -301,10 +287,8 @@ class TelemetryRepository:
         timeout = row.timeout or 0
         cancelled = row.cancelled or 0
 
-        # Calculate success rate
         success_rate = (successful / total * 100) if total > 0 else 0.0
 
-        # Calculate average tokens per execution
         total_tokens = row.total_tokens or 0
         avg_tokens = (total_tokens / total) if total > 0 else None
 
@@ -319,7 +303,6 @@ class TelemetryRepository:
             avg_latency_ms=row.avg_latency,
             min_latency_ms=row.min_latency,
             max_latency_ms=row.max_latency,
-            # p50, p95, p99 require window functions - simplified here
             p50_latency_ms=None,
             p95_latency_ms=None,
             p99_latency_ms=None,

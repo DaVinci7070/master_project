@@ -1,4 +1,3 @@
-"""Challenge analyzer for pre-execution capability assessment."""
 import logging
 from typing import Callable, Awaitable, Optional
 
@@ -13,7 +12,6 @@ from app.models.schemas.shared_memory_schemas import SharedMemoryQuery
 
 logger = logging.getLogger(__name__)
 
-# LLM prompt for capability extraction — action-oriented with type classification
 CAPABILITY_EXTRACTION_PROMPT = """Analyze this challenge and extract the specific capabilities required to complete it.
 
 ## Challenge
@@ -96,36 +94,29 @@ class ChallengeAnalyzer:
         """
         logger.info(f"Analyzing challenge for execution {execution_id}")
 
-        # 1. Reload topology to ensure fresh capability data (per RESEARCH pitfall 4)
         await self.topology.reload()
 
-        # 2. Extract topology capabilities
         topology_capabilities = await self.capability_matcher.extract_topology_capabilities()
         logger.debug(
             f"Topology: {topology_capabilities.active_agent_count} agents, "
             f"{len(topology_capabilities.all_capabilities)} capabilities"
         )
 
-        # 3. Extract required capabilities from challenge (with type classification)
         required_capabilities, capability_types = await self._extract_required_capabilities(challenge_text)
         logger.info(f"Extracted {len(required_capabilities)} required capabilities")
 
-        # 4. Match capabilities using semantic similarity (passing types through)
         capability_matches = await self.capability_matcher.match_capabilities(
             required_capabilities, topology_capabilities, capability_types
         )
 
-        # 5. Retrieve similar past successes (per CONTEXT: boost confidence)
         similar_successes, confidence_boost = await self._find_similar_successes(
             challenge_text, project_id, include_cross_project
         )
 
-        # 6. Check for schema compatibility issues (per RESEARCH pitfall 5)
         schema_issues = await self._check_schema_compatibility(
             required_capabilities, topology_capabilities
         )
 
-        # Build context for next stage (GapDetector)
         context = AssessmentContext(
             challenge_text=challenge_text,
             execution_id=execution_id,
@@ -138,7 +129,6 @@ class ChallengeAnalyzer:
             schema_issues=schema_issues
         )
 
-        # Clear matcher cache for next analysis
         self.capability_matcher.clear_cache()
 
         return context
@@ -159,7 +149,7 @@ class ChallengeAnalyzer:
             return self._fallback_capability_extraction(challenge_text)
 
         prompt = CAPABILITY_EXTRACTION_PROMPT.format(
-            challenge_text=challenge_text[:2000]  # Truncate for context budget
+            challenge_text=challenge_text[:2000]
         )
 
         messages = [
@@ -241,18 +231,16 @@ class ChallengeAnalyzer:
         Returns (similar_successes, confidence_boost).
         """
         try:
-            # Search current project
             query = SharedMemoryQuery(
                 query_text=challenge_text[:500],
                 project_id=project_id,
-                min_confidence=0.7,  # Only high-confidence past successes
+                min_confidence=0.7,
                 max_items=10,
                 tags=["execution_success", "capability_assessment"]
             )
             current_results = await self.shared_memory.retrieve_context(query)
             current_successes = current_results.get("facts", [])
 
-            # Include cross-project patterns (per CONTEXT decision)
             cross_successes = []
             if include_cross_project:
                 cross_results = await self.shared_memory.retrieve_cross_project_context(
@@ -265,8 +253,6 @@ class ChallengeAnalyzer:
             if not all_successes:
                 return [], 0.0
 
-            # Calculate confidence boost from top matches
-            # Boost = average of top 3 similarity scores * 0.2 (max 0.2 boost)
             top_scores = sorted(
                 [s.get("score", 0) for s in all_successes],
                 reverse=True
@@ -299,12 +285,9 @@ class ChallengeAnalyzer:
         """
         issues = []
 
-        # Check if topology has dependency issues (from validation)
         if topology_capabilities.has_dependency_issues:
             for issue in topology_capabilities.dependency_issues:
                 issues.append(f"Topology dependency issue: {issue}")
 
-        # Note: Full schema validation would require ArtifactSchemaRegistry
-        # which is complex. For now, we flag dependency issues as proxies.
 
         return issues

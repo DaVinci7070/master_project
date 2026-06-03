@@ -1,14 +1,3 @@
-"""
-Gap Verification Service for deterministic gap closure checking.
-
-This service verifies whether gaps have been closed by checking
-if artifacts with matching affected_capability exist in the database.
-
-Key difference from re-analysis:
-- NO LLM calls - pure database lookups
-- Deterministic results
-- Only checks original gaps, doesn't find new ones
-"""
 import logging
 import re
 from datetime import datetime, timezone
@@ -54,11 +43,8 @@ class GapVerificationService:
         - Parentheses content: "risk assessment (downtime)" -> "risk assessment"
         """
         normalized = name.lower().strip()
-        # Remove content in parentheses
         normalized = re.sub(r'\s*\([^)]*\)', '', normalized)
-        # Replace underscores and hyphens with spaces
         normalized = normalized.replace('_', ' ').replace('-', ' ')
-        # Normalize whitespace
         normalized = ' '.join(normalized.split())
         return normalized
 
@@ -89,11 +75,9 @@ class GapVerificationService:
         req_norm = self._normalize_capability(required)
         avail_norm = self._normalize_capability(available)
 
-        # Exact match (after normalization)
         if req_norm == avail_norm:
             return True, "exact", 1.0
 
-        # Contains match (one contains the other)
         if req_norm in avail_norm or avail_norm in req_norm:
             shorter = min(len(req_norm), len(avail_norm))
             longer = max(len(req_norm), len(avail_norm))
@@ -101,7 +85,6 @@ class GapVerificationService:
             if score >= 0.6:
                 return True, "contains", score
 
-        # Word overlap match
         overlap_score = self._calculate_word_overlap(required, available)
         if overlap_score >= 0.5:
             return True, "word_overlap", overlap_score
@@ -146,7 +129,6 @@ class GapVerificationService:
             CapabilityExistsResult with provider details if found
         """
         async with self.session_factory() as db:
-            # Search Skills
             result = await db.execute(
                 select(Skill).where(Skill.is_active == True)
             )
@@ -195,7 +177,6 @@ class GapVerificationService:
                         match_score=score,
                     )
 
-            # Search Prompts
             result = await db.execute(
                 select(Prompt).where(Prompt.is_active == True)
             )
@@ -224,7 +205,6 @@ class GapVerificationService:
                                 match_score=score,
                             )
 
-            # Search Agents
             result = await db.execute(
                 select(Agent).where(Agent.is_active == True)
             )
@@ -252,7 +232,6 @@ class GapVerificationService:
                             match_score=score,
                         )
 
-            # Not found
             logger.debug(f"Capability '{capability_name}' not found in system")
             return CapabilityExistsResult(
                 capability_name=capability_name,

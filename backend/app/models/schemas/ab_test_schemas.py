@@ -1,29 +1,17 @@
-"""
-Pydantic schemas for A/B testing operations.
-
-These schemas handle validation for:
-- ABTestCreate: Creating new A/B tests
-- ABTestSampleCreate: Recording execution samples
-- ABTestResponse: API responses with test results
-- Variant: Enum for baseline/improvement assignment
-"""
 from datetime import datetime
 from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, ConfigDict
 
 
-# Variant types for A/B test assignment
 class Variant:
     """Variant assignment for A/B test traffic splitting."""
     BASELINE = "baseline"
     IMPROVEMENT = "improvement"
 
 
-# Artifact types that can be A/B tested
 ArtifactType = Literal["prompt", "agent", "skill"]
 
-# Test status types
 TestStatus = Literal["pending", "running", "completed", "cancelled"]
 
 

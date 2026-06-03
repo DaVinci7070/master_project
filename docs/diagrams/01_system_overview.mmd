@@ -1,0 +1,109 @@
+%%{init: {'theme':'base', 'fontFamily':'Arial, Helvetica, sans-serif', 'themeVariables': {
+  'fontFamily': 'Arial, Helvetica, sans-serif',
+  'fontSize': '14px',
+  'lineColor': '#9AA7C7',
+  'primaryTextColor': '#26344D',
+  'clusterBorder': '#DCE3F2'
+}}}%%
+flowchart TB
+    subgraph Legende[" Legende "]
+        direction LR
+        L1("API")
+        L2("Analyse")
+        L3("Build / Intervention")
+        L4("Main Team")
+        L5("Evolution")
+        L6("Persistenz")
+        L1 ~~~ L2 ~~~ L3 ~~~ L4 ~~~ L5 ~~~ L6
+    end
+
+    User(["Aufgabe / Challenge<br/>(z.B. Baustellenbericht aus Audio)"])
+
+    subgraph API["API-Schicht (FastAPI)"]
+        EP("v1 Endpoints<br/>challenges, skills, agents")
+    end
+
+    subgraph PreExec["1. Pre-Execution Analyse"]
+        CA("Challenge Analyzer")
+        GAP("Gap Detector<br/>(fehlende Fähigkeiten?)")
+        FJ("Feasibility Judge")
+        CA --> GAP --> FJ
+    end
+
+    subgraph Intervention["2. Intervention (Gap-Building)"]
+        CB("Capability Builder")
+        ST("Skill-Team-Pipeline<br/>(5 Rollen)")
+        GK{"Gatekeeper<br/>AST + Alignment"}
+        SBX("Sandbox-Test<br/>(Docker)")
+        CB --> ST --> GK --> SBX
+    end
+
+    subgraph MainTeam["3. Main Team — HybridOrchestrator"]
+        TA("Team Assembler")
+        WAVE("Wave-basierte Ausführung<br/>(parallele Agenten)")
+        VER("Execution Verifier<br/>(Verify + Replan)")
+        TA --> WAVE --> VER
+    end
+
+    subgraph Evolution["4. Evolution Loop — Developer Team"]
+        FA("Failure Analyzer")
+        DEC("Decisions<br/>Product Owner / Quality Judge")
+        IMP("Improvement<br/>Prompt Engineer / Tool Builder")
+        FA --> DEC --> IMP
+    end
+
+    subgraph Stores["Persistenz"]
+        PG[("PostgreSQL<br/>Agents, Skills, Runs<br/>Continuum-Versioning")]
+        QD[("Qdrant<br/>Vektoren / RAG<br/>Capability-Matching · SharedMemory")]
+    end
+
+    LLM("LiteLLM<br/>(provider-agnostisch)<br/>+ Instructor")
+
+    Legende ~~~ User
+    User --> EP --> CA
+    FJ -->|"Lücke erkannt"| CB
+    FJ -->|"machbar"| TA
+    SBX -->|"aktivierter Skill"| TA
+    VER -->|"Erfolg"| User
+    VER -->|"Fehler / Feedback"| FA
+    IMP -->|"verbesserte Skills/Prompts"| PG
+
+    ST -.-> LLM
+    WAVE -.-> LLM
+    GK -.-> QD
+    CB -.-> QD
+    WAVE -.-> PG
+    SBX -.-> PG
+
+    classDef io fill:#E0E7FF,stroke:#7C8CE4,stroke-width:1.5px,color:#26344D;
+    classDef blue fill:#D7E6FF,stroke:#6F9CEB,stroke-width:1.5px,color:#26344D;
+    classDef teal fill:#D2F0EC,stroke:#46B5A8,stroke-width:1.5px,color:#26344D;
+    classDef purple fill:#E7DEFA,stroke:#9676E0,stroke-width:1.5px,color:#26344D;
+    classDef green fill:#D8F1DF,stroke:#5BB97D,stroke-width:1.5px,color:#26344D;
+    classDef peach fill:#FBE3D2,stroke:#EE9F62,stroke-width:1.5px,color:#26344D;
+    classDef rose fill:#FBDCE6,stroke:#E5759B,stroke-width:1.5px,color:#26344D;
+    classDef lav fill:#E2E0F7,stroke:#8B86D6,stroke-width:1.5px,color:#26344D;
+
+    class User io;
+    class EP blue;
+    class CA,GAP,FJ teal;
+    class CB,ST,GK,SBX purple;
+    class TA,WAVE,VER green;
+    class FA,DEC,IMP peach;
+    class PG,QD rose;
+    class LLM lav;
+
+    class L1 blue;
+    class L2 teal;
+    class L3 purple;
+    class L4 green;
+    class L5 peach;
+    class L6 rose;
+
+    style API fill:#EEF4FF,stroke:#C7D7F5;
+    style PreExec fill:#ECFAF8,stroke:#BFE9E2;
+    style Intervention fill:#F4EFFE,stroke:#DCCDF7;
+    style MainTeam fill:#EEFBF1,stroke:#CBEBD5;
+    style Evolution fill:#FEF2EA,stroke:#F6D9C2;
+    style Stores fill:#FEF0F4,stroke:#F6CEDC;
+    style Legende fill:#FBFCFE,stroke:#DCE3F2;

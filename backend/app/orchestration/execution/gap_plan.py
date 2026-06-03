@@ -1,13 +1,3 @@
-"""
-Gap Plan Service for deterministic capability gap resolution.
-
-This service manages the lifecycle of capability gap plans:
-1. Create plan from initial assessment
-2. Track progress as gaps are built
-3. Complete/fail plan based on results
-
-Key design: Gap list is FIXED at creation time - no re-analysis during execution.
-"""
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -55,7 +45,6 @@ class GapPlanService:
         Returns:
             Created CapabilityGapPlan
         """
-        # Convert gaps to JSON-serializable format
         gaps_json = []
         for gap in gaps:
             gap_dict = {
@@ -73,11 +62,9 @@ class GapPlanService:
             }
             gaps_json.append(gap_dict)
 
-        # Sort by severity (critical first)
         severity_order = {"critical": 0, "important": 1, "minor": 2}
         gaps_json.sort(key=lambda g: severity_order.get(g["severity"], 2))
 
-        # Create plan
         plan = CapabilityGapPlan(
             id=str(uuid.uuid4()),
             challenge_id=challenge_id,
@@ -204,7 +191,6 @@ class GapPlanService:
             if not plan:
                 raise ValueError(f"Plan not found: {plan_id}")
 
-            # Update the gap
             updated = plan.update_gap_status(
                 gap_id=gap_id,
                 status=status,
@@ -216,13 +202,11 @@ class GapPlanService:
             if not updated:
                 raise ValueError(f"Gap not found in plan: {gap_id}")
 
-            # If plan was pending, mark as in_progress
             if plan.status == GapPlanStatus.PENDING.value:
                 plan.status = GapPlanStatus.IN_PROGRESS.value
 
             plan.updated_at = datetime.now(timezone.utc)
 
-            # Force SQLAlchemy to detect JSON change
             from sqlalchemy.orm.attributes import flag_modified
             flag_modified(plan, "gaps")
 
@@ -301,14 +285,11 @@ class GapPlanService:
             return True, 1
 
         if latest.status in (GapPlanStatus.PENDING.value, GapPlanStatus.IN_PROGRESS.value):
-            # Active plan exists, don't create new
             return False, latest.cycle_number
 
         if latest.cycle_number >= max_cycles:
-            # Max cycles reached
             return False, latest.cycle_number
 
-        # Previous plan completed/failed, can create new cycle
         return True, latest.cycle_number + 1
 
     async def get_plan_summary(self, plan_id: str) -> dict:

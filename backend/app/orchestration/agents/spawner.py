@@ -1,24 +1,3 @@
-"""
-Agent Spawner Service for executing coding agents as subprocesses.
-
-This service handles the lifecycle of spawned coding agents:
-1. Acquire slot from RuntimeAgentRegistry (respects concurrency limits)
-2. Register agent in registry
-3. Execute LLM call with isolated context (using Instructor for structured output)
-4. Validate response with Pydantic
-5. Update registry status and return result
-6. Release slot
-
-Architecture: Uses in-process LLM calls (not subprocess isolation) for simplicity.
-The isolation comes from:
-- Scoped context (PCI pattern) - agent only sees relevant files
-- No direct code execution - generated code validated separately
-- Registry-based tracking for cleanup
-
-Note: True subprocess isolation with venv was considered but adds complexity.
-The current approach achieves isolation through context scoping and code validation.
-Future enhancement: subprocess execution for untrusted scenarios.
-"""
 import asyncio
 import json
 import logging
@@ -127,7 +106,6 @@ class AgentSpawnerService:
             }
         ) as span:
             try:
-                # 1. Acquire slot from registry
                 slot_acquired = await self.registry.acquire_slot()
                 if not slot_acquired:
                     self.log.warning(
@@ -141,7 +119,6 @@ class AgentSpawnerService:
                         duration_seconds=time.time() - start_time,
                     )
 
-                # 2. Register agent
                 agent = await self.registry.register(
                     agent_id=agent_id,
                     task_id=request.task_id,
@@ -149,10 +126,8 @@ class AgentSpawnerService:
                 )
                 span.set_attribute("agent.registered", True)
 
-                # 3. Update status to RUNNING
                 await self.registry.update_status(agent_id, AgentStatus.RUNNING)
 
-                # 4. Execute with timeout
                 try:
                     result = await asyncio.wait_for(
                         self._execute_agent(request, agent_id),
@@ -160,7 +135,6 @@ class AgentSpawnerService:
                     )
                     result_dict = result.model_dump() if hasattr(result, 'model_dump') else result
 
-                    # Update status based on result
                     if result.success:
                         await self.registry.update_status(agent_id, AgentStatus.COMPLETED)
                     else:
@@ -195,7 +169,6 @@ class AgentSpawnerService:
                 self.log.error(f"Spawn failed: {e}", exc_info=True)
                 span.record_exception(e)
 
-                # Try to update status if agent was registered
                 try:
                     await self.registry.update_status(
                         agent_id, AgentStatus.FAILED, error_message=str(e)
@@ -212,7 +185,6 @@ class AgentSpawnerService:
                 )
 
             finally:
-                # Always release slot
                 try:
                     await self.registry.release_slot()
                 except Exception as e:
@@ -237,7 +209,6 @@ class AgentSpawnerService:
         """
         start_time = time.time()
 
-        # Build user prompt from context
         user_prompt = build_coding_agent_prompt(
             file_path=request.subtask.file_path,
             task_description=request.subtask.task_description,
@@ -251,16 +222,14 @@ class AgentSpawnerService:
         )
 
         try:
-            # Call LLM with structured output via Instructor
-            # This guarantees a valid CodingAgentOutput with automatic retries
             output: CodingAgentOutput = await self.llm.chat_structured(
                 messages=[
                     {"role": "system", "content": CODING_AGENT_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_model=CodingAgentOutput,
-                temperature=0.3,  # Some creativity, mostly structured
-                max_retries=3,  # Instructor will retry on validation failures
+                temperature=0.3,
+                max_retries=3,
             )
 
             duration = time.time() - start_time
@@ -274,7 +243,7 @@ class AgentSpawnerService:
                 file_path=request.subtask.file_path,
                 generated_code=output.code,
                 duration_seconds=duration,
-                tokens_used=0,  # Not easily available with instructor
+                tokens_used=0,
                 stdout=json.dumps({
                     "rationale": output.rationale,
                     "assumptions": output.assumptions,

@@ -1,4 +1,3 @@
-"""Lädt Agent-Definitionen aus YAML-Dateien in config/agents/."""
 import yaml
 from functools import lru_cache
 from pathlib import Path

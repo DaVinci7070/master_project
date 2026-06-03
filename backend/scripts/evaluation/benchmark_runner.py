@@ -1,24 +1,3 @@
-"""
-F12 — Evaluation Benchmark Runner.
-
-CLI tool that loads YAML task suites, executes them via the Challenge API,
-evaluates Pass@1 with keyword/section matching, and exports JSON + CSV results.
-
-Usage:
-    python -m scripts.evaluation.benchmark_runner \
-        --suite dummy_smoke_test \
-        --output results/run.json \
-        --base-url http://localhost:8000/api/v1
-
-    # Modellvergleich (Sprint 2):
-    python -m scripts.evaluation.benchmark_runner \
-        --suite progressive_complexity \
-        --model-config u_medium_l3l5 \
-        --levels L3,L4,L5 \
-        --judge-model "gemini/gemini-3.5-flash" \
-        --seeds 3 --mode cold \
-        --output results/modellvergleich/u_medium_l3l5.json
-"""
 from __future__ import annotations
 
 from dotenv import load_dotenv
@@ -44,7 +23,6 @@ import httpx
 import yaml
 from pydantic import BaseModel
 
-# Add parent to path for app imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from app.core.llm_client import LLMClient
@@ -54,10 +32,6 @@ log = logging.getLogger(__name__)
 DATASETS_DIR = Path(__file__).parent / "datasets"
 UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
 
-
-# ---------------------------------------------------------------------------
-# YAML loading
-# ---------------------------------------------------------------------------
 
 def load_suite(name: str) -> dict:
     path = DATASETS_DIR / f"{name}.yaml"
@@ -72,17 +46,12 @@ def load_suite(name: str) -> dict:
             if field not in task:
                 raise ValueError(f"Task missing required field '{field}': {task.get('task_id', '?')}")
         gt = task["ground_truth"]
-        # Accept either claim-based or keyword-based ground truth
         has_claims = "required_claims" in gt
         has_keywords = "required_keywords" in gt and "required_sections" in gt
         if not has_claims and not has_keywords:
             raise ValueError(f"ground_truth must have 'required_claims' or 'required_keywords'+'required_sections' for task {task['task_id']}")
     return suite
 
-
-# ---------------------------------------------------------------------------
-# German text normalization & fuzzy matching
-# ---------------------------------------------------------------------------
 
 _GERMAN_CHAR_MAP = str.maketrans({
     'ß': 'ss',
@@ -109,11 +78,9 @@ def _fuzzy_contains(needle: str, haystack: str, threshold: float = FUZZY_THRESHO
     norm_needle = _normalize_german(needle)
     norm_haystack = _normalize_german(haystack)
 
-    # Fast path: exact normalized substring
     if norm_needle in norm_haystack:
         return True
 
-    # Fuzzy fallback: compare against tokens of similar length
     needle_len = len(norm_needle)
     min_len = max(1, int(needle_len * 0.6))
     max_len = int(needle_len * 1.5)
@@ -125,10 +92,6 @@ def _fuzzy_contains(needle: str, haystack: str, threshold: float = FUZZY_THRESHO
 
     return False
 
-
-# ---------------------------------------------------------------------------
-# Text extraction from nested execution results
-# ---------------------------------------------------------------------------
 
 def _extract_text_from_results(data: Any) -> str:
     """Recursively extract all string values from nested execution results."""
@@ -148,9 +111,51 @@ def _extract_text_from_results(data: Any) -> str:
     return "\n".join(texts)
 
 
-# ---------------------------------------------------------------------------
-# Pass@1 evaluation (legacy keyword matching)
-# ---------------------------------------------------------------------------
+def _extract_tool_call_metrics(exec_results: dict) -> dict:
+    """Extrahiert Tool-Call-Metriken aus verschachtelten Execution-Results."""
+    total = 0
+    succeeded = 0
+    failed = 0
+    unique_skills: set[str] = set()
+    errors: list[str] = []
+
+    def _walk(obj: Any) -> None:
+        nonlocal total, succeeded, failed
+        if isinstance(obj, dict):
+            if "tool_calls" in obj and isinstance(obj["tool_calls"], list):
+                for tc in obj["tool_calls"]:
+                    if not isinstance(tc, dict):
+                        continue
+                    total += 1
+                    tool_name = tc.get("tool", "unknown")
+                    unique_skills.add(tool_name)
+                    res = tc.get("result", {})
+                    if res.get("success", True):
+                        succeeded += 1
+                    else:
+                        failed += 1
+                        err = str(res.get("error", ""))[:150]
+                        if err:
+                            errors.append(f"{tool_name}: {err}")
+            else:
+                for v in obj.values():
+                    _walk(v)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                _walk(item)
+
+    _walk(exec_results)
+
+    return {
+        "tool_calls_total": total,
+        "tool_calls_succeeded": succeeded,
+        "tool_calls_failed": failed,
+        "tool_call_success_rate": round(succeeded / total, 2) if total > 0 else None,
+        "unique_skills_used": len(unique_skills),
+        "skill_names": sorted(unique_skills),
+        "tool_errors": errors[:5],
+    }
+
 
 def evaluate_pass(output_text: str, ground_truth: dict) -> tuple[bool, list[str], list[str], float]:
     """Check keywords and sections against execution output.
@@ -174,10 +179,6 @@ def evaluate_pass(output_text: str, ground_truth: dict) -> tuple[bool, list[str]
     passed = len(missing_keywords) == 0 and len(missing_sections) == 0
     return passed, missing_keywords, missing_sections, score
 
-
-# ---------------------------------------------------------------------------
-# Claim-based evaluation (LLM-as-Judge, FActScore-inspired)
-# ---------------------------------------------------------------------------
 
 class ClaimVerdict(BaseModel):
     claim: str
@@ -211,7 +212,6 @@ def _keyword_fallback(output_text: str, claims: list[str]) -> tuple[bool, list[s
     """Fallback when LLM judge fails: extract key terms from claims and check presence."""
     missing = []
     for claim in claims:
-        # Extract significant words (capitalized or long) from claim
         words = [w for w in claim.split() if (len(w) > 3 and w[0].isupper()) or len(w) > 5]
         if not words or not any(_fuzzy_contains(w, output_text) for w in words):
             missing.append(claim)
@@ -221,7 +221,6 @@ def _keyword_fallback(output_text: str, claims: list[str]) -> tuple[bool, list[s
     return score >= CLAIM_PASS_THRESHOLD, missing, score
 
 
-# Schwelle ab der ein Task als "bestanden" gilt (0.85 = 85% der Claims müssen gefunden werden)
 CLAIM_PASS_THRESHOLD = 0.85
 
 
@@ -277,10 +276,6 @@ Gib ein kurzes Zitat als "evidence" wenn gefunden."""
         return _keyword_fallback(output_text, claims)
 
 
-# ---------------------------------------------------------------------------
-# Single-task execution
-# ---------------------------------------------------------------------------
-
 async def run_task(
     client: httpx.AsyncClient,
     base_url: str,
@@ -316,14 +311,19 @@ async def run_task(
         "started_at": started_at.isoformat(),
         "completed_at": None,
         "error": None,
+        "tool_calls_total": 0,
+        "tool_calls_succeeded": 0,
+        "tool_calls_failed": 0,
+        "tool_call_success_rate": None,
+        "unique_skills_used": 0,
+        "skill_names": [],
+        "tool_errors": [],
     }
 
     try:
-        # 0. Stage data_dir files into uploads/ if specified
         if "data_dir" in task:
             data_dir = DATASETS_DIR.parent / task["data_dir"]
             if data_dir.is_dir():
-                # Target: uploads/<target_name>/ → /data/<target_name>/ im Container
                 target_subdir = task.get("data_target", Path(task["data_dir"]).name)
                 target_dir = UPLOADS_DIR / target_subdir
                 if target_dir.exists():
@@ -334,11 +334,9 @@ async def run_task(
             else:
                 print(f"\n    [WARN] data_dir not found: {data_dir}")
 
-        # 1. Analyze (oder Upload bei audio_file-Tasks)
         t_analyze = time.monotonic()
 
         if "audio_file" in task:
-            # Audio-Datei per /upload-Endpoint senden
             audio_path = DATASETS_DIR.parent / task["audio_file"]
             if not audio_path.is_file():
                 raise FileNotFoundError(f"Audio-Datei nicht gefunden: {audio_path}")
@@ -374,13 +372,11 @@ async def run_task(
         route_decision = analysis.get("route_decision", "execute")
         print(f"\n    [{task_id}] Phase 1 ANALYZE: {analyze_ms}ms → route={route_decision}")
 
-        # 2. If developer_team route: approve build plan and wait for capabilities
         t_build = time.monotonic()
         if route_decision == "developer_team" and analysis.get("build_plan"):
             build_status = analysis.get("build_plan_status", "pending")
             auto_apply = analysis.get("auto_apply_enabled", False)
 
-            # Approve the build plan if not auto-applied
             if not auto_apply and build_status == "pending":
                 print(f"\n    [BUILD] Approving build plan for {task_id}...")
                 resp = await client.post(
@@ -390,9 +386,8 @@ async def run_task(
                 )
                 resp.raise_for_status()
 
-            # Poll until build is complete
             build_elapsed = 0.0
-            build_timeout = timeout * 0.85  # Muss über Backend-Hard-Timeout (240s) liegen
+            build_timeout = timeout * 0.85
             while build_elapsed < build_timeout:
                 await asyncio.sleep(poll_interval)
                 build_elapsed += poll_interval
@@ -422,7 +417,6 @@ async def run_task(
                 result["completed_at"] = datetime.now(timezone.utc).isoformat()
                 return result
 
-        # 3. Execute
         t_exec = time.monotonic()
         resp = await client.post(
             f"{base_url}/challenges/{challenge_id}/execute",
@@ -430,7 +424,6 @@ async def run_task(
         )
         resp.raise_for_status()
 
-        # 4. Poll until resolved / failed / timeout
         elapsed = 0.0
         while elapsed < timeout:
             await asyncio.sleep(poll_interval)
@@ -447,7 +440,6 @@ async def run_task(
             if status in ("resolved", "failed"):
                 break
         else:
-            # Timeout
             exec_ms = int((time.monotonic() - t_exec) * 1000)
             print(f"\n    [{task_id}] Phase 3 EXECUTE: TIMEOUT nach {exec_ms}ms")
             result["status"] = "timeout"
@@ -459,7 +451,6 @@ async def run_task(
         print(f"\n    [{task_id}] Phase 3 EXECUTE: {exec_ms}ms → status={status}")
         result["status"] = status
 
-        # 5. Get results
         resp = await client.get(
             f"{base_url}/challenges/{challenge_id}/results",
             timeout=30,
@@ -470,35 +461,32 @@ async def run_task(
         result["duration_ms"] = results_data.get("duration_ms") or 0
         result["agents_executed"] = results_data.get("agents_executed", 0)
 
-        # Extract token counts from execution_results
         exec_results = results_data.get("execution_results") or {}
         result["tokens_total"] = exec_results.get("tokens_total", 0)
         result["tokens_input"] = exec_results.get("tokens_input", 0)
         result["tokens_output"] = exec_results.get("tokens_output", 0)
 
-        # Phase-Token-Telemetrie (Sprint C)
         result["tokens_assembly"] = exec_results.get("tokens_assembly", 0)
         result["tokens_execution"] = exec_results.get("tokens_execution", 0)
         result["tokens_verification"] = exec_results.get("tokens_verification", 0)
         result["tokens_adapt"] = exec_results.get("tokens_adapt", 0)
         result["tokens_self_healing"] = exec_results.get("tokens_self_healing", 0)
 
-        # Thinking-Tokens (Sprint 2 Modellvergleich)
         result["tokens_thinking"] = exec_results.get("tokens_thinking", 0)
 
-        # Reflexion-Metriken (Sprint 5)
         ref_m = exec_results.get("reflexion_metrics") or {}
         result["cot_verification_used"] = ref_m.get("cot_verification_used", False)
         result["self_reflection_triggered"] = ref_m.get("self_reflection_triggered", False)
         result["self_reflection_correction"] = ref_m.get("self_reflection_correction", 0.0)
         result["reflection_tokens_verifier"] = ref_m.get("reflection_tokens_verifier", 0)
 
-        # 6. Evaluate Pass@1
+        tc_metrics = _extract_tool_call_metrics(exec_results)
+        result.update(tc_metrics)
+
         if status == "resolved":
             output_text = _extract_text_from_results(exec_results)
             gt = task["ground_truth"]
 
-            # DEBUG: Show what the agents actually produced
             print(f"\n{'='*60}")
             print(f"DEBUG {task_id} — output_text length: {len(output_text)} chars")
             print(f"{'='*60}")
@@ -506,7 +494,6 @@ async def run_task(
             print(f"{'='*60}\n")
 
             if "required_claims" in gt and llm_client:
-                # Claim-based evaluation (LLM-as-Judge)
                 passed, missing_claims, score = await evaluate_claims(
                     output_text=output_text,
                     claims=[str(c) for c in gt["required_claims"]],
@@ -516,7 +503,6 @@ async def run_task(
                 result["score"] = score
                 result["missing_keywords"] = missing_claims
             else:
-                # Legacy keyword matching
                 passed, missing_kw, missing_sec, score = evaluate_pass(output_text, gt)
                 result["pass"] = passed
                 result["score"] = score
@@ -531,19 +517,13 @@ async def run_task(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Model-Config + Kosten (Sprint 2)
-# ---------------------------------------------------------------------------
-
 async def _apply_model_config(base_url: str, config) -> dict:
     """Setzt Modelle + Ablation per Settings-API und gibt Originalzustand zurück."""
     async with httpx.AsyncClient() as client:
-        # Originalzustand holen
         resp = await client.get(f"{base_url}/settings/current", timeout=10)
         resp.raise_for_status()
         original = resp.json()
 
-        # Modelle setzen
         resp = await client.put(
             f"{base_url}/settings/models",
             json={"models": config.models},
@@ -552,7 +532,6 @@ async def _apply_model_config(base_url: str, config) -> dict:
         resp.raise_for_status()
         print(f"  Modelle gesetzt: {config.primary_model()} (uniform={config.is_uniform()})")
 
-        # Ablation-Flags setzen
         resp = await client.put(
             f"{base_url}/settings/ablation",
             json=config.ablation.model_dump(),
@@ -591,7 +570,6 @@ def _calculate_task_cost(task_result: dict, pricing: dict) -> float:
     output_tokens = task_result.get("tokens_output", 0) or 0
     thinking_tokens = task_result.get("tokens_thinking", 0) or 0
 
-    # Text-Output = completion - thinking
     text_tokens = max(0, output_tokens - thinking_tokens)
 
     cost = (
@@ -602,30 +580,22 @@ def _calculate_task_cost(task_result: dict, pricing: dict) -> float:
     return round(cost, 6)
 
 
-# ---------------------------------------------------------------------------
-# Main runner
-# ---------------------------------------------------------------------------
-
 async def run_suite(args: argparse.Namespace) -> dict:
     suite = load_suite(args.suite)
     tasks = suite["tasks"]
 
-    # ── Model-Config laden (Sprint 2) ────────────────────────────────
     model_config = None
     if args.model_config:
         from scripts.evaluation.model_configs.schema import load_model_config
         model_config = load_model_config(args.model_config)
         print(f"Model-Config: {model_config.config_id} ({model_config.primary_model()})")
 
-        # Levels aus Config übernehmen wenn nicht per CLI gesetzt
         if not args.levels and model_config.levels:
             args.levels = ",".join(model_config.levels)
 
-        # Judge-Modell aus Config übernehmen wenn nicht per CLI gesetzt
         if not args.judge_model and model_config.judge_model:
             args.judge_model = model_config.judge_model
 
-    # ── Level-Filter anwenden ─────────────────────────────────────────
     if args.levels:
         allowed = {l.strip() for l in args.levels.split(",")}
         before = len(tasks)
@@ -654,13 +624,10 @@ async def run_suite(args: argparse.Namespace) -> dict:
                 print(f"  - {t['task_id']} ({t['level']}) — {kw} keywords, {sec} sections")
         return {}
 
-    # ── Modelle + Ablation per Settings-API setzen ────────────────────
     original_settings: dict | None = None
     if model_config:
         original_settings = await _apply_model_config(args.base_url, model_config)
 
-    # Multi-Seed-Loop: bei seeds==1 Verhalten unverändert, bei n>1 pro Seed
-    # eigener Output und am Ende Aggregat-Datei für Wilcoxon-Auswertung.
     seeds = max(1, int(getattr(args, "seeds", 1)))
     base_seed = int(args.seed)
     suite_name = suite.get("suite", args.suite)
@@ -673,7 +640,6 @@ async def run_suite(args: argparse.Namespace) -> dict:
             seed_args.seed = current_seed
             seed_args._model_config = model_config
 
-            # Per-Seed-Output-Pfade ableiten — bei seeds==1 unverändert
             if seeds > 1:
                 base_out = Path(args.output)
                 seed_args.output = str(
@@ -686,8 +652,6 @@ async def run_suite(args: argparse.Namespace) -> dict:
                     )
                 print(f"\n=== Seed {i + 1}/{seeds} (seed={current_seed}) ===")
 
-                # Cold-Reset zwischen Seeds (nicht vor dem ersten Seed —
-                # Annahme: User hat State vor dem Run vorbereitet).
                 if args.mode == "cold" and i > 0:
                     print(f"  Cold-Reset vor Seed {current_seed}...")
                     from scripts.evaluation.cold_warm_switch import cold_reset
@@ -699,15 +663,12 @@ async def run_suite(args: argparse.Namespace) -> dict:
             seed_output = await _run_single_seed(seed_args, suite, tasks)
             seed_outputs.append(seed_output)
     finally:
-        # Originalzustand wiederherstellen (auch bei Abbruch)
         if original_settings:
             await _restore_settings(args.base_url, original_settings)
 
-    # Aggregat nur wenn n>1
     if seeds > 1:
         _write_aggregate(args, suite_name, seed_outputs)
 
-    # Rückgabe: bei n=1 wie vorher, sonst Aggregat-Repräsentation
     return seed_outputs[0] if seeds == 1 else {
         "suite": suite_name,
         "seeds": seeds,
@@ -715,9 +676,48 @@ async def run_suite(args: argparse.Namespace) -> dict:
     }
 
 
+def _task_needs_benchmark_db(task: dict) -> bool:
+    """Prüft ob ein Task die Benchmark-DB braucht."""
+    desc = task.get("description", "")
+    return "benchmark-db" in desc or "benchmark_db" in desc or "lumari_benchmark_db" in desc
+
+
+async def _check_benchmark_db() -> bool:
+    """Prüft ob benchmark-db erreichbar ist (3 Versuche).
+
+    Versucht zuerst lokales pg_isready, dann Docker-exec als Fallback.
+    """
+    import subprocess
+    for attempt in range(3):
+        try:
+            result = subprocess.run(
+                ["pg_isready", "-h", "localhost", "-p", "5433", "-U", "benchmark",
+                 "-d", "lumari_benchmark_db"],
+                capture_output=True, timeout=5,
+            )
+            if result.returncode == 0:
+                return True
+        except FileNotFoundError:
+            try:
+                result = subprocess.run(
+                    ["docker", "exec", "lumari-benchmark-db",
+                     "pg_isready", "-U", "benchmark", "-d", "lumari_benchmark_db"],
+                    capture_output=True, timeout=10,
+                )
+                if result.returncode == 0:
+                    return True
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+        except subprocess.TimeoutExpired:
+            pass
+        if attempt < 2:
+            print(f"  [DB-CHECK] benchmark-db nicht erreichbar, Retry {attempt + 2}/3...")
+            await asyncio.sleep(5)
+    return False
+
+
 async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
     """Führt eine einzelne Seed-Iteration aus (Original-Run-Logic)."""
-    # Judge-Modell: explizit gesetzt → separater Client, sonst System-Default
     judge_model = getattr(args, "judge_model", None)
     if judge_model:
         llm_client = LLMClient(model=judge_model)
@@ -727,12 +727,21 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
 
     model_config = getattr(args, "_model_config", None)
 
+    has_db_tasks = any(_task_needs_benchmark_db(t) for t in tasks)
+    db_available = True
+    if has_db_tasks:
+        print("  [DB-CHECK] Prüfe benchmark-db Erreichbarkeit...")
+        db_available = await _check_benchmark_db()
+        if db_available:
+            print("  [DB-CHECK] benchmark-db erreichbar")
+        else:
+            print("  [DB-CHECK] benchmark-db NICHT erreichbar — DB-Tasks werden übersprungen")
+
     run_id = str(uuid4())
     started_at = datetime.now(timezone.utc)
     task_results = []
 
     async with httpx.AsyncClient() as client:
-        # Enable auto_apply so developer-team builds trigger automatically
         try:
             resp = await client.put(
                 f"{args.base_url}/challenges/settings/user",
@@ -745,6 +754,25 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
             print(f"  [WARN] Could not enable auto_apply: {e}")
 
         for task in tasks:
+            if not db_available and _task_needs_benchmark_db(task):
+                print(f"  Running {task['task_id']} ({task['level']})... SKIP (db_unavailable)")
+                task_results.append({
+                    "task_id": task["task_id"],
+                    "level": task["level"],
+                    "status": "db_unavailable",
+                    "pass": False,
+                    "score": 0.0,
+                    "duration_ms": 0,
+                    "agents_executed": 0,
+                    "tokens_total": 0,
+                    "tokens_thinking": 0,
+                    "cost_usd": 0.0,
+                    "error": "benchmark-db nicht erreichbar",
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                })
+                continue
+
             print(f"  Running {task['task_id']} ({task['level']})...", end=" ", flush=True)
             t0 = time.monotonic()
             result = await run_task(
@@ -763,7 +791,6 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
     passed = sum(1 for r in task_results if r["pass"])
     total = len(task_results)
 
-    # Kosten pro Task und aggregiert berechnen
     total_cost = 0.0
     if model_config:
         from scripts.evaluation.model_configs.schema import MODEL_PRICING
@@ -784,23 +811,24 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
         "passed": passed,
         "failed": total - passed,
         "pass_at_1": round(passed / total, 3) if total else 0.0,
-        # Config-Metadaten (Sprint 2)
         "model_config_id": model_config.config_id if model_config else None,
         "models_used": model_config.models if model_config else None,
         "ablation_flags": model_config.ablation.model_dump() if model_config else None,
         "judge_model": judge_model,
         "cost_usd_total": round(total_cost, 6),
+        "tool_calls_total": sum(r.get("tool_calls_total", 0) for r in task_results),
+        "tool_calls_succeeded": sum(r.get("tool_calls_succeeded", 0) for r in task_results),
+        "tool_calls_failed": sum(r.get("tool_calls_failed", 0) for r in task_results),
+        "unique_skills_used": len({s for r in task_results for s in r.get("skill_names", [])}),
         "tasks": task_results,
     }
 
-    # Write JSON
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(run_output, f, indent=2, ensure_ascii=False)
     print(f"\nJSON written to {output_path}")
 
-    # Write CSV
     csv_path = Path(args.csv) if args.csv else output_path.with_suffix(".csv")
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
@@ -814,6 +842,8 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
             "missing_keywords", "missing_sections", "error",
             "cot_verification", "self_reflection", "reflection_correction",
             "reflection_tokens",
+            "tool_calls_total", "tool_calls_succeeded", "tool_calls_failed",
+            "tool_call_success_rate", "unique_skills_used",
         ])
         config_id = model_config.config_id if model_config else ""
         for r in task_results:
@@ -839,11 +869,20 @@ async def _run_single_seed(args, suite: dict, tasks: list[dict]) -> dict:
                 r.get("self_reflection_triggered", ""),
                 r.get("self_reflection_correction", ""),
                 r.get("reflection_tokens_verifier", ""),
+                r.get("tool_calls_total", 0),
+                r.get("tool_calls_succeeded", 0),
+                r.get("tool_calls_failed", 0),
+                r.get("tool_call_success_rate", ""),
+                r.get("unique_skills_used", 0),
             ])
     print(f"CSV  written to {csv_path}")
 
-    # Summary
+    tc_total = run_output["tool_calls_total"]
+    tc_ok = run_output["tool_calls_succeeded"]
+    tc_fail = run_output["tool_calls_failed"]
+    tc_rate = f"{tc_ok / tc_total * 100:.0f}%" if tc_total > 0 else "n/a"
     print(f"\n{total} tasks: {passed} passed, {total - passed} failed, Pass@1 = {run_output['pass_at_1'] * 100:.1f}%")
+    print(f"Tool-Calls: {tc_ok}/{tc_total} succeeded ({tc_rate}), {tc_fail} failed, {run_output['unique_skills_used']} unique skills")
     if total_cost > 0:
         print(f"Kosten: ${total_cost:.4f} ({run_output.get('model_config_id', '-')})")
 
@@ -863,7 +902,6 @@ def _write_aggregate(args, suite_name: str, seed_outputs: list[dict]) -> None:
         sum(t.get("duration_ms") or 0 for t in s["tasks"]) for s in seed_outputs
     ]
 
-    # Task-Pass-Matrix: rows=tasks, cols=seeds — Input für Wilcoxon
     task_ids = [t["task_id"] for t in seed_outputs[0]["tasks"]]
     task_pass_matrix: dict[str, list[int]] = {}
     for tid in task_ids:
@@ -896,10 +934,6 @@ def _write_aggregate(args, suite_name: str, seed_outputs: list[dict]) -> None:
     print(f"Pass@1 mean={mean_pass * 100:.1f}% std={std_pass * 100:.1f}% "
           f"(seeds={n})")
 
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluation Benchmark Runner")

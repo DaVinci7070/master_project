@@ -1,9 +1,3 @@
-"""
-Finding repository for analysis finding data access.
-
-This module implements CRUD operations and pattern queries for
-AnalysisFinding records. Findings are append-only analysis artifacts.
-"""
 import logging
 from typing import List, Optional
 
@@ -101,7 +95,6 @@ class FindingRepository:
             select(AnalysisFinding)
             .where(AnalysisFinding.execution_telemetry_id == execution_id)
             .order_by(
-                # Order by severity: critical > warning > info
                 AnalysisFinding.severity,
                 AnalysisFinding.created_at,
             )

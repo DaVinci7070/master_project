@@ -1,4 +1,3 @@
-"""Hybrid Orchestrator combining Shared Memory + Artifact Passing."""
 import asyncio
 import json
 import logging
@@ -49,7 +48,6 @@ class AgentFailureRecord:
     resolved: bool = False
     produces_artifacts: list[str] = field(default_factory=list)
 
-# Type alias for session factory
 SessionFactory = Callable[[], AsyncSession]
 
 
@@ -90,11 +88,9 @@ class HybridOrchestrator:
         self._embedding_fn = embedding_fn
         self._db_lock = asyncio.Lock()
 
-        # Verify-Adapt Loop
         self._execution_verifier = execution_verifier
         self._adapt_strategy = adapt_strategy
 
-        # Dynamic Team Assembly (Phase B)
         self._team_assembler = team_assembler
         self._agent_promotion = agent_promotion
         self._strategy_memory = strategy_memory
@@ -106,7 +102,6 @@ class HybridOrchestrator:
         self._project_id: str = "default"
         self._challenge_id: Optional[str] = None
 
-        # Self-healing retry state
         self._failure_tracker: dict[str, AgentFailureRecord] = {}
         self._max_retries_per_agent = 2
         self._prompt_improver: Optional[Any] = None
@@ -114,18 +109,15 @@ class HybridOrchestrator:
 
     async def initialize(self) -> None:
         """Initialize orchestrator components."""
-        # Create topology loader if not provided
         if not self.topology_loader:
             self.topology_loader = TopologyLoader(self._session_factory)
             await self.topology_loader.load()
 
-        # Create shared memory if not provided (optional - execution works without it)
         if not self.shared_memory:
             try:
                 from app.orchestration.shared_memory.qdrant_adapter import SharedMemoryQdrantAdapter
                 from qdrant_client import QdrantClient
 
-                # Note: In production, inject Qdrant client from config
                 qdrant_client = QdrantClient(url="http://localhost:6333", timeout=5)
                 qdrant_adapter = SharedMemoryQdrantAdapter(qdrant_client)
                 await qdrant_adapter.ensure_collections()
@@ -174,7 +166,6 @@ class HybridOrchestrator:
         self._failure_tracker = {}
         start_time = datetime.now(timezone.utc)
 
-        # Phase-Token-Accumulator (Sprint C: Telemetrie)
         phase_tokens = {
             "assembly": 0,
             "execution": 0,
@@ -187,10 +178,8 @@ class HybridOrchestrator:
 
         from app.core.config import settings
 
-        # Create execution record in database
         await self._create_execution_record(input_data)
 
-        # 1. Team Assembly — aufgabenspezifische Topologie erstellen
         team_plan = None
         if self._team_assembler and settings.team_assembly_enabled and input_data:
             try:
@@ -232,7 +221,6 @@ class HybridOrchestrator:
                 logger.warning(f"Team assembly fehlgeschlagen, Fallback auf Default: {e}")
                 team_plan = None
 
-        # 1b. Topologie laden (team-gefiltert oder default)
         if team_plan:
             topology, validation = await self.topology_loader.load_for_team(team_plan)
         else:
@@ -250,14 +238,10 @@ class HybridOrchestrator:
                 "execution_id": self._execution_id
             }
 
-        # 2. Create artifact pool for this session
         self._artifact_pool = ArtifactPool(execution_id=self._execution_id)
 
-        # 3. Create sandbox executor for secure skill execution
         sandbox_executor = await self._create_sandbox_executor()
 
-        # 4. Create executor with topology_loader for skill injection
-        # Create intervention orchestrator for self-healing (if enabled)
         intervention = None
         if settings.intra_execution_self_healing_enabled and self.db:
             try:
@@ -273,16 +257,14 @@ class HybridOrchestrator:
             artifact_pool=self._artifact_pool,
             shared_memory=self.shared_memory,
             context_manager=self.context_manager,
-            topology_loader=self.topology_loader,  # Pass for skill injection
-            db=self.db,  # Pass for auto-creating skills
-            sandbox_executor=sandbox_executor,  # Pass for secure skill execution
-            intervention_orchestrator=intervention,  # Pass for self-healing
+            topology_loader=self.topology_loader,
+            db=self.db,
+            sandbox_executor=sandbox_executor,
+            intervention_orchestrator=intervention,
         )
 
-        # 5. Store input for all waves (transcript should be available to all agents)
         self._original_input = input_data
 
-        # 6. Execute in waves
         results: dict[str, Any] = {}
         waves = validation.execution_waves or [[]]
 
@@ -292,18 +274,16 @@ class HybridOrchestrator:
             wave_results = await self._execute_wave(
                 agent_ids=wave_agents,
                 topology=topology,
-                input_data=input_data,  # Pass to ALL waves, not just wave 1
+                input_data=input_data,
                 wave_number=wave_idx + 1
             )
 
             results[f"wave_{wave_idx + 1}"] = wave_results
 
-            # Execution-Tokens akkumulieren
             for _ar in wave_results.values():
                 if isinstance(_ar, dict):
                     phase_tokens["execution"] += _ar.get("tokens_total", 0) or 0
 
-            # Self-healing: repair and retry failed agents before next wave
             topology, retry_results = await self._repair_and_retry(
                 topology, input_data, wave_number=wave_idx + 1,
             )
@@ -313,7 +293,6 @@ class HybridOrchestrator:
                     if isinstance(r, dict) and r.get("success"):
                         wave_results[name] = r
 
-        # 7. Verify-Adapt Loop
         adapt_rounds = 0
         last_verification = None
 
@@ -331,7 +310,6 @@ class HybridOrchestrator:
                     phase_tokens["verification"] += self._execution_verifier._last_tokens_used
                     last_verification = verification
 
-                    # SSE-Event bei Self-Reflection (Sprint 5: Observability)
                     if verification.score_corrected:
                         await self._emit_agent_event(
                             event_type="reflexion",
@@ -437,7 +415,6 @@ class HybridOrchestrator:
 
                         await self._artifact_pool.clear()
 
-                        # Pool aktualisiert — neues Team planen (Phase C)
                         if self._team_assembler:
                             all_agents = await self._load_all_agents()
                             all_skills = await self._load_all_skills()
@@ -464,7 +441,6 @@ class HybridOrchestrator:
 
                                 final_output = self._extract_final_output(results)
                             else:
-                                # Fallback: Topologie neu laden, alte Waves re-executen
                                 topology, validation = await self.topology_loader.reload()
                                 for wave_idx, wave_agents in enumerate(waves):
                                     wave_results = await self._execute_wave(
@@ -489,7 +465,6 @@ class HybridOrchestrator:
 
                             final_output = self._extract_final_output(results)
 
-        # 7b. Strategy Memory + Agent Promotion (Phase C)
         last_score = last_verification.score if last_verification else 0.0
 
         if self._strategy_memory and team_plan:
@@ -523,19 +498,16 @@ class HybridOrchestrator:
             except Exception as e:
                 logger.warning(f"Agent-Promotion fehlgeschlagen: {e}")
 
-        # 8. Clear session artifacts
         await self._artifact_pool.clear()
 
         end_time = datetime.now(timezone.utc)
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
-        # Derive success: Verify-Adapt-Score überschreibt Agent-Fehler
         unresolved = [f for f in self._failure_tracker.values() if not f.resolved]
         overall_success = len(unresolved) == 0
         if last_verification and last_verification.score >= settings.verification_completeness_threshold:
             overall_success = True
 
-        # Aggregate token usage across all agents and waves
         total_tokens = 0
         total_input = 0
         total_output = 0
@@ -547,13 +519,10 @@ class HybridOrchestrator:
                         total_input += agent_result.get("tokens_input", 0) or 0
                         total_output += agent_result.get("tokens_output", 0) or 0
 
-        # Reflexion-Metriken aggregieren (Sprint 5: Observability)
         reflexion_metrics = self._collect_reflexion_metrics(last_verification)
 
-        # Phase-Tokens: Gesamt berechnen (Assembly + Execution + Verification + Adapt + SelfHealing)
         phase_tokens_total = sum(phase_tokens.values())
 
-        # OrchestrationTelemetry schreiben (Sprint C)
         await self._write_orchestration_telemetry(
             phase_tokens=phase_tokens,
             phase_tokens_total=phase_tokens_total,
@@ -590,7 +559,6 @@ class HybridOrchestrator:
             "reflexion_metrics": reflexion_metrics,
         }
 
-        # Update execution record with honest status
         await self._update_execution_record(
             status="completed" if overall_success else "failed",
             results=results,
@@ -601,7 +569,6 @@ class HybridOrchestrator:
             completed_at=end_time,
         )
 
-        # Persist execution outcome to SharedMemory for cross-run learning
         await self._persist_execution_learnings(
             results=results,
             success=overall_success,
@@ -609,10 +576,8 @@ class HybridOrchestrator:
             input_data=input_data,
         )
 
-        # Sprint 1: Autonomous Evolution Loop — fire-and-forget.
-        # Runs analyze -> prioritize -> decide -> improve in a background task
-        # with its own isolated DB session. Must never break the main execution.
         _primary_agent_id = waves[0][0] if waves and waves[0] else "unknown"
+        failed_tool_calls = self._collect_failed_tool_calls(results)
         try:
             from app.core.config import settings as _settings
             if _settings.autonomous_evolution_enabled and self._execution_id:
@@ -628,13 +593,13 @@ class HybridOrchestrator:
                             "; ".join(f.error_message for f in unresolved)[:500]
                             if unresolved else None
                         ),
+                        failed_tool_calls=failed_tool_calls,
                     )
                 )
                 task.add_done_callback(
                     lambda t, eid=self._execution_id: _log_evolution_task_exception(t, eid)
                 )
         except Exception as e:
-            # Scheduling itself failed — log and continue, never block return.
             logger.warning(f"Failed to schedule evolution loop: {e}")
 
         return result
@@ -651,13 +616,9 @@ class HybridOrchestrator:
         tasks = []
         wave_results: dict[str, Any] = {}
 
-        # Dev-Team Agents nie in Execution-Waves ausfuehren (Fallback-Schutz
-        # wenn TeamAssembler gecrasht und Default-Topologie geladen wurde)
         _DEV_NAMES = {"product_owner", "control_agent", "prompt_engineer",
                       "tool_builder", "quality_judge", "execution_analyzer"}
 
-        # Pre-fetch all prompts before parallel execution to avoid
-        # concurrent DB session access (greenlet_spawn errors)
         agents_to_run: list[AgentNode] = []
         for agent_id in agent_ids:
             agent = topology.get_agent(agent_id)
@@ -668,7 +629,6 @@ class HybridOrchestrator:
                 logger.info(f"Skipping dev-team agent '{agent.name}' in execution wave")
                 continue
 
-            # Check if dependencies are satisfied before dispatching
             skip_reason = await self._should_skip_agent(agent, wave_number)
             if skip_reason:
                 logger.warning(f"Skipping {agent.name}: {skip_reason}")
@@ -690,11 +650,9 @@ class HybridOrchestrator:
 
             agents_to_run.append(agent)
 
-        # Prefetch prompts sequentially (safe DB access)
         prompt_cache = await self._prefetch_prompts(agents_to_run)
 
         for agent in agents_to_run:
-            # Emit agent_start event
             await self._emit_agent_event(
                 event_type="agent_start",
                 agent_id=agent.agent_id,
@@ -707,9 +665,25 @@ class HybridOrchestrator:
             )
             tasks.append((agent.name, agent.agent_id, task))
 
-        # Execute in parallel
         if tasks:
-            agent_tasks = [t for _, _, t in tasks]
+            from app.core.config import settings as _settings
+            _agent_timeout = float(_settings.agent_execution_timeout)
+
+            async def _agent_with_timeout(coro, name, timeout):
+                try:
+                    return await asyncio.wait_for(coro, timeout=timeout)
+                except asyncio.TimeoutError:
+                    logger.warning(f"Agent '{name}' timed out after {timeout}s")
+                    return {
+                        "success": False,
+                        "error": f"Agent timeout ({timeout}s)",
+                        "failure_type": "timeout",
+                    }
+
+            agent_tasks = [
+                _agent_with_timeout(t, name, _agent_timeout)
+                for name, _, t in tasks
+            ]
             results = await asyncio.gather(*agent_tasks, return_exceptions=True)
 
             for (agent_name, agent_id, _), result in zip(tasks, results):
@@ -737,7 +711,6 @@ class HybridOrchestrator:
                         f"result_len={len(str(result_dict.get('result', '')))}"
                     )
 
-                # Track failures
                 is_failure = (
                     isinstance(result, Exception)
                     or (isinstance(result, dict) and not result.get("success", True))
@@ -765,7 +738,6 @@ class HybridOrchestrator:
         try:
             result = await self._execute_agent(agent, input_data, prompt_cache=prompt_cache)
 
-            # Emit agent_complete event
             await self._emit_agent_event(
                 event_type="agent_complete",
                 agent_id=agent.agent_id,
@@ -779,7 +751,6 @@ class HybridOrchestrator:
 
             return result
         except Exception as e:
-            # Emit agent_error event
             await self._emit_agent_event(
                 event_type="agent_error",
                 agent_id=agent.agent_id,
@@ -806,7 +777,6 @@ class HybridOrchestrator:
         prompt_cache: Optional[dict[str, str]] = None,
     ) -> dict[str, Any]:
         """Execute a single agent."""
-        # Use pre-fetched prompt if available, otherwise fetch (with lock)
         prompt_content = None
         if prompt_cache and agent.prompt_id:
             prompt_content = prompt_cache.get(agent.prompt_id)
@@ -823,7 +793,6 @@ class HybridOrchestrator:
             project_id=self._project_id
         )
 
-    # --- Self-healing retry infrastructure ---
 
     def _classify_failure(self, result: dict) -> FailureType:
         """Classify agent failure for retry routing."""
@@ -840,6 +809,26 @@ class HybridOrchestrator:
             if any(kw in error for kw in ("timeout", "rate_limit", "rate limit", "503", "429")):
                 return FailureType.LLM_TRANSIENT
         return FailureType.UNKNOWN
+
+    @staticmethod
+    def _collect_failed_tool_calls(results: dict) -> list[dict]:
+        """Sammelt fehlgeschlagene Tool-Calls aus allen Waves für den Evolution-Loop."""
+        failed = []
+        for wave_key, wave_results in results.items():
+            if not isinstance(wave_results, dict):
+                continue
+            for agent_name, agent_result in wave_results.items():
+                if not isinstance(agent_result, dict):
+                    continue
+                for tc in agent_result.get("tool_calls", []):
+                    if isinstance(tc, dict) and not tc.get("result", {}).get("success", True):
+                        failed.append({
+                            "agent": agent_name,
+                            "tool": tc.get("tool", "unknown"),
+                            "arguments": tc.get("arguments", {}),
+                            "error": str(tc.get("result", {}).get("error", ""))[:300],
+                        })
+        return failed
 
     @staticmethod
     def _extract_tool_failure_context(result: dict) -> str:
@@ -869,7 +858,6 @@ class HybridOrchestrator:
                         f"Artifact '{consumed_type}' unavailable: "
                         f"agent '{record.agent_name}' failed"
                     )
-            # Pool-Check only for waves > 1 (wave 1 artifacts don't exist yet)
             if wave_number > 1:
                 artifacts = await self._artifact_pool.read([consumed_type])
                 if not artifacts:
@@ -920,7 +908,6 @@ class HybridOrchestrator:
             and not rec.resolved
             and rec.failure_type != FailureType.BAD_INPUT
             and rec.retries_attempted < self._max_retries_per_agent
-            # UNKNOWN gets only 1 retry
             and not (rec.failure_type == FailureType.UNKNOWN and rec.retries_attempted >= 1)
         }
 
@@ -934,7 +921,6 @@ class HybridOrchestrator:
 
         retry_results: dict[str, Any] = {}
 
-        # Prefetch prompts for retryable agents to avoid greenlet errors
         retry_agents = [topology.get_agent(aid) for aid in retryable if topology.get_agent(aid)]
         prompt_cache = await self._prefetch_prompts(retry_agents)
 
@@ -946,7 +932,6 @@ class HybridOrchestrator:
             record.retries_attempted += 1
             repair_type = "none"
 
-            # Apply repair strategy based on failure type
             try:
                 if record.failure_type in (FailureType.LLM_REFUSAL, FailureType.ARTIFACT_VALIDATION):
                     repair_type = "prompt_improvement"
@@ -965,7 +950,6 @@ class HybridOrchestrator:
                 elif record.failure_type == FailureType.TOOL_ERROR:
                     repair_type = "skill_build"
                     from app.models.schemas.analysis_schemas import CapabilityGap, GapType, GapSeverity
-                    # Fehlgeschlagenen Skill-Namen aus error_message extrahieren
                     affected = agent_node.capabilities[0] if agent_node.capabilities else agent_node.name
                     if "Skill '" in record.error_message:
                         try:
@@ -1000,7 +984,6 @@ class HybridOrchestrator:
             except Exception as e:
                 logger.error(f"Repair failed for {record.agent_name}: {e}")
 
-            # AgentNode nach Repair neu laden (skill_ids koennten sich geaendert haben)
             agent_node = topology.get_agent(agent_id)
             if not agent_node:
                 continue
@@ -1008,7 +991,6 @@ class HybridOrchestrator:
                 fresh = await self._prefetch_prompts([agent_node])
                 prompt_cache.update(fresh)
 
-            # Retry the agent
             await self._emit_agent_event(
                 event_type="agent_retry", agent_id=agent_id,
                 agent_name=record.agent_name, wave=wave_number,
@@ -1022,7 +1004,6 @@ class HybridOrchestrator:
                     record.resolved = True
                     logger.info(f"Retry succeeded for {record.agent_name} (repair: {repair_type})")
                 else:
-                    # Update failure record for potential next retry
                     result_dict = result if isinstance(result, dict) else {"error": str(result)}
                     record.failure_type = self._classify_failure(result_dict)
                     record.error_message = str(result_dict.get("error", result))
@@ -1037,7 +1018,6 @@ class HybridOrchestrator:
 
         return topology, retry_results
 
-    # --- Team Assembly Hilfsmethoden ---
 
     async def _load_all_agents(self) -> list:
         """Alle aktiven Agents aus DB laden."""
@@ -1077,7 +1057,6 @@ class HybridOrchestrator:
             except Exception as e:
                 logger.warning(f"Gap-Build für '{missing.capability}' fehlgeschlagen: {e}")
 
-    # --- Phase-Token-Telemetrie (Sprint C) ---
 
     async def _write_orchestration_telemetry(
         self,
@@ -1115,7 +1094,6 @@ class HybridOrchestrator:
         except Exception as e:
             logger.warning(f"OrchestrationTelemetry schreiben fehlgeschlagen: {e}")
 
-    # --- Reflexion Observability (Sprint 5) ---
 
     def _collect_reflexion_metrics(self, last_verification) -> dict:
         """Sammelt Reflexion-Metriken für Thesis-Auswertung und Ablation."""
@@ -1139,7 +1117,6 @@ class HybridOrchestrator:
             metrics["reflection_tokens_verifier"] = self._execution_verifier._reflection_token_count
         return metrics
 
-    # --- Verify-Adapt Hilfsmethoden ---
 
     def _extract_final_output(self, results: dict) -> str:
         """Extrahiert den neuesten erfolgreichen Output (nach Einfüge-Reihenfolge)."""
@@ -1225,14 +1202,12 @@ class HybridOrchestrator:
         from app.models.schemas.shared_memory_schemas import FactCreate
 
         try:
-            # Build a summary of what was executed and the outcome
             outcome = "successful" if success else "failed"
             input_summary = ""
             if input_data:
                 transcript = input_data.get("transcript") or input_data.get("challenge_text") or ""
                 input_summary = transcript[:500] if transcript else str(input_data)[:500]
 
-            # Collect final agent outputs (last wave typically has the final report)
             agent_outputs = []
             for wave_key, wave_data in results.items():
                 if not isinstance(wave_data, dict) or "retries" in wave_key:
@@ -1243,13 +1218,11 @@ class HybridOrchestrator:
                     if agent_result.get("success"):
                         output = agent_result.get("output")
                         if isinstance(output, dict):
-                            # Extract the most meaningful output field (full content)
                             for key in ("final_report", "report", "result", "summary"):
                                 if key in output and output[key]:
                                     agent_outputs.append((agent_name, key, str(output[key])))
                                     break
 
-            # Fact 1: Execution summary (always persisted)
             summary_text = (
                 f"Execution {self._execution_id} ({outcome}): "
                 f"{duration_ms}ms, input: {input_summary[:200]}"
@@ -1267,7 +1240,6 @@ class HybridOrchestrator:
                 tags=tags,
             ))
 
-            # Fact 2+: Successful agent outputs (for context retrieval)
             for agent_name, output_key, output_text in agent_outputs:
                 await self.shared_memory.create_fact(FactCreate(
                     text=f"[{agent_name}] {output_text}",
@@ -1283,7 +1255,6 @@ class HybridOrchestrator:
                 f"for execution {self._execution_id}"
             )
         except Exception as e:
-            # Learning is non-critical — never fail the execution because of it
             logger.warning(f"Failed to persist execution learnings: {e}")
 
     async def _create_sandbox_executor(self) -> Optional[Any]:
@@ -1301,14 +1272,12 @@ class HybridOrchestrator:
         try:
             from app.orchestration.execution.executor import AutonomousExecutorService
 
-            # Use the new autonomous executor which wraps DynamicSandboxService
             executor = AutonomousExecutorService(
                 db=self.db,
                 enable_auto_build=True,
                 enable_caching=True,
             )
 
-            # Check if Docker is available
             if executor._sandbox.is_available():
                 logger.info("Created DynamicSandbox executor (Docker-based, unrestricted)")
                 return executor
@@ -1384,7 +1353,6 @@ class HybridOrchestrator:
                 await session.commit()
                 logger.debug(f"Emitted {event_type} event for agent {agent_name}")
         except Exception as e:
-            # Table may not exist if migration not run - log and continue
             logger.warning(f"Failed to emit agent event: {e}")
 
     async def _create_execution_record(
@@ -1405,7 +1373,6 @@ class HybridOrchestrator:
                 await self.db.commit()
                 logger.debug(f"Created execution record: {self._execution_id}")
             except Exception as e:
-                # Table may not exist if migration not run - log and continue
                 logger.warning(f"Failed to create execution record (table may not exist): {e}")
                 try:
                     await self.db.rollback()
@@ -1446,7 +1413,6 @@ class HybridOrchestrator:
                     await self.db.commit()
                     logger.debug(f"Updated execution record: {self._execution_id} -> {status}")
             except Exception as e:
-                # Table may not exist if migration not run - log and continue
                 logger.warning(f"Failed to update execution record (table may not exist): {e}")
                 try:
                     await self.db.rollback()
@@ -1464,10 +1430,6 @@ async def create_hybrid_orchestrator(
     return orchestrator
 
 
-# --------------------------------------------------------------------------
-# Sprint 1: Autonomous Evolution Loop helpers (fire-and-forget background task)
-# --------------------------------------------------------------------------
-
 async def _run_evolution_loop_safely(
     execution_id: str,
     agent_id: str = "unknown",
@@ -1476,6 +1438,7 @@ async def _run_evolution_loop_safely(
     tokens_output: int = 0,
     outcome: str = "success",
     error_message: Optional[str] = None,
+    failed_tool_calls: Optional[list[dict]] = None,
 ) -> None:
     """Run EvolutionLoopService with an isolated DB session.
 
@@ -1488,7 +1451,6 @@ async def _run_evolution_loop_safely(
     from app.core.telemetry import TelemetryService
 
     async with AsyncSessionLocal() as session:
-        # Telemetrie-Row erstellen, damit AnalysisPipeline Findings generiert
         telemetry_repo = TelemetryRepository(session)
         telemetry_svc = TelemetryService(telemetry_repo)
         try:
@@ -1498,9 +1460,12 @@ async def _run_evolution_loop_safely(
                 input_data=input_data or {},
                 metadata={"source": "hybrid_orchestrator"},
             )
+            output_data = {}
+            if failed_tool_calls:
+                output_data["failed_tool_calls"] = failed_tool_calls
             await telemetry_svc.complete_execution(
                 telemetry_id=telemetry.id,
-                output_data={},
+                output_data=output_data,
                 tokens_input=tokens_input,
                 tokens_output=tokens_output,
                 outcome=outcome,
@@ -1511,9 +1476,16 @@ async def _run_evolution_loop_safely(
             logger.warning(f"Telemetrie-Bridge fehlgeschlagen: {e}")
             await session.rollback()
 
-        # Evolution-Loop ausführen (findet jetzt die Telemetrie-Row)
+        tool_error_context = ""
+        if failed_tool_calls:
+            lines = [f"- {tc['tool']}: {tc['error']}" for tc in failed_tool_calls[:10]]
+            tool_error_context = "Fehlgeschlagene Tool-Calls während Execution:\n" + "\n".join(lines)
+
         service = build_evolution_loop_service(session)
-        await service.run_post_execution_evolution(execution_id)
+        await service.run_post_execution_evolution(
+            execution_id,
+            output_content=tool_error_context or None,
+        )
 
 
 def _log_evolution_task_exception(task: asyncio.Task, execution_id: str) -> None:

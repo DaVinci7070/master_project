@@ -1,4 +1,3 @@
-"""SQLAlchemy model for artifact schema storage."""
 import uuid
 from sqlalchemy import Column, String, Text, JSON, Boolean, DateTime, func
 
@@ -19,18 +18,14 @@ class ArtifactSchema(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
 
-    # JSON Schema definition for the artifact payload
     json_schema = Column(JSON, nullable=False)
 
-    # Optional: Example payload for documentation
     example_payload = Column(JSON, nullable=True)
 
-    # Schema metadata
     version = Column(String(50), default="1.0.0")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    # Optional: Which agents produce/consume this type
-    producing_agents = Column(JSON, default=list)  # List of agent_ids
-    consuming_agents = Column(JSON, default=list)  # List of agent_ids
+    producing_agents = Column(JSON, default=list)
+    consuming_agents = Column(JSON, default=list)

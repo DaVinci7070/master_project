@@ -1,8 +1,3 @@
-"""
-API endpoints for skill management.
-
-Provides CRUD operations for skills including test execution history.
-"""
 import logging
 from datetime import datetime
 from typing import Optional
@@ -19,7 +14,6 @@ router = APIRouter(prefix="/skills", tags=["skills"])
 log = logging.getLogger(__name__)
 
 
-# Response models
 class TestCaseResponse(BaseModel):
     """Test case response model."""
     name: str
@@ -55,7 +49,7 @@ class SkillSummaryResponse(BaseModel):
     test_count: int = 0
     parent_id: Optional[str] = None
     created_at: str
-    health_status: str = "unknown"  # healthy, failing, unknown
+    health_status: str = "unknown"
 
 
 class SkillDetailResponse(BaseModel):
@@ -125,7 +119,7 @@ class SkillVersionEntry(BaseModel):
     """One skill version in a lineage chain."""
     id: str
     name: str
-    version_index: int  # 1 = root, 2 = first child, …
+    version_index: int
     parent_id: Optional[str] = None
     description: Optional[str] = None
     is_active: bool
@@ -148,7 +142,6 @@ def _compute_health_status(skill) -> str:
     """Compute health status from skill metadata."""
     metadata = skill.skill_metadata or {}
 
-    # Check for test results in metadata
     last_test_result = metadata.get("last_test_result")
     if last_test_result:
         if last_test_result.get("all_passed", False):
@@ -156,7 +149,6 @@ def _compute_health_status(skill) -> str:
         else:
             return "failing"
 
-    # Check if skill has test cases
     if not skill.test_cases or len(skill.test_cases) == 0:
         return "unknown"
 
@@ -180,13 +172,11 @@ async def list_skills(
 
     repo = SkillRepository(session)
 
-    # Get all skills
     if status == "active":
         skills = await repo.list_active()
     else:
-        skills = await repo.list_all(limit=1000, offset=0)  # Get all for filtering
+        skills = await repo.list_all(limit=1000, offset=0)
 
-    # Apply status filters
     if status == "inactive":
         skills = [s for s in skills if not s.is_active]
     elif status == "healthy":
@@ -194,7 +184,6 @@ async def list_skills(
     elif status == "failing":
         skills = [s for s in skills if _compute_health_status(s) == "failing"]
 
-    # Apply search filter
     if search:
         search_lower = search.lower()
         skills = [
@@ -205,7 +194,6 @@ async def list_skills(
 
     total = len(skills)
 
-    # Apply pagination
     skills = skills[offset:offset + limit]
 
     return SkillListResponse(
@@ -247,9 +235,8 @@ async def get_skill(
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill not found: {skill_id}")
 
-    # Get version count (children)
     children = await repo.get_children(skill_id)
-    version_count = len(children) + 1  # Include self
+    version_count = len(children) + 1
 
     return SkillDetailResponse(
         id=skill.id,
@@ -290,11 +277,9 @@ async def get_skill_tests(
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill not found: {skill_id}")
 
-    # Extract test execution history from metadata
     metadata = skill.skill_metadata or {}
     test_history = metadata.get("test_history", [])
 
-    # Convert to response format
     executions = []
     for entry in test_history[:limit]:
         executions.append(TestExecutionResponse(
@@ -306,7 +291,6 @@ async def get_skill_tests(
             error_message=entry.get("error_message"),
         ))
 
-    # Calculate pass rate
     total_runs = len(test_history)
     passed_runs = sum(1 for e in test_history if e.get("passed", False))
     pass_rate = (passed_runs / total_runs * 100) if total_runs > 0 else 0.0
@@ -343,7 +327,6 @@ async def get_skill_version_history(
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill not found: {skill_id}")
 
-    # Walk parent chain backward to root. Guard against accidental cycles.
     chain: list = [skill]
     seen: set[str] = {skill.id}
     current = skill
@@ -355,10 +338,8 @@ async def get_skill_version_history(
         seen.add(parent.id)
         current = parent
 
-    # chain is [requested, …, root]; reverse to get chronological (root → requested)
     chain.reverse()
 
-    # Fetch all build attempts for all skills in the chain in a single query.
     skill_ids = [s.id for s in chain]
     attempts_stmt = (
         select(SkillBuildAttempt)
@@ -463,7 +444,6 @@ async def update_skill(
     )
 
 
-# Registry Stats Models
 class RegistrySkillStats(BaseModel):
     """Stats for a single loaded skill."""
     id: str

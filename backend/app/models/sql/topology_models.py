@@ -1,8 +1,3 @@
-"""
-SQLAlchemy models for topology change tracking.
-
-Provides audit trail for all topology modifications.
-"""
 import uuid
 from sqlalchemy import Column, String, JSON, DateTime, func, Index
 
@@ -18,15 +13,15 @@ class TopologyChangeLog(Base):
     __tablename__ = "topology_change_log"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    change_type = Column(String(50), nullable=False)  # agent_created, agent_updated, agent_deactivated, etc.
-    entity_type = Column(String(50), nullable=False)  # agent, skill, prompt
+    change_type = Column(String(50), nullable=False)
+    entity_type = Column(String(50), nullable=False)
     entity_id = Column(String(36), nullable=False)
     entity_name = Column(String(255), nullable=True)
-    source = Column(String(50), nullable=False)  # system, manual, migration
-    triggered_by = Column(String(100), nullable=True)  # challenge_id, user_id, or migration name
-    change_details = Column(JSON, nullable=True)  # Additional context about the change
-    previous_state = Column(JSON, nullable=True)  # State before change (for updates)
-    new_state = Column(JSON, nullable=True)  # State after change
+    source = Column(String(50), nullable=False)
+    triggered_by = Column(String(100), nullable=True)
+    change_details = Column(JSON, nullable=True)
+    previous_state = Column(JSON, nullable=True)
+    new_state = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

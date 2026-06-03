@@ -1,9 +1,3 @@
-"""
-Schemas for the Autonomous Evolution Loop (Sprint 1).
-
-Used by EvolutionLoopService to return structured reports from each
-post-execution analyze -> prioritize -> decide -> improve run.
-"""
 from typing import Optional
 
 from pydantic import BaseModel, Field

@@ -1,4 +1,3 @@
-"""3-Stufen-Eskalationslogik nach Execution-Verification."""
 import logging
 
 from app.models.schemas.team_schemas import (
@@ -69,7 +68,6 @@ class AdaptStrategy:
                 ),
             )
 
-        # Score 0.4–0.85: Feedback-Retry, aber nach 2. Fehlversuch eskalieren
         if replan_round >= 1:
             return AdaptDecision(
                 action=AdaptAction.REPLAN_NEW_TEAM,

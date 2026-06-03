@@ -1,4 +1,3 @@
-"""SharedMemoryService for hybrid memory architecture."""
 import logging
 from typing import Any, Optional, Callable, Awaitable
 from uuid import uuid4
@@ -54,12 +53,9 @@ class SharedMemoryService:
         """Get embedding for text. Override or inject embedding_fn."""
         if self._embedding_fn:
             return await self._embedding_fn(text)
-        # Fallback: return zero vector (will need real embedding in production)
-        # Using 768 dimensions to match Gemini embeddings
         logger.warning("No embedding function configured, using zero vector")
         return [0.0] * 768
 
-    # ========== FACT OPERATIONS ==========
 
     async def create_fact(
         self,
@@ -73,11 +69,9 @@ class SharedMemoryService:
         """
         fact_id = str(uuid4())
 
-        # Generate embedding if not provided
         if embedding is None:
             embedding = await self._get_embedding(fact_data.text)
 
-        # Store in Qdrant
         await self.qdrant.upsert_fact(
             fact_id=fact_id,
             embedding=embedding,
@@ -90,8 +84,6 @@ class SharedMemoryService:
             supersedes_id=fact_data.supersedes_id
         )
 
-        # Store metadata in PostgreSQL using a dedicated session to avoid
-        # poisoning the main execution session on constraint violations.
         from app.dependencies.dependencies import AsyncSessionLocal
         async with AsyncSessionLocal() as fact_session:
             fact = Fact(
@@ -103,13 +95,12 @@ class SharedMemoryService:
                 project_id=fact_data.project_id,
                 tags=fact_data.tags,
                 supersedes_id=fact_data.supersedes_id,
-                embedding_id=fact_id  # Same ID in Qdrant
+                embedding_id=fact_id
             )
             fact_session.add(fact)
             await fact_session.commit()
             await fact_session.refresh(fact)
 
-        # Automatic contradiction detection (per CONTEXT)
         await self._check_contradictions(fact_id, embedding, fact_data.confidence)
 
         return FactResponse.model_validate(fact)
@@ -130,12 +121,10 @@ class SharedMemoryService:
         )
 
         for hyp in similar_hypotheses:
-            # If confidence differs significantly, flag as potential contradiction
             hyp_confidence = hyp.get("confidence", 0.5)
             confidence_diff = abs(confidence - hyp_confidence)
 
             if confidence_diff > 0.3:
-                # Update hypothesis with contradicting fact
                 await self._link_contradicting_fact(hyp["id"], fact_id)
                 logger.info(
                     f"Linked fact {fact_id} as potential contradiction to hypothesis {hyp['id']} "
@@ -174,7 +163,6 @@ class SharedMemoryService:
         fact = result.scalar_one_or_none()
         return FactResponse.model_validate(fact) if fact else None
 
-    # ========== HYPOTHESIS OPERATIONS ==========
 
     async def create_hypothesis(
         self,
@@ -187,7 +175,6 @@ class SharedMemoryService:
         if embedding is None:
             embedding = await self._get_embedding(hypothesis_data.text)
 
-        # Store in Qdrant
         await self.qdrant.upsert_hypothesis(
             hypothesis_id=hypothesis_id,
             embedding=embedding,
@@ -199,7 +186,6 @@ class SharedMemoryService:
             status=hypothesis_data.status
         )
 
-        # Store in PostgreSQL
         hypothesis = Hypothesis(
             id=hypothesis_id,
             text=hypothesis_data.text,
@@ -233,7 +219,6 @@ class SharedMemoryService:
             await self.db.commit()
             await self.db.refresh(hypothesis)
 
-            # Update Qdrant as well
             embedding = await self._get_embedding(hypothesis.text)
             await self.qdrant.upsert_hypothesis(
                 hypothesis_id=hypothesis_id,
@@ -249,7 +234,6 @@ class SharedMemoryService:
             return HypothesisResponse.model_validate(hypothesis)
         return None
 
-    # ========== RELATION OPERATIONS ==========
 
     async def create_relation(
         self,
@@ -272,7 +256,6 @@ class SharedMemoryService:
 
         return RelationResponse.model_validate(relation)
 
-    # ========== RAG RETRIEVAL ==========
 
     async def retrieve_context(
         self,
@@ -285,10 +268,8 @@ class SharedMemoryService:
         Returns facts, hypotheses, and relations with context budget enforcement.
         Includes CONFLICT markers when contradictions exist (per CONTEXT).
         """
-        # Generate query embedding
         query_embedding = await self._get_embedding(query.query_text)
 
-        # Search facts with recency bias
         facts = await self.qdrant.search_facts(
             query_embedding=query_embedding,
             limit=query.max_items,
@@ -299,7 +280,6 @@ class SharedMemoryService:
             score_threshold=query.score_threshold,
         )
 
-        # Search hypotheses if requested
         hypotheses = []
         if query.include_hypotheses:
             hypotheses = await self.qdrant.search_hypotheses(
@@ -307,9 +287,6 @@ class SharedMemoryService:
                 limit=20
             )
 
-        # Get relations if requested (from PostgreSQL)
-        # Uses a dedicated session to avoid concurrent access to the main
-        # execution session when multiple agents build context in parallel.
         relations = []
         if query.include_relations and facts:
             from app.dependencies.dependencies import AsyncSessionLocal
@@ -326,7 +303,6 @@ class SharedMemoryService:
                     for r in result.scalars().all()
                 ]
 
-        # Apply context budget if max_tokens specified
         if max_tokens:
             facts = self.context_manager.truncate_with_budget(
                 items=facts,
@@ -334,7 +310,6 @@ class SharedMemoryService:
                 key="text"
             )
 
-        # Mark conflicts (per CONTEXT: include BOTH with CONFLICT marker)
         for hyp in hypotheses:
             if hyp.get("contradicting_fact_ids"):
                 hyp["_conflict"] = True
@@ -372,15 +347,13 @@ class SharedMemoryService:
         """
         query_embedding = await self._get_embedding(query.query_text)
 
-        # Search facts from other projects
         cross_project_facts = await self.qdrant.search_facts_cross_project(
             query_embedding=query_embedding,
             exclude_project_id=current_project_id,
-            limit=min(query.max_items, 30),  # Cap at 30 for cross-project
-            min_confidence=max(query.min_confidence, 0.5)  # Higher threshold for cross-project
+            limit=min(query.max_items, 30),
+            min_confidence=max(query.min_confidence, 0.5)
         )
 
-        # Apply context budget if specified
         if max_tokens:
             cross_project_facts = self.context_manager.truncate_with_budget(
                 items=cross_project_facts,
@@ -388,7 +361,6 @@ class SharedMemoryService:
                 key="text"
             )
 
-        # Group by project for clarity
         by_project: dict[str, list] = {}
         for fact in cross_project_facts:
             proj_id = fact.get("project_id", "unknown")

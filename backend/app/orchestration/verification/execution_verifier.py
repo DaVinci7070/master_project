@@ -1,4 +1,3 @@
-"""Prüft ob Execution-Ergebnisse die Challenge vollständig beantworten."""
 import json
 import logging
 import re

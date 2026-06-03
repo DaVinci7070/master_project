@@ -1,4 +1,3 @@
-"""Stellt aufgabenspezifische Agent-Teams per LLM zusammen."""
 import json
 import logging
 import re

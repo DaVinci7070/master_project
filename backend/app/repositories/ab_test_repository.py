@@ -1,10 +1,3 @@
-"""
-A/B test repository for test and sample data access operations.
-
-This module implements CRUD operations and test queue management for
-ABTest and ABTestSample records. The repository enables tracking test
-lifecycle, sample collection, and one-test-per-artifact constraint enforcement.
-"""
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -132,11 +125,9 @@ class ABTestRepository:
 
         test.status = status
 
-        # Set completed_at if test is finishing
         if status in ("completed", "cancelled"):
             test.completed_at = datetime.now(timezone.utc)
 
-        # Update optional fields
         for key, value in kwargs.items():
             if hasattr(test, key) and value is not None:
                 setattr(test, key, value)
@@ -162,7 +153,6 @@ class ABTestRepository:
             f"variant={data.variant}, composite_score={data.composite_score:.3f}"
         )
 
-        # Create sample record
         db_sample = ABTestSample(
             test_id=data.test_id,
             execution_id=data.execution_id,
@@ -175,7 +165,6 @@ class ABTestRepository:
 
         self.session.add(db_sample)
 
-        # Update parent test's sample count
         test = await self.get_test(data.test_id)
         if test:
             if data.variant == "baseline":
@@ -308,7 +297,6 @@ class ABTestRepository:
             )
             return
 
-        # Append to queued_ids
         if active_test.queued_ids is None:
             active_test.queued_ids = []
 
@@ -335,7 +323,6 @@ class ABTestRepository:
         Returns:
             UUID of next queued improvement_attempt_id or None if queue is empty.
         """
-        # Find the most recently completed test for this artifact
         stmt = (
             select(ABTest)
             .where(
@@ -356,7 +343,6 @@ class ABTestRepository:
             )
             return None
 
-        # Pop first item from queue
         next_id = test.queued_ids.pop(0)
 
         await self.session.commit()

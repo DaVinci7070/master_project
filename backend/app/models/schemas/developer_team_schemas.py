@@ -1,12 +1,3 @@
-"""
-Pydantic schemas for Developer Team dynamic agent spawning.
-
-These schemas handle validation for:
-- Spawned agent metadata (SpawnedAgent)
-- Spawn requests and results (SpawnRequest, SpawnResult)
-- Agent context isolation (AgentContext)
-- Task decomposition (DevelopmentTask, SubtaskSpec, TaskDecomposition)
-"""
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
@@ -16,11 +7,11 @@ from pydantic import BaseModel, Field, field_validator
 
 class AgentStatus(str, Enum):
     """Status of a spawned agent."""
-    PENDING = "pending"      # Created but not yet running
-    RUNNING = "running"      # Actively executing
-    COMPLETED = "completed"  # Finished successfully
-    FAILED = "failed"        # Terminated with error
-    CANCELLED = "cancelled"  # Cancelled by orchestrator
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class AgentContext(BaseModel):
@@ -282,10 +273,6 @@ class SpawnResult(BaseModel):
         description="Agent stderr output"
     )
 
-
-# ============================================================================
-# LLM Structured Output Models (for Instructor)
-# ============================================================================
 
 class CodingAgentOutput(BaseModel):
     """

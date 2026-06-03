@@ -15,9 +15,6 @@ from app.core.config import settings
 
 log = structlog.get_logger()
 
-# ---------------------------------------------------------------------------
-# Suspicious path patterns – typical bot scanner targets
-# ---------------------------------------------------------------------------
 SUSPICIOUS_PATTERNS: list[re.Pattern] = [
     re.compile(r"\.env", re.IGNORECASE),
     re.compile(r"\.git", re.IGNORECASE),
@@ -35,8 +32,8 @@ SUSPICIOUS_PATTERNS: list[re.Pattern] = [
     re.compile(r"vendor/", re.IGNORECASE),
     re.compile(r"index\.php", re.IGNORECASE),
     re.compile(r"containers/json", re.IGNORECASE),
-    re.compile(r"\.\.[\\/]", re.IGNORECASE),          # path traversal
-    re.compile(r"%2e%2e", re.IGNORECASE),             # encoded path traversal
+    re.compile(r"\.\.[\\/]", re.IGNORECASE),
+    re.compile(r"%2e%2e", re.IGNORECASE),
     re.compile(r"SDK/webLanguage", re.IGNORECASE),
     re.compile(r"/bin/sh", re.IGNORECASE),
 ]
@@ -47,9 +44,6 @@ def _is_suspicious(path: str) -> bool:
     return any(p.search(path) for p in SUSPICIOUS_PATTERNS)
 
 
-# ---------------------------------------------------------------------------
-# 1) Security Middleware – blocks scanners & bots before they reach the app
-# ---------------------------------------------------------------------------
 class SecurityMiddleware(BaseHTTPMiddleware):
     """Detects suspicious requests, auto-blocks repeat offenders, and writes
     fail2ban-compatible log lines."""
@@ -63,7 +57,6 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         client_ip = request.client.host if request.client else "unknown"
 
-        # Already blocked? → instant 403
         if await self.storage.is_blocked(client_ip):
             log.warning(
                 "[SECURITY] BLOCKED",
@@ -79,10 +72,9 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        # Suspicious path? → count strikes
         if _is_suspicious(request.url.path):
             strike_key = f"security:strikes:{client_ip}"
-            strikes = await self.storage.hit(strike_key, ttl_seconds=300)  # 5 min window
+            strikes = await self.storage.hit(strike_key, ttl_seconds=300)
 
             log.warning(
                 "[SECURITY] SUSPICIOUS",
@@ -112,9 +104,6 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# ---------------------------------------------------------------------------
-# 2) Request-ID Middleware
-# ---------------------------------------------------------------------------
 class RequestIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
@@ -157,23 +146,17 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             raise e
 
 
-# ---------------------------------------------------------------------------
-# 3) Rate-Limit Middleware – normal API rate limiting
-# ---------------------------------------------------------------------------
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, storage: RateLimitStorage):
         super().__init__(app)
         self.storage = storage
         self.limit = settings.rate_limit_per_minute
 
-    # SSE / streaming endpoints are long-lived single connections —
-    # they should not be rate-limited per request.
     _EXEMPT_PATTERNS = ("/stream", "/events/", "/events")
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Skip rate limiting for SSE / streaming endpoints
         if any(pat in path for pat in self._EXEMPT_PATTERNS):
             return await call_next(request)
 

@@ -1,12 +1,3 @@
-"""
-SQL models for skill building and binding.
-
-Tracks:
-- SkillBinding: Links skills to agents
-- SkillBuildAttempt: Records all build attempts for learning
-- PackageMapping: Cached module->package mappings
-- ResearchCache: Cached research results
-"""
 import uuid
 from sqlalchemy import Column, String, Text, JSON, Boolean, DateTime, ForeignKey, Integer, Float, func
 from sqlalchemy.orm import relationship
@@ -26,13 +17,12 @@ class SkillBinding(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     skill_id = Column(String(36), ForeignKey("skills.id"), nullable=False, index=True)
     agent_id = Column(String(36), ForeignKey("agents.id"), nullable=False, index=True)
-    capability = Column(String(500), nullable=False)  # The capability this binding provides
-    binding_type = Column(String(50), default="auto")  # auto, manual, provisional
-    priority = Column(Integer, default=0)  # Higher priority = preferred binding
+    capability = Column(String(500), nullable=False)
+    binding_type = Column(String(50), default="auto")
+    priority = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
     skill = relationship("Skill", backref="bindings")
     agent = relationship("Agent", backref="skill_bindings")
 
@@ -49,40 +39,33 @@ class SkillBuildAttempt(Base):
     __tablename__ = "skill_build_attempts"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    capability = Column(String(500), nullable=False, index=True)  # What capability was being built
-    team_role = Column(String(50), nullable=True)  # researcher, architect, implementer, reviewer
+    capability = Column(String(500), nullable=False, index=True)
+    team_role = Column(String(50), nullable=True)
 
-    # Attempt details
     attempt_number = Column(Integer, default=1)
-    approach = Column(String(100), nullable=True)  # direct, simplified, alternative, etc.
+    approach = Column(String(100), nullable=True)
 
-    # Code and requirements
-    code_snapshot = Column(Text, nullable=True)  # Code at this attempt
-    pip_requirements = Column(JSON, default=list)  # Pip packages tried
-    system_packages = Column(JSON, default=list)  # Apt packages tried
+    code_snapshot = Column(Text, nullable=True)
+    pip_requirements = Column(JSON, default=list)
+    system_packages = Column(JSON, default=list)
 
-    # Result
     success = Column(Boolean, default=False)
-    error_type = Column(String(100), nullable=True)  # import_error, syntax_error, runtime_error, semantic_error
+    error_type = Column(String(100), nullable=True)
     error_message = Column(Text, nullable=True)
     sandbox_stdout = Column(Text, nullable=True)
     sandbox_stderr = Column(Text, nullable=True)
 
-    # Timing
     execution_time_ms = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Context
-    research_context = Column(JSON, nullable=True)  # Research data used
-    failure_analysis = Column(JSON, nullable=True)  # LLM analysis of what went wrong
+    research_context = Column(JSON, nullable=True)
+    failure_analysis = Column(JSON, nullable=True)
 
-    # Feedback-History (Sprint 3.1)
-    strategy_id = Column(String(100), nullable=True)          # Which strategy was used (e.g. "direct", "simplified_retry", "alt_package")
-    error_type_classified = Column(String(50), nullable=True)  # IMPORT_ERROR, STRUCTURE_ERROR, LOGIC_ERROR
-    lesson_learned = Column(Text, nullable=True)               # LLM-generated insight from the failure
-    related_attempt_ids = Column(JSON, default=list)            # IDs of earlier attempts that were referenced
+    strategy_id = Column(String(100), nullable=True)
+    error_type_classified = Column(String(50), nullable=True)
+    lesson_learned = Column(Text, nullable=True)
+    related_attempt_ids = Column(JSON, default=list)
 
-    # Link to final skill (if successful)
     skill_id = Column(String(36), ForeignKey("skills.id"), nullable=True)
 
 
@@ -96,19 +79,16 @@ class PackageMapping(Base):
     __tablename__ = "package_mappings"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    module_name = Column(String(255), nullable=False, unique=True, index=True)  # e.g., "cv2"
-    package_name = Column(String(255), nullable=False)  # e.g., "opencv-python"
+    module_name = Column(String(255), nullable=False, unique=True, index=True)
+    package_name = Column(String(255), nullable=False)
 
-    # Confidence and source
-    confidence = Column(Float, default=0.5)  # 0.0-1.0, higher = more reliable
-    source = Column(String(50), default="inferred")  # hardcoded, learned, pypi, user
-    success_count = Column(Integer, default=0)  # How many times this worked
-    failure_count = Column(Integer, default=0)  # How many times this failed
+    confidence = Column(Float, default=0.5)
+    source = Column(String(50), default="inferred")
+    success_count = Column(Integer, default=0)
+    failure_count = Column(Integer, default=0)
 
-    # Alternatives (if primary fails)
-    alternatives = Column(JSON, default=list)  # ["package-alt1", "package-alt2"]
+    alternatives = Column(JSON, default=list)
 
-    # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -125,23 +105,19 @@ class ResearchCache(Base):
     __tablename__ = "research_cache"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    capability = Column(String(500), nullable=False, index=True)  # Normalized capability name
-    capability_hash = Column(String(64), nullable=False, unique=True)  # For exact matching
+    capability = Column(String(500), nullable=False, index=True)
+    capability_hash = Column(String(64), nullable=False, unique=True)
 
-    # Research results
-    recommended_packages = Column(JSON, default=list)  # pip packages
-    system_packages = Column(JSON, default=list)  # apt packages
-    code_examples = Column(JSON, default=list)  # Example code snippets
-    implementation_notes = Column(Text, nullable=True)  # Summary/approach
+    recommended_packages = Column(JSON, default=list)
+    system_packages = Column(JSON, default=list)
+    code_examples = Column(JSON, default=list)
+    implementation_notes = Column(Text, nullable=True)
 
-    # Sources
-    sources = Column(JSON, default=list)  # URLs or references used
+    sources = Column(JSON, default=list)
 
-    # Validity
-    is_valid = Column(Boolean, default=True)  # Can be invalidated if consistently failing
-    success_rate = Column(Float, default=0.0)  # Success rate of builds using this cache
-    usage_count = Column(Integer, default=0)  # How often this cache was used
+    is_valid = Column(Boolean, default=True)
+    success_rate = Column(Float, default=0.0)
+    usage_count = Column(Integer, default=0)
 
-    # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    expires_at = Column(DateTime(timezone=True), nullable=True)  # Optional TTL
+    expires_at = Column(DateTime(timezone=True), nullable=True)

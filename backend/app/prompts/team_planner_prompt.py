@@ -1,5 +1,3 @@
-"""Prompts für den LLM-basierten Team-Planner."""
-
 TEAM_PLANNER_SYSTEM = """Du bist ein Team-Planner für ein Multi-Agent-System.
 Dein Ziel: ein VOLLSTÄNDIGES Team zusammenstellen, bei dem die Datenfluss-Kette lückenlos ist.
 Antworte nur mit JSON."""

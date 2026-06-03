@@ -1,15 +1,3 @@
-"""
-Capability Gap Plan models for deterministic gap resolution.
-
-Stores the gap plan created during initial analysis, preventing
-the endless re-analysis loop by fixing the gap list upfront.
-
-Gap Plan Lifecycle:
-1. PENDING - Plan created, gaps identified
-2. IN_PROGRESS - Gaps being built
-3. COMPLETED - All gaps processed
-4. FAILED - Critical failure during execution
-"""
 import uuid
 from enum import Enum as PyEnum
 from sqlalchemy import Column, String, Text, JSON, Integer, DateTime, func, Index
@@ -62,34 +50,26 @@ class CapabilityGapPlan(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
-    # Foreign keys
     challenge_id = Column(String(36), nullable=False, index=True)
     execution_id = Column(String(36), nullable=True, index=True)
 
-    # Cycle tracking (for multi-cycle resolution)
     cycle_number = Column(Integer, nullable=False, default=1)
 
-    # Plan status
     status = Column(String(20), nullable=False, default="pending")
 
-    # Gaps array (JSONB for PostgreSQL)
     gaps = Column(JSON, nullable=False, default=list)
 
-    # Progress tracking
     total_gaps = Column(Integer, nullable=False, default=0)
     completed_gaps = Column(Integer, nullable=False, default=0)
     failed_gaps = Column(Integer, nullable=False, default=0)
 
-    # Initial assessment context (for reference)
-    initial_confidence = Column(String(20), nullable=True)  # MAYBE, CANNOT_DO
-    initial_assessment = Column(JSON, nullable=True)  # Full assessment snapshot
+    initial_confidence = Column(String(20), nullable=True)
+    initial_assessment = Column(JSON, nullable=True)
 
-    # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Indexes
     __table_args__ = (
         Index('ix_gap_plan_challenge_cycle', 'challenge_id', 'cycle_number'),
         Index('ix_gap_plan_status', 'status'),
@@ -117,7 +97,6 @@ class CapabilityGapPlan(Base):
         if not pending_gaps:
             return None
 
-        # Sort by severity
         pending_gaps.sort(key=lambda g: severity_order.get(g.get("severity", "minor"), 2))
 
         return pending_gaps[0]
@@ -154,7 +133,6 @@ class CapabilityGapPlan(Base):
                 if error_message:
                     gap["error_message"] = error_message
 
-                # Update counters
                 self._recalculate_counters()
                 return True
 

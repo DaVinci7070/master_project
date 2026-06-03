@@ -1,9 +1,3 @@
-"""
-Skill service for managing skills with test validation.
-
-Implements DB-06: Skills cannot be activated unless their test cases pass.
-This service integrates the SkillExecutor with skill CRUD operations.
-"""
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -113,7 +107,6 @@ class SkillService:
         test_cases = skill_data.get("test_cases", [])
         requested_active = skill_data.get("is_active", False)
 
-        # Determine is_active based on validation
         is_active = False
         if validate and test_cases:
             passed, results = await self.executor.validate_skill(
@@ -122,25 +115,20 @@ class SkillService:
             if passed:
                 is_active = requested_active
             elif requested_active:
-                # Requested active but tests failed
                 failed_count = sum(1 for r in results if not r.passed)
                 raise SkillValidationError(
                     f"Cannot create active skill: {failed_count}/{len(results)} tests failed",
                     test_results=results,
                 )
-            # If tests failed but is_active not requested, create as inactive
         elif not test_cases and requested_active:
-            # No test cases to validate - policy decision: allow inactive only
             log.warning(
                 f"Skill '{skill_data.get('name')}' has no test cases; "
                 "setting is_active=False"
             )
             is_active = False
         else:
-            # No validation requested, use provided is_active
             is_active = requested_active
 
-        # Create with determined is_active
         create_data = {**skill_data, "is_active": is_active}
         return await self.repository.create(create_data)
 
@@ -226,16 +214,13 @@ class SkillService:
             log.warning(f"Skill not found for update: id={skill_id}")
             return None
 
-        # Determine if code changed
         code_changed = "code" in skill_data and skill_data["code"] != existing.code
         test_cases_changed = "test_cases" in skill_data
 
-        # Get effective code and test cases
         code = skill_data.get("code", existing.code)
         test_cases = skill_data.get("test_cases", existing.test_cases)
         requested_active = skill_data.get("is_active", existing.is_active)
 
-        # Re-validate if code or tests changed
         needs_validation = validate and (code_changed or test_cases_changed)
 
         if needs_validation and test_cases:
@@ -249,13 +234,11 @@ class SkillService:
                         f"Cannot activate skill: {failed_count}/{len(results)} tests failed",
                         test_results=results,
                     )
-                # Deactivate if tests now fail
                 skill_data["is_active"] = False
                 log.warning(
                     f"Skill id={skill_id} deactivated due to failing tests"
                 )
         elif needs_validation and not test_cases and requested_active:
-            # Code changed but no test cases - cannot activate
             skill_data["is_active"] = False
             log.warning(
                 f"Skill id={skill_id} cannot be active without test cases"
@@ -295,7 +278,6 @@ class SkillService:
                 f"Cannot activate skill without test cases: {skill_id}"
             )
 
-        # Run validation
         passed, results = await self.executor.validate_skill(
             skill.code, skill.test_cases, function_name
         )
@@ -307,7 +289,6 @@ class SkillService:
                 test_results=results,
             )
 
-        # All tests passed - activate
         updated = await self.repository.set_active(skill_id, True)
         log.info(f"Activated skill id={skill_id}")
         return updated

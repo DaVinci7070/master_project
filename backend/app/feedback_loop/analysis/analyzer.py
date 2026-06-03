@@ -1,11 +1,5 @@
-"""
-Analyzer Service for generating structured findings from execution telemetry.
-
-This service implements the Analyzer agent from the Developer Team,
-which reviews execution telemetry to identify improvement opportunities
-across prompts, topology, skills, and error patterns.
-"""
 import logging
+import re
 from typing import Optional
 from collections import Counter
 
@@ -80,7 +74,6 @@ class AnalyzerService:
         log.info(f"Analyzing execution_id={telemetry.execution_id[:8]}...")
 
         try:
-            # Build the analysis prompt
             user_prompt = self._build_analysis_prompt(
                 telemetry=telemetry,
                 history=history,
@@ -88,32 +81,15 @@ class AnalyzerService:
                 output_content=output_content,
             )
 
-            # Build JSON schema for structured output
-            json_schema = self._build_json_schema()
-
-            # Call LLM with structured output
-            response = await self.llm.chat(
+            result = await self.llm.chat_structured(
                 messages=[
                     {"role": "system", "content": ANALYZER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.2,  # Deterministic analysis
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "analysis_result",
-                        "strict": True,
-                        "schema": json_schema,
-                    },
-                },
+                response_model=AnalysisResult,
+                temperature=0.2,
             )
 
-            log.debug(f"LLM response: {response.content[:200]}...")
-
-            # Parse and validate the response
-            result = AnalysisResult.model_validate_json(response.content)
-
-            # Ensure execution_id is set from telemetry
             result.execution_id = telemetry.execution_id
 
             log.info(
@@ -178,7 +154,6 @@ class AnalyzerService:
         """
         lines = ["## Execution to Analyze", ""]
 
-        # Main execution details
         lines.append(f"- **Execution ID**: {telemetry.execution_id}")
         lines.append(f"- **Agent ID**: {telemetry.agent_id}")
         lines.append(f"- **Outcome**: {telemetry.outcome}")
@@ -190,25 +165,22 @@ class AnalyzerService:
         if telemetry.latency_ms is not None:
             lines.append(f"- **Latency**: {telemetry.latency_ms:.2f}ms")
 
-        # Token usage
         if telemetry.tokens_total > 0:
             lines.append(
                 f"- **Tokens**: {telemetry.tokens_input} input / "
                 f"{telemetry.tokens_output} output / {telemetry.tokens_total} total"
             )
 
-        # Error info if present
         if telemetry.error_message:
             lines.append(f"- **Error Message**: {telemetry.error_message}")
         if telemetry.error_type:
             lines.append(f"- **Error Type**: {telemetry.error_type}")
 
-        # Input/output content if available
         if input_content:
             lines.append("")
             lines.append("### Input Content")
             lines.append("```")
-            lines.append(input_content[:2000])  # Limit to prevent token overflow
+            lines.append(input_content[:2000])
             if len(input_content) > 2000:
                 lines.append("... (truncated)")
             lines.append("```")
@@ -217,12 +189,11 @@ class AnalyzerService:
             lines.append("")
             lines.append("### Output Content")
             lines.append("```")
-            lines.append(output_content[:2000])  # Limit to prevent token overflow
+            lines.append(output_content[:2000])
             if len(output_content) > 2000:
                 lines.append("... (truncated)")
             lines.append("```")
 
-        # History summary
         lines.append("")
         lines.append("## Recent Execution History")
         lines.append("")
@@ -230,7 +201,6 @@ class AnalyzerService:
         if not history:
             lines.append("No recent history available.")
         else:
-            # Calculate summary stats
             success_count = sum(1 for h in history if h.outcome == "success")
             error_count = sum(1 for h in history if h.outcome == "error")
             timeout_count = sum(1 for h in history if h.outcome == "timeout")
@@ -246,7 +216,6 @@ class AnalyzerService:
             )
             lines.append(f"Average latency: {avg_latency:.2f}ms")
 
-            # Error type breakdown if any errors
             error_types = [h.error_type for h in history if h.error_type]
             if error_types:
                 lines.append("")
@@ -254,12 +223,11 @@ class AnalyzerService:
                 for error_type, count in Counter(error_types).most_common(5):
                     lines.append(f"  - {error_type}: {count} occurrences")
 
-            # List individual executions with errors for pattern detection
             error_executions = [h for h in history if h.outcome != "success"]
             if error_executions:
                 lines.append("")
                 lines.append("Non-successful executions:")
-                for exec in error_executions[:5]:  # Limit to 5
+                for exec in error_executions[:5]:
                     status = f"[{exec.outcome}]"
                     if exec.error_type:
                         status += f" {exec.error_type}"

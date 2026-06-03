@@ -1,13 +1,3 @@
-"""
-Failure Analyzer Service - Learn from skill build failures.
-
-This service implements failure pattern recognition and learning:
-1. Classify errors by type (import, syntax, structure, runtime, semantic)
-2. Extract failure patterns
-3. Suggest alternative approaches
-4. Persist failure data for future learning
-"""
-
 import logging
 import re
 import uuid
@@ -57,25 +47,25 @@ Keine Wiederholung der Fehlermeldung — die kennt der nächste Builder schon.""
 class FailureAnalysis:
     """Result of analyzing a failure."""
     error_type: ErrorType
-    error_category: str  # More specific category within error_type
+    error_category: str
     root_cause: str
     suggested_fixes: list[str] = field(default_factory=list)
     alternative_packages: list[str] = field(default_factory=list)
     code_suggestions: list[str] = field(default_factory=list)
-    confidence: float = 0.5  # 0-1, how confident we are in this analysis
+    confidence: float = 0.5
     similar_past_failures: list[dict] = field(default_factory=list)
-    error_type_classified: str = ""   # IMPORT_ERROR, STRUCTURE_ERROR, LOGIC_ERROR
-    lesson_learned: str = ""          # LLM-generated insight from this failure
+    error_type_classified: str = ""
+    lesson_learned: str = ""
 
 
 @dataclass
 class StrategyProposal:
     """Proposed next strategy based on build history."""
-    strategy_id: str                    # e.g. "alt_package", "simplify", "restructure"
-    rationale: str                      # Why this strategy was chosen
-    related_attempt_ids: list[str] = field(default_factory=list)  # History entries referenced
-    confidence: float = 0.5            # 0-1
-    hints: list[str] = field(default_factory=list)  # Concrete tips for the builder
+    strategy_id: str
+    rationale: str
+    related_attempt_ids: list[str] = field(default_factory=list)
+    confidence: float = 0.5
+    hints: list[str] = field(default_factory=list)
 
 
 class FailureAnalyzer:
@@ -89,7 +79,6 @@ class FailureAnalyzer:
     - Record failures for future learning
     """
 
-    # Strategy candidates per classified error type
     STRATEGY_MAP = {
         "IMPORT_ERROR": ["alt_package", "minimal_imports", "stdlib_only"],
         "STRUCTURE_ERROR": ["ast_fix", "template_rewrite"],
@@ -97,7 +86,6 @@ class FailureAnalyzer:
     }
     DEFAULT_STRATEGIES = ["direct", "simplify", "alternative", "from_scratch"]
 
-    # Map fine-grained ErrorType to coarse classification
     ERROR_TYPE_CLASSIFICATION = {
         ErrorType.IMPORT_ERROR: "IMPORT_ERROR",
         ErrorType.DEPENDENCY_ERROR: "IMPORT_ERROR",
@@ -109,7 +97,6 @@ class FailureAnalyzer:
         ErrorType.SEMANTIC_ERROR: "LOGIC_ERROR",
     }
 
-    # Error patterns for classification
     ERROR_PATTERNS = {
         ErrorType.IMPORT_ERROR: [
             r"ModuleNotFoundError: No module named '(\w+)'",
@@ -189,7 +176,6 @@ class FailureAnalyzer:
                 if re.search(pattern, full_text, re.IGNORECASE):
                     return error_type
 
-        # Default to runtime if can't classify
         return ErrorType.RUNTIME_ERROR
 
     def classify_error_coarse(self, error_type: ErrorType) -> str:
@@ -234,10 +220,8 @@ class FailureAnalyzer:
         """
         pip_requirements = pip_requirements or []
 
-        # Classify error
         error_type = self.classify_error(error_message, stderr)
 
-        # Get analysis based on error type
         analysis = FailureAnalysis(
             error_type=error_type,
             error_category="",
@@ -264,7 +248,6 @@ class FailureAnalyzer:
             analysis.error_category = error_type.value
             analysis.root_cause = error_message[:200]
 
-        # Set coarse classification and lesson learned
         analysis.error_type_classified = self.classify_error_coarse(error_type)
         analysis.lesson_learned = await self._generate_reflection(
             capability=capability,
@@ -273,11 +256,9 @@ class FailureAnalyzer:
             analysis=analysis,
         )
 
-        # Find similar past failures
         similar = await self._find_similar_failures(capability, error_type)
         analysis.similar_past_failures = similar
 
-        # If we have similar failures that were later fixed, extract suggestions
         if similar:
             for past in similar:
                 if past.get("later_success") and past.get("fix_approach"):
@@ -298,12 +279,10 @@ class FailureAnalyzer:
             root_cause="",
         )
 
-        # Extract missing module
         missing_module = self.extract_missing_module(error_message)
         if missing_module:
             analysis.root_cause = f"Missing module: {missing_module}"
 
-            # Check if we have a known mapping
             async with self.session_factory() as db:
                 result = await db.execute(
                     select(PackageMapping).where(
@@ -313,19 +292,16 @@ class FailureAnalyzer:
                 mapping = result.scalar_one_or_none()
 
             if mapping:
-                # Use known mapping
                 if mapping.package_name not in pip_requirements:
                     analysis.alternative_packages.append(mapping.package_name)
                     analysis.suggested_fixes.append(
                         f"Install package: {mapping.package_name}"
                     )
-                # Also suggest alternatives
                 for alt in (mapping.alternatives or [])[:3]:
                     if alt not in pip_requirements:
                         analysis.alternative_packages.append(alt)
                 analysis.confidence = mapping.confidence
             else:
-                # Try to guess package name
                 analysis.alternative_packages.append(missing_module)
                 analysis.suggested_fixes.append(
                     f"Try installing: {missing_module}"
@@ -346,7 +322,6 @@ class FailureAnalyzer:
             root_cause=error_message[:200],
         )
 
-        # Extract line number if available
         line_match = re.search(r"line (\d+)", error_message)
         if line_match:
             line_num = int(line_match.group(1))
@@ -375,7 +350,6 @@ class FailureAnalyzer:
             confidence=0.9,
         )
 
-        # Check what's actually defined at top level
         import ast
         try:
             tree = ast.parse(code)
@@ -421,7 +395,6 @@ class FailureAnalyzer:
             root_cause=error_message[:200],
         )
 
-        # Categorize runtime error
         full_text = f"{error_message}\n{stderr}"
 
         if "TypeError" in full_text:
@@ -459,7 +432,6 @@ class FailureAnalyzer:
             root_cause=error_message[:200],
         )
 
-        # Try to extract conflicting packages
         conflict_patterns = [
             r"incompatible.*(\w+)",
             r"requires (\w+)",
@@ -528,7 +500,6 @@ class FailureAnalyzer:
         limit: int = 5,
     ) -> list[dict]:
         """Find similar past failures for learning."""
-        # Search for failures with same capability and error type
         async with self.session_factory() as db:
             result = await db.execute(
                 select(SkillBuildAttempt)
@@ -545,7 +516,6 @@ class FailureAnalyzer:
 
             similar = []
             for failure in failures:
-                # Check if there was a later success for this capability
                 success_result = await db.execute(
                     select(SkillBuildAttempt)
                     .where(
@@ -591,7 +561,6 @@ class FailureAnalyzer:
         Returns:
             StrategyProposal with recommended next strategy
         """
-        # First attempt — always start with "direct"
         if current_attempt_number <= 1:
             return StrategyProposal(
                 strategy_id="direct",
@@ -599,25 +568,21 @@ class FailureAnalyzer:
                 confidence=0.5,
             )
 
-        # Load history
         history = await self.get_failure_history(capability)
         tried_strategies = {
             a.strategy_id for a in history if a.strategy_id
         }
         related_ids = [a.id for a in history[:5]]
 
-        # Collect lessons from history
         hints = []
         for attempt in history:
             if attempt.lesson_learned:
                 hints.append(attempt.lesson_learned)
 
-        # Pick strategy candidates based on error type
         candidates = self.STRATEGY_MAP.get(
             error_type_classified or "", self.DEFAULT_STRATEGIES
         )
 
-        # Find first untried strategy
         for strategy in candidates:
             if strategy not in tried_strategies:
                 return StrategyProposal(
@@ -628,7 +593,6 @@ class FailureAnalyzer:
                     hints=hints[:3],
                 )
 
-        # All strategies tried — fall back to "from_scratch" with lessons
         return StrategyProposal(
             strategy_id="from_scratch",
             rationale=f"All {len(candidates)} strategies exhausted — starting fresh with accumulated lessons",
@@ -694,7 +658,7 @@ class FailureAnalyzer:
             team_role=team_role,
             attempt_number=attempt_number,
             approach=approach,
-            code_snapshot=code[:10000] if code else None,  # Truncate for storage
+            code_snapshot=code[:10000] if code else None,
             pip_requirements=pip_requirements or [],
             system_packages=system_packages or [],
             success=success,
@@ -780,11 +744,8 @@ class FailureAnalyzer:
 
         Updates package mappings and research cache with successful data.
         """
-        # Update package mapping confidence for used packages
         async with self.session_factory() as db:
             for package in pip_requirements:
-                # Try to find which module this package provides
-                # This is a simplified approach - could be improved with actual inspection
                 module_name = package.replace("-", "_").lower()
 
                 result = await db.execute(
@@ -798,7 +759,6 @@ class FailureAnalyzer:
                     mapping.success_count += 1
                     mapping.confidence = min(1.0, mapping.confidence + 0.05)
                 else:
-                    # Check if this module is imported in the code
                     import re
                     import_patterns = [
                         rf"^import\s+{re.escape(module_name)}",
@@ -807,7 +767,6 @@ class FailureAnalyzer:
 
                     for pattern in import_patterns:
                         if re.search(pattern, code, re.MULTILINE | re.IGNORECASE):
-                            # Create new mapping
                             new_mapping = PackageMapping(
                                 id=str(uuid.uuid4()),
                                 module_name=module_name,

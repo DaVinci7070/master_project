@@ -1,11 +1,3 @@
-"""
-Pydantic schemas for Prompt Engineer operations.
-
-These schemas handle validation for:
-- Prompt generation requests (PromptGenerationRequest, GeneratedPrompt)
-- Prompt modification requests (PromptModificationRequest, PromptModification)
-- Meta-prompting LLM input/output with schema contracts
-"""
 from typing import Optional
 
 from pydantic import BaseModel, Field, ConfigDict

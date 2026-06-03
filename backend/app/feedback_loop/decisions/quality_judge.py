@@ -1,12 +1,3 @@
-"""
-Quality Judge Service for LLM-as-judge quality scoring.
-
-This service uses an LLM to evaluate the quality of execution outputs
-on a 0-1 scale across multiple dimensions (relevance, accuracy, completeness,
-clarity, helpfulness).
-
-Part of the A/B testing infrastructure for measuring quality improvements.
-"""
 import logging
 from pydantic import BaseModel, Field, ValidationError
 
@@ -87,22 +78,19 @@ class QualityJudgeService:
         log.info("Scoring execution output quality via LLM-as-judge...")
 
         try:
-            # Build user prompt with input and output
             user_prompt = self._build_evaluation_prompt(
                 input_content=input_content,
                 output_content=output_content,
             )
 
-            # Build JSON schema for structured output
             json_schema = self._build_json_schema()
 
-            # Call LLM with structured JSON output
             response = await self.llm.chat(
                 messages=[
                     {"role": "system", "content": QUALITY_JUDGE_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.1,  # Low temperature for consistent scoring
+                temperature=0.1,
                 response_format={
                     "type": "json_schema",
                     "json_schema": {
@@ -115,7 +103,6 @@ class QualityJudgeService:
 
             log.debug(f"LLM response: {response.content[:200]}...")
 
-            # Parse and validate the response
             result = QualityScore.model_validate_json(response.content)
 
             log.info(f"Quality scoring complete: score={result.score:.3f}")
@@ -160,7 +147,6 @@ class QualityJudgeService:
         Returns:
             Formatted prompt string for the LLM.
         """
-        # Truncate very long content to prevent token overflow
         max_length = 3000
         input_truncated = input_content[:max_length]
         output_truncated = output_content[:max_length]

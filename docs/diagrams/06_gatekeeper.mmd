@@ -1,0 +1,75 @@
+%%{init: {'theme':'base', 'fontFamily':'Arial, Helvetica, sans-serif', 'themeVariables': {
+  'fontFamily': 'Arial, Helvetica, sans-serif',
+  'fontSize': '14px',
+  'lineColor': '#9AA7C7',
+  'primaryTextColor': '#26344D',
+  'clusterBorder': '#DCE3F2'
+}}}%%
+flowchart TB
+    subgraph Legende[" Legende "]
+        direction LR
+        K1("AST-Prüfung")
+        K2("Alignment")
+        K3("Entscheidung")
+        K4("Ergebnis")
+        K1 ~~~ K2 ~~~ K3 ~~~ K4
+    end
+
+    IN(["Neuer Skill<br/>Code + Beschreibung"])
+
+    subgraph S1["Stufe 1 — CodeValidator (AST)"]
+        direction TB
+        V1("Import-Check<br/>ALLOWLIST (typing, math, json, re …)")
+        V2("Blocked-Names<br/>eval, exec, os, subprocess, socket, pickle, __import__ …")
+        V3("Struktur + Pfade<br/>execute(input_data: dict), keine Hardcoded-Paths")
+        V1 --> V2 --> V3
+    end
+
+    D1{"AST valide?"}
+
+    subgraph S2["Stufe 2 — CodeAlignmentValidator"]
+        direction TB
+        P1("Phase 1 · Reconstruction<br/>LLM beschreibt Code blind")
+        P2("Phase 2 · Alignment<br/>Semantic-Score ≥ 0.6")
+        P3("Phase 3 · Constitution<br/>7 Regeln (kein Sleeper-Trigger, kein globaler State …)")
+        P1 --> P2 --> P3
+    end
+
+    D2{"aligned UND<br/>keine Violations?"}
+
+    PASS(["PASS<br/>→ Sandbox-Test → Aktivierung (DB-06)"])
+    BLOCK("BLOCK<br/>Grund geloggt · Re-Build / Verwerfen")
+
+    Legende ~~~ IN
+    IN --> V1
+    V3 --> D1
+    D1 -->|"nein"| BLOCK
+    D1 -->|"ja"| P1
+    P3 --> D2
+    D2 -->|"ja"| PASS
+    D2 -->|"nein"| BLOCK
+
+    classDef io fill:#E0E7FF,stroke:#7C8CE4,stroke-width:1.5px,color:#26344D;
+    classDef purple fill:#E7DEFA,stroke:#9676E0,stroke-width:1.5px,color:#26344D;
+    classDef blue fill:#D7E6FF,stroke:#6F9CEB,stroke-width:1.5px,color:#26344D;
+    classDef teal fill:#D2F0EC,stroke:#46B5A8,stroke-width:1.5px,color:#26344D;
+    classDef peach fill:#FBE3D2,stroke:#EE9F62,stroke-width:1.5px,color:#26344D;
+    classDef green fill:#D8F1DF,stroke:#5BB97D,stroke-width:1.5px,color:#26344D;
+    classDef rose fill:#FBDCE6,stroke:#E5759B,stroke-width:1.5px,color:#26344D;
+
+    class IN io;
+    class V1,V2,V3 purple;
+    class P1,P2 blue;
+    class P3 teal;
+    class D1,D2 peach;
+    class PASS green;
+    class BLOCK rose;
+
+    class K1 purple;
+    class K2 blue;
+    class K3 peach;
+    class K4 green;
+
+    style S1 fill:#F4EFFE,stroke:#DCCDF7;
+    style S2 fill:#EEF4FF,stroke:#C7D7F5;
+    style Legende fill:#FBFCFE,stroke:#DCE3F2;

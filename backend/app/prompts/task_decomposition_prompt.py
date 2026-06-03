@@ -1,15 +1,3 @@
-"""
-Meta-prompt for task decomposition in Developer Team orchestrator.
-
-Used by DeveloperTeamOrchestrator to analyze complex development tasks
-and break them into file-level subtasks that can be executed in parallel.
-
-Key principles:
-- Maximum 10 files per task (enforced by schema)
-- Identify execution waves (parallel groups)
-- Define interface contracts between files
-- Minimize cross-file dependencies
-"""
 import json
 from typing import Any, Dict, List
 

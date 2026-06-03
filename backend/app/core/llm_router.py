@@ -1,13 +1,3 @@
-"""
-LLM Router - Task-specific model routing for skill development.
-
-Routes different tasks to appropriate models:
-- Research: Fast model for broad search
-- Architecture: Strong model for design decisions
-- Implementation: Fast model for iteration
-- Review: Strong model for quality checks
-"""
-
 import logging
 import os
 from enum import Enum
@@ -29,19 +19,16 @@ class TaskType(str, Enum):
     GENERAL = "general"
 
 
-# Default model assignments per task type
-# These can be overridden via environment variables
 DEFAULT_TASK_MODELS = {
-    TaskType.RESEARCH: "gemini/gemini-2.0-flash",  # Fast for research
-    TaskType.ARCHITECTURE: "gemini/gemini-3-flash-preview",  # Strong for design
-    TaskType.IMPLEMENTATION: "gemini/gemini-3-flash-preview",  # Strong for code generation
-    TaskType.REVIEW: "gemini/gemini-3-flash-preview",  # Strong for review
-    TaskType.CODE_FIX: "gemini/gemini-2.0-flash",  # Fast for fixes
-    TaskType.SEMANTIC_VALIDATION: "gemini/gemini-3-flash-preview",  # Strong for validation
-    TaskType.GENERAL: "gemini/gemini-2.0-flash",  # Default
+    TaskType.RESEARCH: "gemini/gemini-2.0-flash",
+    TaskType.ARCHITECTURE: "gemini/gemini-3-flash-preview",
+    TaskType.IMPLEMENTATION: "gemini/gemini-3-flash-preview",
+    TaskType.REVIEW: "gemini/gemini-3-flash-preview",
+    TaskType.CODE_FIX: "gemini/gemini-2.0-flash",
+    TaskType.SEMANTIC_VALIDATION: "gemini/gemini-3-flash-preview",
+    TaskType.GENERAL: "gemini/gemini-2.0-flash",
 }
 
-# Environment variable names for model overrides
 ENV_MODEL_OVERRIDES = {
     TaskType.RESEARCH: "SKILL_RESEARCHER_MODEL",
     TaskType.ARCHITECTURE: "SKILL_ARCHITECT_MODEL",
@@ -90,7 +77,6 @@ class LLMRouter:
         task_models = {}
 
         for task_type in TaskType:
-            # Priority: override > env > default
             if task_type in self._model_overrides:
                 model = self._model_overrides[task_type]
             else:
@@ -191,7 +177,6 @@ class LLMRouter:
         return {t.value: m for t, m in self._task_models.items()}
 
 
-# Global router instance
 _router: Optional[LLMRouter] = None
 
 
@@ -208,7 +193,6 @@ def get_client_for_task(task_type: TaskType) -> LLMClient:
     return get_router().get_client(task_type)
 
 
-# Model characteristics for reference
 MODEL_CHARACTERISTICS = {
     "gemini/gemini-2.0-flash": {
         "provider": "google",

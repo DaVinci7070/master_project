@@ -1,4 +1,3 @@
-"""Skill validation service with parent regression check."""
 import json
 import logging
 from typing import Optional
@@ -42,7 +41,6 @@ class SkillValidator:
         Returns:
             ActivationResult with approved/rejected status
         """
-        # 1. Run test suite on new skill
         new_result = await self._run_test_suite(skill)
 
         if new_result.total == 0:
@@ -60,7 +58,6 @@ class SkillValidator:
                 test_result=new_result,
             )
 
-        # 2. Parent comparison if applicable
         if skill.parent_id:
             async with self.session_factory() as db:
                 parent = await db.execute(
@@ -161,11 +158,9 @@ class SkillValidator:
         new_result: Optional[TestSuiteResult] = None,
     ) -> ComparisonResult:
         """Compare skill against its parent using union of test cases."""
-        # Union of test cases from both skills
         new_tests = skill.test_cases or []
         parent_tests = parent.test_cases or []
 
-        # Merge: use all tests, deduplicate by name
         seen_names = set()
         combined_tests = []
         for tc in new_tests + parent_tests:
@@ -177,11 +172,8 @@ class SkillValidator:
         if not combined_tests:
             return ComparisonResult(details="No test cases available for comparison")
 
-        # Create temporary skill-like objects with combined test cases for scoring
-        # Run new skill with combined tests
         new_score = await self._score_with_tests(skill, combined_tests)
 
-        # Run parent with combined tests
         parent_score = await self._score_with_tests(parent, combined_tests)
 
         regression = new_score < parent_score
@@ -230,7 +222,6 @@ class SkillValidator:
         """Build test wrapper for a single test case."""
         expected_keys = expected_keys or []
 
-        # If no input or file references, do smoke test
         file_keys = {"file_path", "audio_file_path", "path", "input_file", "filepath"}
         has_file_ref = any(
             k.lower() in file_keys and isinstance(v, str)

@@ -21,7 +21,6 @@ async def get_current_user(request: Request):
             detail={"error": "Invalid API secret", "error_code": "secret_invalid"},
         )
 
-    # Return a simple namespace so `.id` still works if anyone accesses user.id
     class _User:
         id = settings.default_user_id
 

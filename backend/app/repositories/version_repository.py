@@ -1,9 +1,3 @@
-"""
-Generic version repository for versioned models.
-
-Provides version history, retrieval, and rollback operations
-using SQLAlchemy-Continuum's version tracking.
-"""
 from typing import Generic, TypeVar, Optional, List, Any
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,12 +35,9 @@ class VersionRepository(Generic[T]):
     def version_class(self):
         """Get the Continuum version class for this model."""
         if self._version_class is None:
-            # SQLAlchemy-Continuum adds a __versioned__ attribute with version_class
             self._version_class = self.model_class.__versioned__.get('class_')
             if self._version_class is None:
-                # Fallback: Continuum names it <ModelName>Version
                 version_class_name = f"{self.model_class.__name__}Version"
-                # Get from mapper registry
                 for mapper in class_mapper(self.model_class).registry.mappers:
                     if mapper.class_.__name__ == version_class_name:
                         self._version_class = mapper.class_
@@ -87,7 +78,6 @@ class VersionRepository(Generic[T]):
         if version_cls is None:
             return []
 
-        # Get all versions for this entity, ordered by transaction_id descending
         stmt = (
             select(version_cls)
             .where(version_cls.id == entity_id)
@@ -98,7 +88,6 @@ class VersionRepository(Generic[T]):
 
         history = []
         for idx, version in enumerate(reversed(versions)):
-            # Convert version object to dict
             version_data = self._version_to_dict(version)
             history.append({
                 'version_index': idx,
@@ -107,7 +96,6 @@ class VersionRepository(Generic[T]):
                 'data': version_data,
             })
 
-        # Reverse to return newest first
         return list(reversed(history))
 
     async def get_version_at(self, entity_id: str, version_index: int) -> Optional[dict]:
@@ -123,7 +111,6 @@ class VersionRepository(Generic[T]):
         """
         history = await self.get_version_history(entity_id)
 
-        # Find the version by index (history is newest-first, so reverse to find)
         for version_entry in history:
             if version_entry['version_index'] == version_index:
                 return version_entry['data']
@@ -146,23 +133,19 @@ class VersionRepository(Generic[T]):
         Returns:
             The updated entity if successful, None if entity or version not found
         """
-        # Get current entity
         entity = await self.get_by_id(entity_id)
         if entity is None:
             return None
 
-        # Get the target version data
         version_data = await self.get_version_at(entity_id, version_index)
         if version_data is None:
             return None
 
-        # Apply version data to entity (excluding id, created_at, and relationships)
         exclude_fields = {'id', 'created_at', 'transaction_id', 'operation_type'}
         for key, value in version_data.items():
             if key not in exclude_fields and hasattr(entity, key):
                 setattr(entity, key, value)
 
-        # Flush to trigger Continuum to create a new version
         await self.session.flush()
 
         return entity
@@ -178,11 +161,9 @@ class VersionRepository(Generic[T]):
             Dictionary representation of the version
         """
         result = {}
-        # Get column names from the version class
         mapper = class_mapper(version.__class__)
         for column in mapper.columns:
             key = column.key
-            # Skip Continuum internal columns
             if key in ('transaction_id', 'end_transaction_id', 'operation_type'):
                 continue
             value = getattr(version, key, None)

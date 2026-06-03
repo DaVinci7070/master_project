@@ -1,8 +1,3 @@
-"""
-API endpoints for A/B test management.
-
-Provides access to A/B tests, their status, and results.
-"""
 import logging
 from datetime import datetime
 from typing import Optional
@@ -20,7 +15,6 @@ router = APIRouter(prefix="/ab-tests", tags=["ab-tests"])
 log = logging.getLogger(__name__)
 
 
-# Response models
 class ABTestSampleResponse(BaseModel):
     """A/B test sample response."""
     model_config = ConfigDict(from_attributes=True)
@@ -106,7 +100,6 @@ async def list_ab_tests(
     """
     log.info(f"Listing A/B tests: status={status}, artifact_type={artifact_type}, limit={limit}, offset={offset}")
 
-    # Build query
     stmt = select(ABTest).order_by(ABTest.created_at.desc())
 
     if status:
@@ -115,12 +108,10 @@ async def list_ab_tests(
     if artifact_type:
         stmt = stmt.where(ABTest.artifact_type == artifact_type)
 
-    # Get total count
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_result = await session.execute(count_stmt)
     total = total_result.scalar() or 0
 
-    # Apply pagination
     stmt = stmt.limit(limit).offset(offset)
 
     result = await session.execute(stmt)
@@ -170,7 +161,7 @@ async def get_active_tests(
                 status=t.status,
                 samples_baseline=t.samples_baseline,
                 samples_improvement=t.samples_improvement,
-                is_significant=None,  # Active tests don't have results yet
+                is_significant=None,
                 created_at=t.created_at.isoformat() if t.created_at else "",
                 completed_at=None,
             )
@@ -199,7 +190,6 @@ async def get_ab_test(
     if not test:
         raise HTTPException(status_code=404, detail=f"A/B test not found: {test_id}")
 
-    # Get samples if requested
     samples = []
     if include_samples:
         sample_records = await repo.get_samples(test_id)

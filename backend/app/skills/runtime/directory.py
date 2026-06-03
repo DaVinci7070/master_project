@@ -1,13 +1,3 @@
-"""
-Skill Directory Service - OpenClaw-style SKILL.md format.
-
-Manages skills as directory structures with:
-- SKILL.md: Metadata + documentation (YAML frontmatter + Markdown)
-- scripts/: Executable Python code
-- requirements.txt: pip dependencies
-- tests/: Test cases
-"""
-
 import hashlib
 import logging
 import shutil
@@ -32,7 +22,7 @@ class SkillDirectory:
     description: str
     skill_md: str
     metadata: dict
-    scripts: dict[str, str]  # filename -> content
+    scripts: dict[str, str]
     requirements: list[str]
     system_packages: list[str] = field(default_factory=list)
     test_cases: list[dict] = field(default_factory=list)
@@ -153,31 +143,25 @@ Returns a dict with:
         Returns:
             SkillDirectory object representing the created skill
         """
-        # Normalize name
         name = self._slugify(name)
         apt_requirements = apt_requirements or []
         test_cases = test_cases or []
 
         skill_path = self.base_path / name
 
-        # Remove existing if present
         if skill_path.exists():
             shutil.rmtree(skill_path)
             log.info(f"Removed existing skill directory: {name}")
 
-        # Create directory structure
         skill_path.mkdir(parents=True, exist_ok=True)
 
-        # Create scripts/
         scripts_path = skill_path / "scripts"
         scripts_path.mkdir(exist_ok=True)
         (scripts_path / "__init__.py").write_text("")
         (scripts_path / "main.py").write_text(code)
 
-        # Create requirements.txt
         (skill_path / "requirements.txt").write_text("\n".join(pip_requirements))
 
-        # Create SKILL.md
         generated_skill_id = skill_id or hashlib.sha256(name.encode()).hexdigest()[:12]
         skill_md = self._generate_skill_md(
             name=name,
@@ -189,7 +173,6 @@ Returns a dict with:
         )
         (skill_path / "SKILL.md").write_text(skill_md)
 
-        # Create tests/ if test cases provided
         if test_cases:
             tests_path = skill_path / "tests"
             tests_path.mkdir(exist_ok=True)
@@ -217,7 +200,6 @@ Returns a dict with:
         if not skill_path.exists():
             return None
 
-        # Read SKILL.md
         skill_md_path = skill_path / "SKILL.md"
         if not skill_md_path.exists():
             log.warning(f"Skill {name} missing SKILL.md")
@@ -226,7 +208,6 @@ Returns a dict with:
         skill_md = skill_md_path.read_text()
         metadata = self._parse_frontmatter(skill_md)
 
-        # Read scripts
         scripts = {}
         scripts_path = skill_path / "scripts"
         if scripts_path.exists():
@@ -234,7 +215,6 @@ Returns a dict with:
                 if py_file.name != "__init__.py":
                     scripts[py_file.name] = py_file.read_text()
 
-        # Read requirements
         requirements = []
         req_path = skill_path / "requirements.txt"
         if req_path.exists():
@@ -244,11 +224,9 @@ Returns a dict with:
                 if line.strip() and not line.startswith("#")
             ]
 
-        # Read test cases from metadata or tests/
         test_cases = []
         tests_path = skill_path / "tests" / "test_main.py"
         if tests_path.exists():
-            # Could parse test file for test cases, for now just note it exists
             test_cases = [{"file": "test_main.py"}]
 
         return SkillDirectory(
@@ -291,15 +269,12 @@ Returns a dict with:
         if not skill_path.exists():
             return None
 
-        # Update code
         if code is not None:
             (skill_path / "scripts" / "main.py").write_text(code)
 
-        # Update requirements
         if pip_requirements is not None:
             (skill_path / "requirements.txt").write_text("\n".join(pip_requirements))
 
-        # Update SKILL.md description
         if description is not None:
             skill = self.load_skill(name)
             if skill:

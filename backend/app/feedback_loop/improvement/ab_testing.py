@@ -1,15 +1,3 @@
-"""
-A/B Test Service for lifecycle orchestration of A/B tests.
-
-This service coordinates all A/B testing operations:
-- Creating tests (with active test checking)
-- Traffic splitting (50/50 random assignment)
-- Sample recording with quality scoring and composite metrics
-- Test completion with statistical significance testing
-- Auto-promotion on success, auto-rollback on failure
-
-Part of the A/B testing infrastructure for validating improvements.
-"""
 import logging
 import random
 from dataclasses import dataclass
@@ -158,7 +146,6 @@ class ABTestService:
             f"artifact={artifact_type}:{artifact_id[:8]}..."
         )
 
-        # Check for active test on this artifact
         active_test = await self.ab_test_repo.get_active_test_for_artifact(
             artifact_type=artifact_type,
             artifact_id=artifact_id,
@@ -175,14 +162,11 @@ class ABTestService:
                 artifact_id=artifact_id,
                 improvement_attempt_id=improvement_attempt_id,
             )
-            # Note: Improvement remains in "pending" status, not "testing"
-            # Control Agent can check this and decide to proceed or wait
             raise ValueError(
                 f"Active test already running for {artifact_type}:{artifact_id}, "
                 f"improvement queued for testing after completion"
             )
 
-        # Create new test
         test_data = ABTestCreate(
             improvement_attempt_id=improvement_attempt_id,
             artifact_type=artifact_type,
@@ -194,7 +178,6 @@ class ABTestService:
 
         test = await self.ab_test_repo.create_test(test_data)
 
-        # Update improvement attempt status to "testing"
         await self.improvement_repo.update_status(
             attempt_id=improvement_attempt_id,
             status="testing",
@@ -218,7 +201,6 @@ class ABTestService:
         Returns:
             "baseline" or "improvement" with equal probability.
         """
-        # 50/50 split
         variant = "baseline" if random.random() < 0.5 else "improvement"
         log.debug(f"Assigned variant: {variant}")
         return variant
@@ -260,13 +242,11 @@ class ABTestService:
             f"execution_id={execution_id[:8]}..."
         )
 
-        # Get test to access metric_weights
         test = await self.ab_test_repo.get_test(test_id)
         if not test:
             log.error(f"A/B test not found: {test_id}")
             raise ValueError(f"A/B test not found: {test_id}")
 
-        # Get quality score via LLM-as-judge
         try:
             quality_result = await self.quality_judge.score_execution(
                 input_content=input_content,
@@ -283,7 +263,6 @@ class ABTestService:
             )
             quality_score = 0.5
 
-        # Compute composite score
         composite_score = self.stats.compute_composite_score(
             quality=quality_score,
             latency_ms=latency_ms,
@@ -297,7 +276,6 @@ class ABTestService:
             f"(quality={quality_score:.3f}, latency={latency_ms:.1f}ms, error={is_error})"
         )
 
-        # Create sample
         sample_data = ABTestSampleCreate(
             test_id=test_id,
             execution_id=execution_id,
@@ -315,7 +293,6 @@ class ABTestService:
             f"composite_score={composite_score:.3f}"
         )
 
-        # Check if test is now complete
         if await self.ab_test_repo.has_minimum_samples(test_id):
             log.info(
                 f"Test {test_id[:8]}... has minimum samples, triggering completion"
@@ -399,13 +376,11 @@ class ABTestService:
         """
         log.info(f"Computing result for test {test_id[:8]}...")
 
-        # Get test
         test = await self.ab_test_repo.get_test(test_id)
         if not test:
             log.error(f"A/B test not found: {test_id}")
             raise ValueError(f"A/B test not found: {test_id}")
 
-        # Get all samples for both variants
         baseline_samples = await self.ab_test_repo.get_samples(
             test_id=test_id, variant="baseline"
         )
@@ -423,7 +398,6 @@ class ABTestService:
                 f"improvement={len(improvement_samples)}"
             )
 
-        # Extract composite scores
         baseline_scores = [s.composite_score for s in baseline_samples]
         improvement_scores = [s.composite_score for s in improvement_samples]
 
@@ -432,13 +406,11 @@ class ABTestService:
             f"improvement n={len(improvement_scores)}"
         )
 
-        # Call statistical analyzer
         sig_result = self.stats.compute_significance(
             baseline_scores=baseline_scores,
             improvement_scores=improvement_scores,
         )
 
-        # Map SignificanceResult -> ABTestResult
         result = ABTestResult(
             test_id=test_id,
             p_value=sig_result.p_value,
@@ -481,16 +453,13 @@ class ABTestService:
         """
         log.info(f"Completing test {test_id[:8]}...")
 
-        # Get test
         test = await self.ab_test_repo.get_test(test_id)
         if not test:
             log.error(f"A/B test not found: {test_id}")
             raise ValueError(f"A/B test not found: {test_id}")
 
-        # Compute result
         result = await self.compute_result(test_id)
 
-        # Update test status with all statistical fields
         await self.ab_test_repo.update_test_status(
             test_id=test_id,
             status="completed",
@@ -503,9 +472,7 @@ class ABTestService:
             improvement_mean=result.improvement_mean,
         )
 
-        # Handle result: auto-promote or auto-rollback
         if result.is_significant:
-            # Auto-promote: mark improvement as success
             log.info(
                 f"Test {test_id[:8]}...: Improvement SIGNIFICANT "
                 f"(p={result.p_value:.4f}, effect={result.effect_size:.2%}), "
@@ -522,19 +489,16 @@ class ABTestService:
             )
 
         else:
-            # Auto-rollback: revert to baseline
             log.info(
                 f"Test {test_id[:8]}...: Improvement NOT significant "
                 f"(p={result.p_value:.4f}, effect={result.effect_size:.2%}), "
                 f"rolling back"
             )
 
-            # Get improvement attempt for rollback
             attempt = await self.improvement_repo.get_by_id(
                 test.improvement_attempt_id
             )
             if attempt:
-                # Call rollback service
                 rollback_success = await self.rollback.rollback_improvement(
                     attempt=attempt,
                     reason=f"A/B test not significant: p={result.p_value:.4f}",
@@ -549,7 +513,6 @@ class ABTestService:
                         f"Rollback failed for improvement_attempt_id={attempt.id}"
                     )
 
-                # Mark improvement as failed
                 await self.improvement_repo.mark_completed(
                     attempt_id=attempt.id,
                     success=False,
@@ -565,5 +528,4 @@ class ABTestService:
 
         log.info(f"Test {test_id[:8]}... completed")
 
-        # Update test status to reflect completion timestamp
-        await self.ab_test_repo.get_test(test_id)  # Refresh for logging
+        await self.ab_test_repo.get_test(test_id)

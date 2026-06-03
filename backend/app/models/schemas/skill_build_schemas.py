@@ -1,13 +1,3 @@
-"""
-Pydantic schemas for team-based skill development.
-
-Defines the data structures for:
-- Team roles and configurations
-- Research contexts
-- Architecture designs
-- Code reviews
-- Build results
-"""
 from datetime import datetime
 from enum import Enum
 from typing import Optional, Any
@@ -16,48 +6,46 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class TeamRole(str, Enum):
     """Roles in the skill development team."""
-    RESEARCHER = "researcher"     # Researches solutions, finds packages, examples
-    ARCHITECT = "architect"       # Designs API, test cases, dependencies
-    IMPLEMENTER = "implementer"   # Writes the actual code
-    REVIEWER = "reviewer"         # Reviews code for quality, security
-    PROPOSER = "proposer"         # Proposes planning-skills (reasoning instructions)
-    TESTER = "tester"             # Runs tests, validates output
+    RESEARCHER = "researcher"
+    ARCHITECT = "architect"
+    IMPLEMENTER = "implementer"
+    REVIEWER = "reviewer"
+    PROPOSER = "proposer"
+    TESTER = "tester"
 
 
 class ErrorType(str, Enum):
     """Classification of errors for learning."""
-    IMPORT_ERROR = "import_error"       # Missing module/package
-    SYNTAX_ERROR = "syntax_error"       # Invalid Python syntax
-    RUNTIME_ERROR = "runtime_error"     # Exception during execution
-    SEMANTIC_ERROR = "semantic_error"   # Wrong output/behavior
-    TIMEOUT_ERROR = "timeout_error"     # Execution took too long
-    RESOURCE_ERROR = "resource_error"   # OOM, disk full, etc.
-    DEPENDENCY_ERROR = "dependency_error"  # Package conflict, version issue
-    STRUCTURE_ERROR = "structure_error"    # Missing execute(), wrong signature
+    IMPORT_ERROR = "import_error"
+    SYNTAX_ERROR = "syntax_error"
+    RUNTIME_ERROR = "runtime_error"
+    SEMANTIC_ERROR = "semantic_error"
+    TIMEOUT_ERROR = "timeout_error"
+    RESOURCE_ERROR = "resource_error"
+    DEPENDENCY_ERROR = "dependency_error"
+    STRUCTURE_ERROR = "structure_error"
 
 
 class SkillTeamConfig(BaseModel):
     """Configuration for team-based skill development."""
     model_config = ConfigDict(frozen=True)
 
-    # Team composition
     enable_researcher: bool = Field(default=True, description="Enable research phase")
     enable_architect: bool = Field(default=True, description="Enable architecture design")
     enable_reviewer: bool = Field(default=True, description="Enable code review")
 
-    # Model assignments (can be overridden per role)
     researcher_model: Optional[str] = Field(default=None, description="Model for researcher role")
     architect_model: Optional[str] = Field(default=None, description="Model for architect role")
     implementer_model: Optional[str] = Field(default=None, description="Model for implementer role")
     reviewer_model: Optional[str] = Field(default=None, description="Model for reviewer role")
 
-    # Iteration limits
     max_implementation_iterations: int = Field(default=10, ge=1, le=10)
     max_review_iterations: int = Field(default=2, ge=1, le=5)
 
-    # Validation
     require_semantic_validation: bool = Field(default=True)
     semantic_similarity_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    require_alignment_validation: bool = Field(default=False)
+    alignment_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
 
 
 class ResearchContext(BaseModel):
@@ -65,7 +53,6 @@ class ResearchContext(BaseModel):
     capability: str = Field(..., description="The capability being researched")
     query: str = Field(default="", description="Search query used")
 
-    # Package recommendations
     pip_packages: list[str] = Field(default_factory=list, description="Recommended pip packages")
     system_packages: list[str] = Field(default_factory=list, description="Recommended apt packages")
     package_rationale: dict[str, str] = Field(
@@ -73,19 +60,15 @@ class ResearchContext(BaseModel):
         description="Why each package was recommended"
     )
 
-    # Code examples
     code_examples: list[str] = Field(default_factory=list, description="Example implementations")
     example_sources: list[str] = Field(default_factory=list, description="Sources of examples")
 
-    # Implementation notes
     implementation_approach: str = Field(default="", description="Recommended approach")
     potential_issues: list[str] = Field(default_factory=list, description="Known issues to watch for")
     alternative_approaches: list[str] = Field(default_factory=list, description="Fallback approaches")
 
-    # Similar past solutions
     similar_skills: list[dict] = Field(default_factory=list, description="Similar successful skills")
 
-    # Metadata
     from_cache: bool = Field(default=False, description="Whether from cache")
     research_time_ms: int = Field(default=0, ge=0)
 
@@ -113,28 +96,21 @@ class ArchitectureDesign(BaseModel):
     """Design output from architect phase."""
     capability: str = Field(..., description="Capability being designed")
 
-    # API Design
     function_signature: str = Field(..., description="Function signature")
     input_schema: dict = Field(default_factory=dict, description="Input schema")
     output_schema: dict = Field(default_factory=dict, description="Output schema")
 
-    # Dependencies
     pip_requirements: list[str] = Field(default_factory=list)
     system_requirements: list[str] = Field(default_factory=list)
 
-    # Test cases
     test_cases: list[TestCase] = Field(default_factory=list)
 
-    # Error handling strategy
     error_handling: str = Field(default="", description="How errors should be handled")
 
-    # Design rationale
     design_notes: str = Field(default="", description="Explanation of design decisions")
 
-    # Integration plan (from architect)
     integration_plan: Optional[SkillIntegrationPlan] = Field(default=None, description="Where/how to integrate this skill")
 
-    # Metadata
     design_time_ms: int = Field(default=0, ge=0)
 
 
@@ -152,20 +128,16 @@ class ReviewResult(BaseModel):
     approved: bool = Field(..., description="Whether code passed review")
     overall_score: float = Field(default=0.0, ge=0.0, le=1.0, description="0-1 quality score")
 
-    # Findings
     findings: list[ReviewFinding] = Field(default_factory=list)
     critical_count: int = Field(default=0, ge=0)
     warning_count: int = Field(default=0, ge=0)
 
-    # Security check
     security_passed: bool = Field(default=True)
     security_concerns: list[str] = Field(default_factory=list)
 
-    # Suggestions
     improvement_suggestions: list[str] = Field(default_factory=list)
     refactoring_needed: bool = Field(default=False)
 
-    # Metadata
     review_time_ms: int = Field(default=0, ge=0)
 
 
@@ -174,23 +146,30 @@ class SemanticValidationResult(BaseModel):
     passed: bool = Field(..., description="Whether validation passed")
     similarity_score: float = Field(default=0.0, ge=0.0, le=1.01)
 
-    # Comparison details
     expected_type: str = Field(default="any")
     actual_type: str = Field(default="unknown")
     type_match: bool = Field(default=False)
 
-    # Structure comparison (for dicts/lists)
     structure_match: bool = Field(default=True)
     missing_keys: list[str] = Field(default_factory=list)
     extra_keys: list[str] = Field(default_factory=list)
 
-    # Value comparison
     value_comparison: str = Field(default="", description="Description of value differences")
 
-    # LLM assessment (if used)
     llm_reasoning: Optional[str] = Field(default=None)
 
-    # Metadata
+    validation_time_ms: int = Field(default=0, ge=0)
+
+
+class AlignmentResult(BaseModel):
+    """Ergebnis der Code-Description-Alignment-Pruefung (RQ3)."""
+    is_aligned: bool = Field(..., description="Ob Code zur Beschreibung passt")
+    alignment_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    reconstructed_description: str = Field(default="", description="Unabhaengig generierte Beschreibung des Codes")
+    discrepancies: list[str] = Field(default_factory=list, description="Was der Code tut, das die Beschreibung nicht erwaehnt")
+    missing_functionality: list[str] = Field(default_factory=list, description="Was die Beschreibung verspricht, aber der Code nicht liefert")
+    constitution_violations: list[str] = Field(default_factory=list, description="Verletzte Safety-Regeln")
+    reasoning: str = Field(default="", description="LLM-Begruendung")
     validation_time_ms: int = Field(default=0, ge=0)
 
 
@@ -198,38 +177,31 @@ class SkillBuildResult(BaseModel):
     """Complete result of team-based skill building."""
     success: bool = Field(..., description="Whether skill was built successfully")
 
-    # Artifact info
     skill_id: Optional[str] = Field(default=None)
     skill_name: Optional[str] = Field(default=None)
     bound_to_agent_id: Optional[str] = Field(default=None)
 
-    # Phase results
     research: Optional[ResearchContext] = Field(default=None)
     design: Optional[ArchitectureDesign] = Field(default=None)
     review: Optional[ReviewResult] = Field(default=None)
     semantic_validation: Optional[SemanticValidationResult] = Field(default=None)
+    alignment_validation: Optional[AlignmentResult] = Field(default=None)
 
-    # Integration
     integration_plan: Optional[SkillIntegrationPlan] = Field(default=None)
 
-    # Code
     final_code: Optional[str] = Field(default=None)
     requirements_txt: Optional[str] = Field(default=None)
 
-    # Iterations
     implementation_iterations: int = Field(default=0, ge=0)
     review_iterations: int = Field(default=0, ge=0)
 
-    # Error info (if failed)
     failure_phase: Optional[TeamRole] = Field(default=None, description="Which phase failed")
     failure_reason: Optional[str] = Field(default=None)
     error_type: Optional[ErrorType] = Field(default=None)
 
-    # Timing
     total_time_ms: int = Field(default=0, ge=0)
     phase_times: dict[str, int] = Field(default_factory=dict, description="Time per phase in ms")
 
-    # Learning data
     attempt_id: Optional[str] = Field(default=None, description="SkillBuildAttempt ID for tracking")
 
 
@@ -286,15 +258,12 @@ class FailurePattern(BaseModel):
     pattern_type: str = Field(..., description="Type of failure pattern")
     capability_category: str = Field(..., description="Category of capability affected")
 
-    # Pattern details
     error_signature: str = Field(..., description="Regex or exact match for error")
     root_cause: str = Field(default="", description="Identified root cause")
 
-    # Remediation
     fix_strategy: str = Field(default="", description="How to fix this type of error")
     packages_to_avoid: list[str] = Field(default_factory=list)
     packages_to_prefer: list[str] = Field(default_factory=list)
 
-    # Stats
     occurrence_count: int = Field(default=1, ge=1)
     last_seen: Optional[datetime] = Field(default=None)

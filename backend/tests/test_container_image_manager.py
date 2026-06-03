@@ -1,9 +1,3 @@
-"""
-Tests for ContainerImageManager.
-
-Run with: pytest tests/test_container_image_manager.py -v
-"""
-
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone, timedelta
@@ -226,7 +220,6 @@ class TestFindBestImage:
         """Should find image that covers requirements."""
         mock_db = AsyncMock()
 
-        # Create a matching image
         matching_image = CachedContainerImage(
             id="test",
             image_tag="test:v1",
@@ -281,7 +274,7 @@ class TestFindBestImage:
         result = await manager.find_best_image(["requests"], [])
 
         assert result is not None
-        assert result.image_tag == "test:v1"  # Higher usage count
+        assert result.image_tag == "test:v1"
 
 
 @pytest.mark.asyncio

@@ -1,10 +1,3 @@
-"""
-Analysis models for storing agent analysis findings.
-
-This module implements AnalysisFinding model for persisting analysis results
-that identify issues in agent executions. Findings are append-only artifacts
-linked to ExecutionTelemetry records.
-"""
 import uuid
 from datetime import datetime, timezone
 
@@ -28,7 +21,6 @@ class AnalysisFinding(Base):
     """
     __tablename__ = "analysis_finding"
 
-    # Primary key
     id = Column(
         String(36),
         primary_key=True,
@@ -36,7 +28,6 @@ class AnalysisFinding(Base):
         doc="UUID primary key"
     )
 
-    # Foreign key to execution telemetry
     execution_telemetry_id = Column(
         String(36),
         ForeignKey("execution_telemetry.id"),
@@ -44,7 +35,6 @@ class AnalysisFinding(Base):
         doc="UUID of the execution this finding relates to"
     )
 
-    # Finding classification
     category = Column(
         String(32),
         nullable=False,
@@ -56,7 +46,6 @@ class AnalysisFinding(Base):
         doc="Finding severity: critical, warning, info"
     )
 
-    # Finding content
     evidence = Column(
         Text,
         nullable=False,
@@ -68,14 +57,12 @@ class AnalysisFinding(Base):
         doc="Hypothesis for what could resolve the issue"
     )
 
-    # Priority (set by Product Owner agent)
     priority_rank = Column(
         Integer,
         nullable=True,
         doc="Priority rank set by Product Owner (lower = higher priority)"
     )
 
-    # Execution context snapshots
     input_content = Column(
         Text,
         nullable=True,
@@ -87,7 +74,6 @@ class AnalysisFinding(Base):
         doc="Snapshot of execution output for context"
     )
 
-    # Timestamp
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -95,13 +81,9 @@ class AnalysisFinding(Base):
         doc="When the finding was created"
     )
 
-    # Indexes for common query patterns
     __table_args__ = (
-        # Filter findings by execution
         Index('ix_finding_execution', 'execution_telemetry_id'),
-        # Pattern queries by category and severity
         Index('ix_finding_category_severity', 'category', 'severity'),
-        # Time-series queries
         Index('ix_finding_created', 'created_at'),
     )
 

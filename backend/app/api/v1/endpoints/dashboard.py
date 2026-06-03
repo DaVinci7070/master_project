@@ -1,9 +1,3 @@
-"""
-API endpoints for dashboard metrics and trends.
-
-Provides system health, improvement trends, and recent activity.
-All metrics are runs-based (last N executions) per CONTEXT.md.
-"""
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -22,18 +16,16 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 log = logging.getLogger(__name__)
 
 
-# Response models
 class HealthMetricsResponse(BaseModel):
     """System health metrics."""
     total_executions: int
     successful_executions: int
     failed_executions: int
-    success_rate: float  # Percentage
-    active_executions: int  # Currently running
+    success_rate: float
+    active_executions: int
     avg_latency_ms: Optional[float] = None
-    error_rate: float  # Percentage
+    error_rate: float
     last_execution_at: Optional[str] = None
-    # Resource usage (simplified for now)
     active_agents: int
     active_skills: int
     active_prompts: int
@@ -42,13 +34,12 @@ class HealthMetricsResponse(BaseModel):
 class ImprovementTrendResponse(BaseModel):
     """Improvement trends over recent runs."""
     ab_tests_completed: int
-    ab_tests_successful: int  # Improvements that won
-    ab_test_win_rate: float  # Percentage
-    prompts_evolved: int  # Prompts with children
+    ab_tests_successful: int
+    ab_test_win_rate: float
+    prompts_evolved: int
     skills_created: int
     agents_added: int
-    # Trend direction
-    improvement_trend: str  # "improving", "stable", "declining"
+    improvement_trend: str
 
 
 class RecentExecutionSummary(BaseModel):
@@ -63,7 +54,7 @@ class RecentExecutionSummary(BaseModel):
 class RecentActivityResponse(BaseModel):
     """Recent execution summaries."""
     executions: list[RecentExecutionSummary]
-    total_recent: int  # Count in last N runs
+    total_recent: int
 
 
 class DashboardResponse(BaseModel):
@@ -85,7 +76,6 @@ async def get_health(
     """
     log.info(f"Getting health metrics: last_n={last_n}")
 
-    # Get recent executions
     stmt = (
         select(ExecutionTelemetry)
         .order_by(ExecutionTelemetry.started_at.desc())
@@ -101,17 +91,13 @@ async def get_health(
     success_rate = (successful / total * 100) if total > 0 else 0.0
     error_rate = (failed / total * 100) if total > 0 else 0.0
 
-    # Latency (only completed)
     latencies = [e.latency_ms for e in executions if e.latency_ms is not None]
     avg_latency = sum(latencies) / len(latencies) if latencies else None
 
-    # Active executions (no completed_at)
     active = sum(1 for e in executions if e.completed_at is None)
 
-    # Last execution
     last_execution_at = executions[0].started_at.isoformat() if executions else None
 
-    # Resource counts
     agent_count = await session.execute(
         select(func.count()).select_from(Agent).where(Agent.is_active == True)
     )
@@ -149,7 +135,6 @@ async def get_trends(
     """
     log.info(f"Getting improvement trends: last_n={last_n}")
 
-    # Get recent A/B tests
     stmt = (
         select(ABTest)
         .order_by(ABTest.created_at.desc())
@@ -163,20 +148,16 @@ async def get_trends(
 
     ab_win_rate = (len(successful) / len(completed) * 100) if completed else 0.0
 
-    # Prompts evolved (those with children)
     prompt_stmt = select(func.count(func.distinct(Prompt.parent_id))).where(Prompt.parent_id.isnot(None))
     prompts_evolved_result = await session.execute(prompt_stmt)
     prompts_evolved = prompts_evolved_result.scalar() or 0
 
-    # Skills created (count all skills)
     skill_count = await session.execute(select(func.count()).select_from(Skill))
     skills_created = skill_count.scalar() or 0
 
-    # Agents added (count all agents)
     agent_count = await session.execute(select(func.count()).select_from(Agent))
     agents_added = agent_count.scalar() or 0
 
-    # Determine trend
     if len(successful) > len(completed) / 2 and len(completed) > 3:
         improvement_trend = "improving"
     elif len(successful) < len(completed) / 4 and len(completed) > 3:
@@ -270,7 +251,6 @@ async def get_dashboard_metrics(
     """
     log.info(f"Getting dashboard metrics: last={last}")
 
-    # Get recent executions for health metrics
     stmt = (
         select(ExecutionTelemetry)
         .order_by(ExecutionTelemetry.started_at.desc())
@@ -288,10 +268,8 @@ async def get_dashboard_metrics(
     latencies = [e.latency_ms for e in executions if e.latency_ms is not None]
     avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
 
-    # Uptime: percentage of non-error executions
     uptime = ((total - failed) / total * 100) if total > 0 else 100.0
 
-    # Success rate trend: rolling window over executions (oldest to newest)
     trend_points = []
     reversed_execs = list(reversed(executions))
     window = max(5, total // 10) if total > 0 else 5
@@ -302,7 +280,6 @@ async def get_dashboard_metrics(
         rate = (window_success / len(window_execs) * 100)
         trend_points.append(TrendPoint(execution=i + 1, value=round(rate, 1)))
 
-    # Improvement trends from existing data
     trends = await get_trends(last_n=last, session=session)
 
     return DashboardMetricsResponse(
@@ -332,7 +309,6 @@ async def get_dashboard(
     """
     log.info("Getting complete dashboard")
 
-    # Call each sub-endpoint
     health = await get_health(last_n=100, session=session)
     trends = await get_trends(last_n=50, session=session)
     recent = await get_recent(limit=10, session=session)

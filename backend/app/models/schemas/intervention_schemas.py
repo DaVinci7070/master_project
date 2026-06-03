@@ -1,13 +1,3 @@
-"""
-Pydantic schemas for intervention operations.
-
-Handles validation for:
-- Intervention requests from Phase 9 routing
-- Build results from Developer Team
-- Intervention responses to API consumers
-- Database operations for blocked challenges
-- Build Plans for user approval
-"""
 from datetime import datetime
 from typing import Optional, Literal
 from enum import Enum
@@ -94,12 +84,12 @@ class BuildPlan(BaseModel):
 
 class BuildPlanStatus(str, Enum):
     """Status of a build plan."""
-    PENDING = "pending"           # Waiting for user approval
-    APPROVED = "approved"         # User approved, ready to execute
-    REJECTED = "rejected"         # User rejected
-    IN_PROGRESS = "in_progress"   # Currently building
-    COMPLETED = "completed"       # Build finished successfully
-    FAILED = "failed"             # Build failed
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class BuildPlanApprovalRequest(BaseModel):

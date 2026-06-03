@@ -1,0 +1,47 @@
+%%{init: {'theme':'base', 'fontFamily':'Arial, Helvetica, sans-serif', 'themeVariables': {
+  'fontFamily': 'Arial, Helvetica, sans-serif',
+  'fontSize': '15px',
+  'lineColor': '#9AA7C7',
+  'primaryTextColor': '#26344D',
+  'clusterBorder': '#DCE3F2'
+}}}%%
+flowchart TB
+    IN(["Aufgabe<br/>(z.B. Baustellenbericht aus Audio)"])
+
+    B1["<b>1 · Verstehen &amp; Lücke prüfen</b><br/>Was wird gebraucht?<br/>Fehlt eine Fähigkeit?"]
+    Q{"Fähigkeit<br/>vorhanden?"}
+
+    B2["<b>2 · Fähigkeit bauen</b><br/>Developer Team schreibt Code<br/>→ Gatekeeper prüft → Sandbox testet"]
+
+    B3["<b>3 · Aufgabe lösen</b><br/>Main Team arbeitet parallel<br/>→ Ergebnis wird verifiziert"]
+
+    B4["<b>4 · Lernen &amp; Wiederverwenden</b><br/>Aus Fehlern verbessern (Evolution)<br/>Bewährte Lösungen merken"]
+
+    MEM[("Gedächtnis<br/>Skill-Registry · Blueprints (RAG)")]
+
+    OUT(["Fertiger Bericht"])
+
+    IN --> B1 --> Q
+    Q -->|"nein → bauen"| B2
+    Q -->|"ja"| B3
+    B2 -->|"neuer Skill"| B3
+    B3 -->|"Erfolg"| OUT
+    B3 -.->|"Fehler / Feedback"| B4
+    B4 -.->|"verbesserte Skills &amp; Prompts"| MEM
+    B2 -.->|"speichern"| MEM
+    MEM -.->|"Warm-Start: wiederfinden"| B1
+
+    classDef io fill:#E0E7FF,stroke:#7C8CE4,stroke-width:1.5px,color:#26344D;
+    classDef teal fill:#D2F0EC,stroke:#46B5A8,stroke-width:2px,color:#26344D;
+    classDef purple fill:#E7DEFA,stroke:#9676E0,stroke-width:2px,color:#26344D;
+    classDef green fill:#D8F1DF,stroke:#5BB97D,stroke-width:2px,color:#26344D;
+    classDef peach fill:#FBE3D2,stroke:#EE9F62,stroke-width:2px,color:#26344D;
+    classDef rose fill:#FBDCE6,stroke:#E5759B,stroke-width:1.5px,color:#26344D;
+
+    class IN,OUT io;
+    class B1 teal;
+    class Q peach;
+    class B2 purple;
+    class B3 green;
+    class B4 peach;
+    class MEM rose;

@@ -1,4 +1,3 @@
-"""Queue manager for blocked challenges awaiting intervention."""
 import logging
 import uuid
 from datetime import datetime, timezone

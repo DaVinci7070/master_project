@@ -1,12 +1,3 @@
-"""
-Semantic Validator Service - Validate skill output matches expected behavior.
-
-Goes beyond "code runs" to verify "code solves the problem":
-1. Type comparison - output matches expected type
-2. Structure comparison - dicts/lists have expected structure
-3. LLM-based semantic comparison - meaning matches expectation
-"""
-
 import json
 import logging
 import re
@@ -74,7 +65,6 @@ class SemanticValidator:
             actual_type=type(actual_output).__name__,
         )
 
-        # Step 1: Type check
         type_match = self._check_type(actual_output, expected_type)
         result.type_match = type_match
 
@@ -82,7 +72,6 @@ class SemanticValidator:
             result.validation_time_ms = int((time.time() - start_time) * 1000)
             return result
 
-        # Step 2: Structure check (for dicts/lists)
         if isinstance(actual_output, dict):
             structure_result = self._check_structure(actual_output, expected_keys)
             result.structure_match = structure_result["match"]
@@ -93,7 +82,6 @@ class SemanticValidator:
                 result.validation_time_ms = int((time.time() - start_time) * 1000)
                 return result
 
-        # Step 3: Value comparison
         if expected_output is not None:
             value_result = await self._compare_values(
                 expected_output, actual_output, expected_behavior
@@ -102,14 +90,12 @@ class SemanticValidator:
             result.value_comparison = value_result["comparison"]
             result.llm_reasoning = value_result.get("reasoning")
         else:
-            # No expected output - use LLM to validate against behavior
             behavior_result = await self._validate_behavior(
                 expected_behavior, actual_output
             )
             result.similarity_score = behavior_result["score"]
             result.llm_reasoning = behavior_result.get("reasoning")
 
-        # Determine pass/fail
         result.passed = (
             result.type_match and
             result.structure_match and
@@ -148,7 +134,6 @@ class SemanticValidator:
 
         expected = type_map.get(expected_type.lower())
         if expected is None:
-            # Unknown type - assume pass
             return True
 
         return isinstance(value, expected)
@@ -166,7 +151,6 @@ class SemanticValidator:
         expected_set = set(expected_keys)
 
         missing = expected_set - actual_keys
-        # Don't penalize for extra keys - skills may add metadata
 
         return {
             "match": len(missing) == 0,
@@ -181,16 +165,13 @@ class SemanticValidator:
         context: str,
     ) -> dict:
         """Compare expected and actual values."""
-        # Exact match
         if expected == actual:
             return {
                 "score": 1.0,
                 "comparison": "Exact match",
             }
 
-        # Type mismatch
         if type(expected) != type(actual):
-            # Try string conversion
             if str(expected).strip() == str(actual).strip():
                 return {
                     "score": 0.9,
@@ -202,23 +183,18 @@ class SemanticValidator:
                 "comparison": f"Type mismatch: expected {type(expected).__name__}, got {type(actual).__name__}",
             }
 
-        # Dict comparison
         if isinstance(expected, dict):
             return self._compare_dicts(expected, actual)
 
-        # List comparison
         if isinstance(expected, list):
             return self._compare_lists(expected, actual)
 
-        # String comparison
         if isinstance(expected, str):
             return await self._compare_strings(expected, actual, context)
 
-        # Numeric comparison
         if isinstance(expected, (int, float)):
             return self._compare_numbers(expected, actual)
 
-        # Default - use LLM
         return await self._llm_compare(expected, actual, context)
 
     def _compare_dicts(self, expected: dict, actual: dict) -> dict:
@@ -226,7 +202,6 @@ class SemanticValidator:
         expected_keys = set(expected.keys())
         actual_keys = set(actual.keys())
 
-        # Key overlap
         common_keys = expected_keys & actual_keys
         missing_keys = expected_keys - actual_keys
 
@@ -236,7 +211,6 @@ class SemanticValidator:
                 "comparison": f"No common keys. Missing: {list(missing_keys)}",
             }
 
-        # Value comparison for common keys
         matching_values = 0
         for key in common_keys:
             if expected[key] == actual[key]:
@@ -262,10 +236,8 @@ class SemanticValidator:
                 "comparison": "Empty expected list",
             }
 
-        # Length comparison
         length_ratio = min(len(actual), len(expected)) / len(expected)
 
-        # Element comparison (order-sensitive for now)
         matching = 0
         for i, exp_item in enumerate(expected):
             if i < len(actual):
@@ -290,18 +262,15 @@ class SemanticValidator:
         context: str,
     ) -> dict:
         """Compare two strings using similarity and LLM."""
-        # Normalize
         exp_norm = expected.strip().lower()
         act_norm = actual.strip().lower()
 
-        # Exact match after normalization
         if exp_norm == act_norm:
             return {
                 "score": 0.95,
                 "comparison": "Normalized match",
             }
 
-        # Substring check
         if exp_norm in act_norm or act_norm in exp_norm:
             containment_ratio = min(len(exp_norm), len(act_norm)) / max(len(exp_norm), len(act_norm))
             return {
@@ -309,11 +278,9 @@ class SemanticValidator:
                 "comparison": "Substring match",
             }
 
-        # For longer strings, use LLM
         if len(expected) > 20 or len(actual) > 20:
             return await self._llm_compare(expected, actual, context)
 
-        # Simple character overlap for short strings
         exp_chars = set(exp_norm)
         act_chars = set(act_norm)
         overlap = len(exp_chars & act_chars)
@@ -329,12 +296,10 @@ class SemanticValidator:
         if expected == actual:
             return {"score": 1.0, "comparison": "Exact match"}
 
-        # Relative difference
         if expected != 0:
             rel_diff = abs(expected - actual) / abs(expected)
             score = max(0, 1 - rel_diff)
         else:
-            # expected is 0
             score = 1.0 if actual == 0 else max(0, 1 - abs(actual))
 
         return {
@@ -380,7 +345,6 @@ Respond with ONLY a JSON object:
                 max_tokens=200,
             )
 
-            # Parse response
             content = response.content
             json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
             if json_match:
@@ -438,7 +402,6 @@ Respond with ONLY a JSON object:
                 max_tokens=200,
             )
 
-            # Parse response
             content = response.content
             json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
             if json_match:
@@ -479,7 +442,6 @@ Respond with ONLY a JSON object:
         Returns:
             SemanticValidationResult
         """
-        # Check standard skill output structure
         if not isinstance(output, dict):
             return SemanticValidationResult(
                 passed=False,
@@ -489,7 +451,6 @@ Respond with ONLY a JSON object:
                 type_match=False,
             )
 
-        # Check for success key
         if "success" not in output:
             return SemanticValidationResult(
                 passed=False,
@@ -501,7 +462,6 @@ Respond with ONLY a JSON object:
                 missing_keys=["success"],
             )
 
-        # If skill reported failure, that's a semantic failure
         if not output.get("success"):
             return SemanticValidationResult(
                 passed=False,
@@ -513,7 +473,6 @@ Respond with ONLY a JSON object:
                 value_comparison=f"Skill reported failure: {output.get('error', 'Unknown')}",
             )
 
-        # If we have a test case, validate against it
         if test_case:
             expected_output = test_case.get("expected_output")
             expected_type = test_case.get("expected_output_type", "any")
@@ -527,7 +486,6 @@ Respond with ONLY a JSON object:
                 expected_keys=expected_keys,
             )
 
-        # No test case - just validate structure
         return SemanticValidationResult(
             passed=True,
             similarity_score=0.8,

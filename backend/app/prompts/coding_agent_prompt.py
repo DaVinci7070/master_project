@@ -1,16 +1,3 @@
-"""
-Meta-prompt for spawned coding agents.
-
-These prompts guide ephemeral coding agents spawned by the Developer Team
-to generate code for specific files within a larger multi-file task.
-
-Key principles:
-- Agents work on ONE file only (scoped responsibility)
-- Agents receive isolated context (PCI pattern)
-- Agents must respect interface contracts
-- Agents cannot spawn their own subagents (max_depth=1)
-"""
-
 CODING_AGENT_SYSTEM_PROMPT = """You are a specialized coding agent spawned by the Developer Team to implement a specific file.
 
 ## Your Constraints

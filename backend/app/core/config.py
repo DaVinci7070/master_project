@@ -4,136 +4,103 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # Database
     database_url: str = "postgresql+asyncpg://lumari:lumari_dev@localhost:5432/lumari"
 
-    # Qdrant Vector Database
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
     qdrant_collection: str = "reports"
     qdrant_prefer_grpc: bool = False
 
-    # Embedding Model
     embed_model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-    # LLM Configuration (LiteLLM)
-    # Provider examples:
-    #   - Gemini: "gemini/gemini-2.0-flash"
-    #   - OpenAI: "gpt-4o"
-    #   - Anthropic: "claude-3-5-sonnet-20241022"
-    #   - vLLM: "hosted_vllm/model-name" (set llm_api_base)
-    #   - Ollama: "ollama/llama3.2" (set llm_api_base)
     llm_model: str = "gemini/gemini-3-flash-preview"
     llm_api_base: str | None = None
     llm_timeout: float = 120.0
 
-    # Legacy service URLs (may be deprecated)
     orchestrator_url: str = "http://10.244.84.3:8000"
     gpu_url: str = "http://10.244.84.3:8010"
     redis_url: str = "redis://localhost:6379"
 
-    # API Settings
     api_secret: str = "lumari-demo-2026"
     default_user_id: str = "demo-user-001"
     environment: str = "development"
     log_level: str = "INFO"
 
-    # Rate Limiting & Security
     rate_limit_per_minute: int = 120
     rate_limit_suspicious_threshold: int = 3
     ip_block_duration_hours: int = 24
 
-    # Control Agent settings
-    control_agent_temperature: float = 0.2  # Deterministic decisions
-    control_agent_max_batch: int = 3  # Max improvements per cycle
-    control_agent_history_days: int = 7  # Days of finding history for context
-    control_agent_max_strikes: int = 3  # 3-strike rule limit
-    control_agent_pattern_threshold: int = 3  # Times info-level must repeat to escalate
+    control_agent_temperature: float = 0.2
+    control_agent_max_batch: int = 3
+    control_agent_history_days: int = 7
+    control_agent_max_strikes: int = 3
+    control_agent_pattern_threshold: int = 3
 
-    # Skill Team settings
-    skill_researcher_model: str | None = None  # Model for research (default: fast)
-    skill_architect_model: str | None = "gemini/gemini-3-flash-preview"  # Model for design
-    skill_implementer_model: str | None = "gemini/gemini-3-flash-preview"  # Strong model for code generation
-    skill_reviewer_model: str | None = "gemini/gemini-3-flash-preview"  # Model for review
+    skill_researcher_model: str | None = None
+    skill_architect_model: str | None = "gemini/gemini-3-flash-preview"
+    skill_implementer_model: str | None = "gemini/gemini-3-flash-preview"
+    skill_reviewer_model: str | None = "gemini/gemini-3-flash-preview"
 
-    # Semantic Validation settings
-    semantic_validation_enabled: bool = True  # Enable semantic output validation
-    semantic_similarity_threshold: float = 0.7  # Minimum similarity score
+    semantic_validation_enabled: bool = True
+    semantic_similarity_threshold: float = 0.7
 
-    # Research settings
-    research_cache_ttl_hours: int = 24  # How long to cache research results
-    web_search_enabled: bool = True  # Enable web search in research phase
+    code_alignment_enabled: bool = True
+    code_alignment_threshold: float = 0.7
+    code_alignment_model: str | None = None
 
-    # Self-Improving Loop settings (OpenClaw-style)
-    failure_history_max_items: int = 5  # Max failures to include in prompts
-    failure_history_days: int = 30  # How far back to look for failures
+    research_cache_ttl_hours: int = 24
+    web_search_enabled: bool = True
 
-    # Skill Directory settings (for SKILL.md format - Phase 2)
-    skill_directory_enabled: bool = True  # Enable SKILL.md directory format
-    skill_directory_path: str = "skills"  # Where to store skill directories (relative to backend/)
+    failure_history_max_items: int = 5
+    failure_history_days: int = 30
 
-    # Hot-Reload settings (Phase 3)
-    hot_reload_enabled: bool = True  # Enable in-memory skill registry
+    skill_directory_enabled: bool = True
+    skill_directory_path: str = "skills"
 
-    # Self-Healing settings (Sprint 4)
-    intra_execution_self_healing_enabled: bool = True  # Enable self-healing during execution (on_unknown_tool -> build skill)
-    self_healing_build_timeout: int = 600  # Max seconds for on-demand skill build (10min, komplexe Skills brauchen 200-400s)
-    self_healing_max_builds_per_execution: int = 3  # Max on-demand skill builds per execution
+    hot_reload_enabled: bool = True
 
-    # Capability-Building Hard-Timeout (Phase 0 / V2-Plan)
-    # Backend-seitiges Sicherheitsnetz für _run_capability_building.
-    # 15min gibt dem 5-Phasen SkillTeam-Build genug Raum für komplexe Skills.
+    intra_execution_self_healing_enabled: bool = True
+    self_healing_build_timeout: int = 600
+    self_healing_max_builds_per_execution: int = 3
+
     build_total_timeout: int = 900
 
-    # Autonomous Evolution Loop (Sprint 1)
-    # When True, HybridOrchestrator schedules post-execution analyze -> prioritize
-    # -> decide -> improve chain as a fire-and-forget asyncio task.
-    # Critical feature flag for Ablation-Mode (Sprint 7 / Track 3).
+    execution_hard_timeout: int = 1200
+    agent_execution_timeout: int = 300
+
     autonomous_evolution_enabled: bool = True
 
-    # Ablation feature flags (Sprint 7)
-    shared_memory_enabled: bool = True     # Cross-run learning via SharedMemory
-    skill_reuse_enabled: bool = True       # Reuse previously built skills
+    shared_memory_enabled: bool = True
+    skill_reuse_enabled: bool = True
 
-    # Memory-Redesign Sprint A — Token-Reduktion
-    # Begründung: G-Memory (NeurIPS 2025) — naives Memory schadet, Filter ist Pflicht.
-    # ACON (arXiv:2510.00615) — Kontext-Kompression spart 26-54% Tokens.
-    # Complexity Trap (arXiv:2508.21433) — Masking ≥ Summarization.
-    shared_memory_max_items: int = 8              # Qdrant Search Limit (vorher 30)
-    shared_memory_max_tokens: int = 4000          # Token-Budget für Memory-Block (vorher max_context_tokens // 2)
-    shared_memory_top_k: int = 5                  # Post-Filter Cap pro Agent (vorher 20)
-    shared_memory_score_threshold: float = 0.30   # Mindest-Cosine-Similarity
+    shared_memory_max_items: int = 8
+    shared_memory_max_tokens: int = 4000
+    shared_memory_top_k: int = 5
+    shared_memory_score_threshold: float = 0.30
 
-    # Verify-Adapt Loop (Dynamic Team Assembly Sprint — Phase A)
     verify_adapt_enabled: bool = True
     max_adapt_rounds: int = 3
     verification_completeness_threshold: float = 0.85
     adapt_threshold_new_team: float = 0.4
     adapt_threshold_escalate: float = 0.1
 
-    # Team Assembly (Phase B — Flags jetzt schon für Ablation Study)
     team_assembly_enabled: bool = True
     team_assembly_timeout: int = 30
     team_assembly_fallback_to_default: bool = True
 
-    # Agent-Promotion + Strategy-Memory (Phase C)
     agent_promotion_enabled: bool = True
     agent_promotion_min_score: float = 0.7
     strategy_memory_enabled: bool = True
 
-    # Reflexion Sprint — Phase 1: CoT Verification
     cot_verification_enabled: bool = True
     self_reflection_enabled: bool = True
     self_reflection_margin: float = 0.1
 
-    # Reflexion Sprint — Phase 2: Failure Reflexion
     failure_reflection_enabled: bool = True
 
-    # Reflexion Sprint — Phase 4: Episodic Reflection Memory
     execution_reflection_enabled: bool = True
     reflection_memory_max_items: int = 3
 
-    # Sandbox-Infrastruktur (Docker-Hostnamen im lumari-network)
     sandbox_postgres_host: str = "lumari-postgres"
     sandbox_postgres_port: int = 5432
     sandbox_qdrant_host: str = "lumari-qdrant"
@@ -198,6 +165,12 @@ The container HAS full network access — pip install and apt-get work at runtim
 - benchmark-db:5432 — Benchmark-Datenbank (separate DB fuer Evaluationsaufgaben)
 - IMPORTANT: 'host.docker.internal' is NOT available in this network mode
 - If a task references an unreachable host, use the closest matching host from this list
+
+### Connection Best Practices:
+- Always use connect_timeout=10 for database connections
+- Implement retry (3 attempts, exponential backoff) for all external connections
+- DNS resolution inside Docker can take 1-2s on first access — retries prevent transient failures
+- After writing data to a database, always verify with a SELECT COUNT(*) before returning
 
 ### File Mounts:
 - /data/ — read-only bind mount of the uploads directory (input files)

@@ -1,9 +1,3 @@
-"""
-Internal data models for pre-execution analysis pipeline.
-
-These models pass context between analysis stages without being exposed in API.
-They support capability matching, topology inspection, and assessment context tracking.
-"""
 from enum import Enum
 from typing import Literal, Optional
 

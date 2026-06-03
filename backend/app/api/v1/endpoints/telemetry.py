@@ -1,8 +1,3 @@
-"""
-API endpoints for execution telemetry and metrics.
-
-Provides access to execution runs, details, and aggregated metrics.
-"""
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -20,7 +15,6 @@ router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 log = logging.getLogger(__name__)
 
 
-# Response models
 class ExecutionSummaryResponse(BaseModel):
     """Summary of an execution run."""
     model_config = ConfigDict(from_attributes=True)
@@ -71,7 +65,7 @@ class MetricsSummaryResponse(BaseModel):
     total_executions: int
     successful_executions: int
     failed_executions: int
-    success_rate: float  # Percentage
+    success_rate: float
     avg_latency_ms: Optional[float] = None
     min_latency_ms: Optional[float] = None
     max_latency_ms: Optional[float] = None
@@ -119,7 +113,6 @@ async def list_executions(
     """
     log.info(f"Listing executions: agent_id={agent_id}, outcome={outcome}, limit={limit}, offset={offset}")
 
-    # Build query
     stmt = select(ExecutionTelemetry).order_by(ExecutionTelemetry.started_at.desc())
 
     if agent_id:
@@ -128,12 +121,10 @@ async def list_executions(
     if outcome:
         stmt = stmt.where(ExecutionTelemetry.outcome == outcome)
 
-    # Get total count
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_result = await session.execute(count_stmt)
     total = total_result.scalar() or 0
 
-    # Apply pagination
     stmt = stmt.limit(limit).offset(offset)
 
     result = await session.execute(stmt)
@@ -175,7 +166,6 @@ async def get_execution(
     execution = await repo.get_by_execution_id(execution_id)
 
     if not execution:
-        # Try by primary key
         execution = await repo.get_by_id(execution_id)
 
     if not execution:
@@ -216,7 +206,6 @@ async def get_metrics(
     """
     log.info(f"Getting metrics: agent_id={agent_id}, last_n={last_n}")
 
-    # Build query for last N executions
     stmt = (
         select(ExecutionTelemetry)
         .order_by(ExecutionTelemetry.started_at.desc())
@@ -237,24 +226,20 @@ async def get_metrics(
             success_rate=0.0,
         )
 
-    # Compute aggregates
     total = len(executions)
     successful = sum(1 for e in executions if e.outcome == "success")
     failed = sum(1 for e in executions if e.outcome == "error")
 
     success_rate = (successful / total * 100) if total > 0 else 0.0
 
-    # Latency stats (only for completed executions)
     latencies = [e.latency_ms for e in executions if e.latency_ms is not None]
     avg_latency = sum(latencies) / len(latencies) if latencies else None
     min_latency = min(latencies) if latencies else None
     max_latency = max(latencies) if latencies else None
 
-    # Token stats
     total_tokens = sum(e.tokens_total or 0 for e in executions)
     avg_tokens = total_tokens / total if total > 0 else None
 
-    # Period (from oldest to newest in result set)
     period_start = min(e.started_at for e in executions) if executions else None
     period_end = max(e.started_at for e in executions) if executions else None
 
@@ -310,7 +295,6 @@ async def get_agent_telemetry(
     timeout = sum(1 for e in executions if e.outcome == "timeout")
     cancelled = sum(1 for e in executions if e.outcome == "cancelled")
 
-    # Latency stats with percentiles
     latencies = sorted([e.latency_ms for e in executions if e.latency_ms is not None])
     avg_latency = sum(latencies) / len(latencies) if latencies else None
     min_latency = latencies[0] if latencies else None
@@ -322,12 +306,10 @@ async def get_agent_telemetry(
         idx = int(len(sorted_vals) * p / 100)
         return sorted_vals[min(idx, len(sorted_vals) - 1)]
 
-    # Token stats
     total_tokens_input = sum(e.tokens_input or 0 for e in executions)
     total_tokens_output = sum(e.tokens_output or 0 for e in executions)
     total_tokens = sum(e.tokens_total or 0 for e in executions)
 
-    # Period
     period_start = min(e.started_at for e in executions)
     period_end = max(e.started_at for e in executions)
 
@@ -385,26 +367,22 @@ async def get_telemetry_summary(
     one_hour_ago = now - timedelta(hours=1)
     one_day_ago = now - timedelta(hours=24)
 
-    # Total executions
     total_stmt = select(func.count()).select_from(ExecutionTelemetry)
     total_result = await session.execute(total_stmt)
     total_executions = total_result.scalar() or 0
 
-    # Executions last hour
     hour_stmt = select(func.count()).select_from(ExecutionTelemetry).where(
         ExecutionTelemetry.started_at >= one_hour_ago
     )
     hour_result = await session.execute(hour_stmt)
     executions_last_hour = hour_result.scalar() or 0
 
-    # Executions last 24h
     day_stmt = select(func.count()).select_from(ExecutionTelemetry).where(
         ExecutionTelemetry.started_at >= one_day_ago
     )
     day_result = await session.execute(day_stmt)
     executions_last_24h = day_result.scalar() or 0
 
-    # Success rate overall
     success_stmt = select(func.count()).select_from(ExecutionTelemetry).where(
         ExecutionTelemetry.outcome == "success"
     )
@@ -412,7 +390,6 @@ async def get_telemetry_summary(
     successful = success_result.scalar() or 0
     success_rate_overall = (successful / total_executions * 100) if total_executions > 0 else 0.0
 
-    # Success rate last hour
     success_hour_stmt = select(func.count()).select_from(ExecutionTelemetry).where(
         ExecutionTelemetry.outcome == "success",
         ExecutionTelemetry.started_at >= one_hour_ago
@@ -421,14 +398,12 @@ async def get_telemetry_summary(
     successful_hour = success_hour_result.scalar() or 0
     success_rate_last_hour = (successful_hour / executions_last_hour * 100) if executions_last_hour > 0 else None
 
-    # Average latency overall
     avg_latency_stmt = select(func.avg(ExecutionTelemetry.latency_ms)).where(
         ExecutionTelemetry.latency_ms.isnot(None)
     )
     avg_latency_result = await session.execute(avg_latency_stmt)
     avg_latency_ms = avg_latency_result.scalar()
 
-    # Average latency last hour
     avg_latency_hour_stmt = select(func.avg(ExecutionTelemetry.latency_ms)).where(
         ExecutionTelemetry.latency_ms.isnot(None),
         ExecutionTelemetry.started_at >= one_hour_ago
@@ -436,24 +411,20 @@ async def get_telemetry_summary(
     avg_latency_hour_result = await session.execute(avg_latency_hour_stmt)
     avg_latency_last_hour = avg_latency_hour_result.scalar()
 
-    # Total tokens
     tokens_stmt = select(func.sum(ExecutionTelemetry.tokens_total))
     tokens_result = await session.execute(tokens_stmt)
     total_tokens_consumed = tokens_result.scalar() or 0
 
-    # Tokens last hour
     tokens_hour_stmt = select(func.sum(ExecutionTelemetry.tokens_total)).where(
         ExecutionTelemetry.started_at >= one_hour_ago
     )
     tokens_hour_result = await session.execute(tokens_hour_stmt)
     tokens_last_hour = tokens_hour_result.scalar() or 0
 
-    # Unique agents
     unique_agents_stmt = select(func.count(func.distinct(ExecutionTelemetry.agent_id)))
     unique_agents_result = await session.execute(unique_agents_stmt)
     unique_agents = unique_agents_result.scalar() or 0
 
-    # Most active agent
     most_active_stmt = (
         select(ExecutionTelemetry.agent_id, func.count().label("count"))
         .group_by(ExecutionTelemetry.agent_id)
@@ -464,7 +435,6 @@ async def get_telemetry_summary(
     most_active_row = most_active_result.first()
     most_active_agent_id = most_active_row[0] if most_active_row else None
 
-    # Last execution
     last_exec_stmt = select(ExecutionTelemetry.started_at).order_by(
         ExecutionTelemetry.started_at.desc()
     ).limit(1)

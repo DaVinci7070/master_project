@@ -1,4 +1,3 @@
-"""Speichert Team-Strategien + Reflexionen in SharedMemory für Cross-Run-Learning."""
 import logging
 
 from app.core.config import settings as default_settings

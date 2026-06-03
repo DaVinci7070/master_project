@@ -1,8 +1,3 @@
-"""
-API endpoints for viewing Shared Memory contents after execution.
-
-Provides access to Facts and Hypotheses written during execution.
-"""
 import logging
 from typing import Optional
 
@@ -34,7 +29,6 @@ async def get_execution_shared_memory(
     hypotheses = []
 
     try:
-        # Fetch facts for this execution
         facts_stmt = select(Fact).where(
             Fact.execution_id == execution_id
         ).order_by(Fact.created_at.asc())
@@ -49,7 +43,6 @@ async def get_execution_shared_memory(
             pass
 
     try:
-        # Fetch hypotheses for this execution
         hypotheses_stmt = select(Hypothesis).where(
             Hypothesis.execution_id == execution_id
         ).order_by(Hypothesis.created_at.asc())
@@ -63,7 +56,6 @@ async def get_execution_shared_memory(
         except Exception:
             pass
 
-    # Group facts by source agent
     facts_by_agent: dict[str, list] = {}
     for fact in facts:
         agent_id = fact.source_agent_id or "unknown"
@@ -77,7 +69,6 @@ async def get_execution_shared_memory(
             "created_at": fact.created_at.isoformat() if fact.created_at else None,
         })
 
-    # Group hypotheses by source agent
     hypotheses_by_agent: dict[str, list] = {}
     for hyp in hypotheses:
         agent_id = hyp.source_agent_id or "unknown"

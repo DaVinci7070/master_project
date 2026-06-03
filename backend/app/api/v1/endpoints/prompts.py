@@ -1,8 +1,3 @@
-"""
-API endpoints for prompt management.
-
-Provides CRUD operations for prompts including version history and A/B test performance.
-"""
 import logging
 from datetime import datetime
 from typing import Optional
@@ -20,7 +15,6 @@ router = APIRouter(prefix="/prompts", tags=["prompts"])
 log = logging.getLogger(__name__)
 
 
-# Response models
 class PromptResponse(BaseModel):
     """Prompt response model."""
     model_config = ConfigDict(from_attributes=True)
@@ -43,7 +37,7 @@ class PromptSummaryResponse(BaseModel):
     is_active: bool
     parent_id: Optional[str] = None
     created_at: str
-    content_preview: str = ""  # First 100 chars
+    content_preview: str = ""
 
 
 class PromptListResponse(BaseModel):
@@ -78,7 +72,7 @@ class PromptDiffResponse(BaseModel):
     to_version: int
     from_content: str
     to_content: str
-    diff_lines: list[dict]  # {type: "add"|"remove"|"unchanged", line: str}
+    diff_lines: list[dict]
 
 
 class ABTestPerformanceResponse(BaseModel):
@@ -99,7 +93,7 @@ class PromptPerformanceResponse(BaseModel):
     prompt_id: str
     ab_tests: list[ABTestPerformanceResponse]
     total_tests: int
-    win_rate: float  # Percentage of tests where this version won
+    win_rate: float
 
 
 @router.get("", response_model=PromptListResponse)
@@ -119,24 +113,20 @@ async def list_prompts(
 
     repo = PromptRepository(session)
 
-    # Get prompts based on status filter
     if status == "active":
         prompts = await repo.list_active()
     else:
         prompts = await repo.list_all(limit=1000, offset=0)
 
-    # Apply status filter for inactive
     if status == "inactive":
         prompts = [p for p in prompts if not p.is_active]
 
-    # Apply search filter
     if search:
         search_lower = search.lower()
         prompts = [p for p in prompts if search_lower in p.name.lower()]
 
     total = len(prompts)
 
-    # Apply pagination
     prompts = prompts[offset:offset + limit]
 
     return PromptListResponse(
@@ -204,7 +194,6 @@ async def get_prompt_versions(
     if not prompt:
         raise HTTPException(status_code=404, detail=f"Prompt not found: {prompt_id}")
 
-    # Find root prompt (traverse up parent chain)
     root = prompt
     while root.parent_id:
         parent = await repo.get_by_id(root.parent_id)
@@ -212,7 +201,6 @@ async def get_prompt_versions(
             break
         root = parent
 
-    # Collect all versions starting from root
     versions = []
     version_index = 0
 
@@ -260,8 +248,6 @@ async def get_prompt_diff(
     if not prompt:
         raise HTTPException(status_code=404, detail=f"Prompt not found: {prompt_id}")
 
-    # Get all versions to find by index
-    # Find root and collect all versions
     root = prompt
     while root.parent_id:
         parent = await repo.get_by_id(root.parent_id)
@@ -289,13 +275,11 @@ async def get_prompt_diff(
     from_prompt = all_versions[to_version]
     to_prompt = all_versions[version]
 
-    # Compute simple line-by-line diff
     from_lines = from_prompt.content.splitlines()
     to_lines = to_prompt.content.splitlines()
 
     diff_lines = []
 
-    # Simple diff - show removed and added lines
     from_set = set(from_lines)
     to_set = set(to_lines)
 
@@ -337,7 +321,6 @@ async def get_prompt_performance(
     if not prompt:
         raise HTTPException(status_code=404, detail=f"Prompt not found: {prompt_id}")
 
-    # Query A/B tests for this prompt
     ab_repo = ABTestRepository(session)
 
     from app.models.sql.ab_test_models import ABTest
@@ -352,7 +335,6 @@ async def get_prompt_performance(
     result = await session.execute(stmt)
     ab_tests = list(result.scalars().all())
 
-    # Convert to response
     tests = []
     wins = 0
 

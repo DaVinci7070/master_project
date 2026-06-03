@@ -1,4 +1,3 @@
-"""Repository for topology persistence in database."""
 import logging
 from typing import Optional
 

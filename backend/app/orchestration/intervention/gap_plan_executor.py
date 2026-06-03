@@ -1,11 +1,3 @@
-"""
-Gap Plan Executor for deterministic gap resolution.
-
-Key difference from old approach:
-- Works through FIXED gap list (no re-analysis during build)
-- Updates gap status as it goes
-- Only re-assesses at END of cycle
-"""
 import logging
 from typing import Optional
 
@@ -81,19 +73,16 @@ class GapPlanExecutor:
         all_results: list[BuildResult] = []
         successful_artifacts: list[str] = []
 
-        # Start the plan
         plan = await self.plan_service.start_plan(plan_id)
         logger.info(
             f"Executing gap plan: {plan_id[:8]}..., "
             f"total_gaps={plan.total_gaps}, cycle={plan.cycle_number}"
         )
 
-        # Process gaps sequentially
         while True:
             gap_dict = await self.plan_service.get_next_pending_gap(plan_id)
 
             if not gap_dict:
-                # No more pending gaps
                 logger.info(f"All gaps processed for plan {plan_id[:8]}...")
                 break
 
@@ -108,14 +97,12 @@ class GapPlanExecutor:
                 f"type={gap_type}, capability={affected_capability}, severity={severity}"
             )
 
-            # Mark as building
             await self.plan_service.update_gap_status(
                 plan_id=plan_id,
                 gap_id=gap_id,
                 status=GapStatus.BUILDING.value
             )
 
-            # Build based on gap type
             result = await self._build_for_gap(
                 gap_dict=gap_dict,
                 challenge_text=challenge_text,
@@ -126,7 +113,6 @@ class GapPlanExecutor:
             all_results.append(result)
 
             if result.success and result.artifact_id:
-                # Inject capability — use plan-based injection if available
                 if result.integration_plan and result.integration_plan.target_agent_id:
                     inject_success, inject_msg = await self.injector.inject_with_plan(
                         plan=result.integration_plan,
@@ -142,7 +128,6 @@ class GapPlanExecutor:
                 if inject_success:
                     successful_artifacts.append(result.artifact_id)
 
-                    # Mark gap as completed
                     await self.plan_service.update_gap_status(
                         plan_id=plan_id,
                         gap_id=gap_id,
@@ -151,7 +136,6 @@ class GapPlanExecutor:
                         artifact_type=result.artifact_type
                     )
 
-                    # Feed success back to FailureAnalyzer
                     if self.failure_analyzer:
                         try:
                             await self.failure_analyzer.record_attempt(
@@ -168,8 +152,6 @@ class GapPlanExecutor:
                                     code="",
                                 )
                         except Exception as fa_err:
-                            # Session may be stale after topology reload in injector;
-                            # rollback so subsequent DB operations still work.
                             async with self.session_factory() as db:
                                 await db.rollback()
                             logger.warning(
@@ -181,7 +163,6 @@ class GapPlanExecutor:
                         f"{result.artifact_type}/{result.artifact_id[:8]}..."
                     )
                 else:
-                    # Injection failed
                     await self.plan_service.update_gap_status(
                         plan_id=plan_id,
                         gap_id=gap_id,
@@ -190,7 +171,6 @@ class GapPlanExecutor:
                     )
                     logger.warning(f"Gap injection failed: {gap_id[:8]}... - {inject_msg}")
             else:
-                # Build failed — feed back to FailureAnalyzer
                 failure_reason = result.failure_reason or "Unknown build failure"
 
                 if self.failure_analyzer:
@@ -228,7 +208,6 @@ class GapPlanExecutor:
                     f"Gap build failed: {gap_id[:8]}... - {failure_reason}"
                 )
 
-        # Complete the plan
         plan = await self.plan_service.get_plan(plan_id)
         final_status = "completed" if plan.failed_gaps == 0 else "partial"
         await self.plan_service.complete_plan(plan_id, final_status)
@@ -262,7 +241,6 @@ class GapPlanExecutor:
         description = gap_dict.get("description", "")
         severity = gap_dict.get("severity", "important")
 
-        # Ask FailureAnalyzer for strategy if available
         strategy_id = None
         if self.failure_analyzer and gap_type in ("missing_skill", "configuration_needed"):
             proposal = await self.failure_analyzer.propose_strategy(
@@ -270,7 +248,6 @@ class GapPlanExecutor:
                 current_attempt_number=attempt_number,
             )
             strategy_id = proposal.strategy_id
-            # Add lessons as hints to previous failures
             if proposal.hints:
                 previous_failures = list(previous_failures) + [
                     f"[Lesson] {h}" for h in proposal.hints
@@ -280,9 +257,7 @@ class GapPlanExecutor:
                 f"(confidence={proposal.confidence:.1f})"
             )
 
-        # Route based on gap type
         if gap_type == "weak_prompt":
-            # Use prompt improver for weak_prompt gaps
             return await self.prompt_improver.improve(
                 affected_capability=affected_capability,
                 gap_description=description,
@@ -290,7 +265,6 @@ class GapPlanExecutor:
             )
 
         elif gap_type in ("missing_skill", "configuration_needed"):
-            # Use capability builder for skill gaps
             from app.models.schemas.analysis_schemas import CapabilityGap, GapType, GapSeverity
 
             gap = CapabilityGap(
@@ -308,7 +282,6 @@ class GapPlanExecutor:
             )
 
         elif gap_type == "missing_agent":
-            # Use capability builder for agent gaps
             from app.models.schemas.analysis_schemas import CapabilityGap, GapType, GapSeverity
 
             gap = CapabilityGap(
@@ -326,11 +299,9 @@ class GapPlanExecutor:
             )
 
         else:
-            # Unknown gap type - try generic builder
             logger.warning(f"Unknown gap type '{gap_type}', using generic builder")
             from app.models.schemas.analysis_schemas import CapabilityGap, GapType, GapSeverity
 
-            # Default to missing_skill if unknown
             try:
                 gap_type_enum = GapType(gap_type)
             except ValueError:

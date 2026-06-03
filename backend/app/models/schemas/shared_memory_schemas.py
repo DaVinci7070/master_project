@@ -1,19 +1,7 @@
-"""
-Pydantic schemas for Shared Memory data structures.
-
-Facts, Hypotheses, and Relations support hybrid memory architecture
-with RAG retrieval and contradiction detection.
-
-Uses Pydantic v2 with ConfigDict for SQLAlchemy model integration.
-"""
 from datetime import datetime
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
-
-# ============================================================================
-# Fact Schemas
-# ============================================================================
 
 class FactBase(BaseModel):
     """Base fields for a Fact (observation with confidence score)."""
@@ -52,10 +40,6 @@ class FactResponse(FactBase):
     id: str = Field(..., description="Unique identifier")
     created_at: datetime = Field(..., description="Creation timestamp")
 
-
-# ============================================================================
-# Hypothesis Schemas
-# ============================================================================
 
 class HypothesisBase(BaseModel):
     """Base fields for a Hypothesis (system learning)."""
@@ -96,10 +80,6 @@ class HypothesisResponse(HypothesisBase):
     created_at: datetime = Field(..., description="Creation timestamp")
 
 
-# ============================================================================
-# Relation Schemas
-# ============================================================================
-
 class RelationBase(BaseModel):
     """Base fields for a Relation (causal chain between facts)."""
     relation_type: Literal["causes", "caused_by"] = Field(
@@ -131,10 +111,6 @@ class RelationResponse(RelationBase):
     id: str = Field(..., description="Unique identifier")
     created_at: datetime = Field(..., description="Creation timestamp")
 
-
-# ============================================================================
-# Query Schema
-# ============================================================================
 
 class SharedMemoryQuery(BaseModel):
     """Schema for querying shared memory with filters."""

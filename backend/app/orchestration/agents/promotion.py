@@ -1,4 +1,3 @@
-"""Befördert provisorische Agents zu permanenten Pool-Mitgliedern."""
 import logging
 from datetime import datetime, timezone
 

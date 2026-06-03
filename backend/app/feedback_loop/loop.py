@@ -1,21 +1,3 @@
-"""
-Autonomous Evolution Loop (Sprint 1).
-
-Coordinator service that chains the three existing services:
-AnalysisPipeline -> ControlAgentService -> ImprovementOrchestrator.
-
-Runs fire-and-forget after every HybridOrchestrator execution when
-settings.autonomous_evolution_enabled is True.
-
-Design decisions:
-- Pure coordinator, no business logic (see sprint1_detail.md §3.1).
-- Emits evolution.* events via AgentExecutionEvent table (reusing existing
-  event infrastructure, see sprint1_detail.md §3.4).
-- 3-strike rule already enforced in ControlAgentService.evaluate_findings()
-  and ImprovementOrchestrator pipeline; we only emit telemetry when it fires.
-- One execution -> one telemetry -> one agent (see
-  ExecutionTelemetry.get_by_execution_id), so no multi-agent grouping.
-"""
 import hashlib
 import logging
 from typing import Optional
@@ -37,8 +19,6 @@ from app.feedback_loop.improvement.orchestrator import ImprovementOrchestrator
 
 log = logging.getLogger(__name__)
 
-# Constant used when emitting evolution events that are not tied to a single
-# agent (e.g. evolution.triggered, evolution.completed).
 _ORCHESTRATOR_AGENT_ID = "orchestrator"
 
 
@@ -62,6 +42,7 @@ class EvolutionLoopService:
     async def run_post_execution_evolution(
         self,
         execution_id: str,
+        output_content: Optional[str] = None,
     ) -> EvolutionReport:
         """
         Main entry point: analyze -> prioritize -> decide -> improve.
@@ -76,9 +57,11 @@ class EvolutionLoopService:
         )
 
         try:
-            # Step 1: Analysis Pipeline (analyzer + product owner + DB writes).
             findings_response, priority_list = (
-                await self.analysis_pipeline.run(execution_id)
+                await self.analysis_pipeline.run(
+                    execution_id,
+                    output_content=output_content,
+                )
             )
 
             if not findings_response:
@@ -95,8 +78,6 @@ class EvolutionLoopService:
                 )
                 return report
 
-            # Resolve agent_id for this execution via the first stored finding's
-            # telemetry row. All findings of one execution share the same agent.
             agent_id = await self._resolve_agent_id(
                 execution_id=execution_id,
                 findings_response=findings_response,
@@ -115,27 +96,22 @@ class EvolutionLoopService:
                 )
                 return report
 
-            # Step 2: Build in-memory Finding objects for ControlAgent.
-            # ControlAgentService.evaluate_findings expects the original Finding
-            # pydantic model (category/severity/evidence/suggested_fix).
             findings: list[Finding] = [
                 Finding(
-                    category=f.category,  # type: ignore[arg-type]
-                    severity=f.severity,  # type: ignore[arg-type]
+                    category=f.category,
+                    severity=f.severity,
                     evidence=f.evidence,
                     suggested_fix=f.suggested_fix,
                 )
                 for f in findings_response
             ]
 
-            # Step 3: Control Agent decides.
             decision: ControlDecision = await self.control_agent.evaluate_findings(
                 priority_list=priority_list,
                 findings=findings,
                 agent_id=agent_id,
             )
 
-            # Step 4: Count 3-strike rejections (for telemetry) and emit events.
             skipped_by_strike = 0
             for rejected_idx in decision.rejected_findings:
                 if rejected_idx < 0 or rejected_idx >= len(findings):
@@ -154,7 +130,6 @@ class EvolutionLoopService:
                         },
                     )
 
-            # Step 5: Execute approved improvements.
             attempted = 0
             succeeded = 0
             for action in decision.approved_improvements:
@@ -231,7 +206,6 @@ class EvolutionLoopService:
             )
             raise
 
-    # ------------------------------------------------------------------ helpers
 
     async def _resolve_agent_id(
         self,
@@ -244,8 +218,6 @@ class EvolutionLoopService:
         AnalysisFindingResponse has execution_telemetry_id but not agent_id.
         We look up the telemetry row to get the agent_id.
         """
-        # Prefer the telemetry service reference from the analysis pipeline to
-        # avoid introducing an extra dependency.
         try:
             telemetry = await (
                 self.analysis_pipeline.telemetry.get_by_execution_id(execution_id)

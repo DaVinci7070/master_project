@@ -1,8 +1,3 @@
-"""
-API endpoints for agent management.
-
-Provides CRUD operations for agents including status toggling.
-"""
 import logging
 from typing import Optional
 
@@ -19,7 +14,6 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 log = logging.getLogger(__name__)
 
 
-# Response models
 class PromptSummary(BaseModel):
     """Summary of a prompt for agent responses."""
     model_config = ConfigDict(from_attributes=True)
@@ -51,7 +45,7 @@ class AgentResponse(BaseModel):
     io_schema: dict = Field(default_factory=dict)
     is_active: bool
     prompt_id: Optional[str] = None
-    source: str = "initial"  # initial, system_generated, manual
+    source: str = "initial"
     agent_metadata: Optional[dict] = None
     created_at: str
 
@@ -104,28 +98,23 @@ async def list_agents(
 
     repo = TopologyRepository(session)
 
-    # Get all agents (active only if status filter is "active")
     if status == "active":
         agents = await repo.get_all_active_agents()
     else:
-        # Get all agents regardless of status
         from sqlalchemy import select
         from app.models.sql.versioned_models import Agent
         result = await session.execute(select(Agent))
         agents = list(result.scalars().all())
 
-    # Apply status filter for inactive
     if status == "inactive":
         agents = [a for a in agents if not a.is_active]
 
-    # Apply search filter
     if search:
         search_lower = search.lower()
         agents = [a for a in agents if search_lower in a.name.lower()]
 
     total = len(agents)
 
-    # Apply pagination
     agents = agents[offset:offset + limit]
 
     return AgentListResponse(
@@ -168,7 +157,6 @@ async def get_agent(
     if not agent:
         raise HTTPException(status_code=404, detail=f"Agent not found: {agent_id}")
 
-    # Get associated prompt
     prompt = None
     if agent.prompt_id:
         prompt_repo = PromptRepository(session)
@@ -181,7 +169,6 @@ async def get_agent(
                 is_active=prompt_model.is_active,
             )
 
-    # Get skills (from io_schema.skill_ids if present)
     skills = []
     skill_ids = agent.io_schema.get("skill_ids", []) if agent.io_schema else []
     if skill_ids:
@@ -231,7 +218,6 @@ async def toggle_agent_status(
     if not agent:
         raise HTTPException(status_code=404, detail=f"Agent not found: {agent_id}")
 
-    # Update status
     from sqlalchemy import update
     from app.models.sql.versioned_models import Agent
 
@@ -242,7 +228,6 @@ async def toggle_agent_status(
     )
     await session.commit()
 
-    # Refresh agent
     agent = await repo.get_agent_by_id(agent_id)
 
     return AgentResponse(

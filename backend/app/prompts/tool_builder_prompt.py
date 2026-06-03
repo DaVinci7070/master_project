@@ -1,9 +1,3 @@
-"""
-Tool Builder Prompts.
-
-System-Prompt geladen aus config/agents/tool_builder.yaml.
-Modification-Prompt bleibt hier (kein Agent, sondern operativer Prompt).
-"""
 from app.orchestration.agents.definitions import get_agent_prompt
 
 TOOL_BUILDER_SYSTEM_PROMPT = get_agent_prompt("tool_builder")

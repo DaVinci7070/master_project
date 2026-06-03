@@ -1,4 +1,3 @@
-"""Capability matching using semantic similarity."""
 import logging
 import os
 from typing import Callable, Awaitable, Optional
@@ -11,8 +10,6 @@ from app.orchestration.analysis.models import (
 
 logger = logging.getLogger(__name__)
 
-# Thresholds (configurable via ENV)
-# Lowered from 0.95 to 0.90 - 0.95 was too strict and caused false negatives
 CAN_DO_THRESHOLD = float(os.getenv("CAPABILITY_CAN_DO_THRESHOLD", "0.90"))
 MAYBE_THRESHOLD = float(os.getenv("CAPABILITY_MAYBE_THRESHOLD", "0.50"))
 
@@ -78,19 +75,15 @@ class CapabilityMatcher:
         all_capabilities: set[str] = set()
 
         for agent in topology.get_active_agents():
-            # Capabilities derived from agent's assigned skills
             caps = list(agent.capabilities) if agent.capabilities else []
             agent_capabilities[agent.agent_id] = caps
             all_capabilities.update(caps)
 
-        # Include capabilities from active skills (even if unbound)
         skill_capabilities = await self._extract_skill_capabilities()
         for skill_id, skill_caps in skill_capabilities.items():
             agent_capabilities[f"skill:{skill_id}"] = skill_caps
             all_capabilities.update(skill_caps)
 
-        # NEW: Include capabilities from prompts with affected_capability
-        # This allows weak_prompt builds to be recognized as fulfilling capabilities
         prompt_capabilities = await self._extract_prompt_capabilities()
         for prompt_id, prompt_caps in prompt_capabilities.items():
             agent_capabilities[f"prompt:{prompt_id}"] = prompt_caps
@@ -120,7 +113,6 @@ class CapabilityMatcher:
         from sqlalchemy import select
         from app.models.sql.versioned_models import Skill
 
-        # Session via topology loader's session_factory
         async with self.topology.session_factory() as db:
             result = await db.execute(
                 select(Skill).where(Skill.is_active == True)
@@ -132,14 +124,12 @@ class CapabilityMatcher:
         for skill in skills:
             caps = []
 
-            # PRIMARY: Skill.applicability (SoK C field)
             if skill.applicability:
                 caps.append(skill.applicability)
                 logger.info(
                     f"Skill '{skill.name}' provides applicability: '{skill.applicability}'"
                 )
 
-            # SECONDARY: affected_capability from metadata (legacy)
             if not caps and skill.skill_metadata:
                 if affected_cap := skill.skill_metadata.get("affected_capability"):
                     caps.append(affected_cap)
@@ -151,7 +141,6 @@ class CapabilityMatcher:
                     if cap_name not in caps:
                         caps.append(cap_name)
 
-            # Fallback: derive from skill name
             if skill.name and not caps:
                 derived_cap = skill.name.replace("skill_", "").replace("_", " ")
                 caps.append(derived_cap)
@@ -193,15 +182,12 @@ class CapabilityMatcher:
             caps = []
 
             if prompt.prompt_metadata:
-                # PRIMARY: affected_capability from metadata
-                # This is set when building prompts for gaps
                 if affected_cap := prompt.prompt_metadata.get("affected_capability"):
                     caps.append(affected_cap)
                     logger.info(
                         f"Prompt '{prompt.name}' provides affected_capability: '{affected_cap}'"
                     )
 
-                # Secondary: explicit capability_name
                 if cap_name := prompt.prompt_metadata.get("capability_name"):
                     if cap_name not in caps:
                         caps.append(cap_name)

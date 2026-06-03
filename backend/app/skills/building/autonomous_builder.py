@@ -1,19 +1,3 @@
-"""
-Autonomous Skill Builder - Self-improving agent that develops skills through research and iteration.
-
-This service implements an OpenClaw-style skill development flow:
-1. Research: Search the web for solutions to capability gaps
-2. Generate: Create code based on research findings
-3. Test: Execute code in sandbox with required dependencies
-4. Iterate: Fix errors based on feedback (max N attempts)
-5. Persist: Save successful skills with metadata
-
-The system improves itself by:
-- Learning which packages solve which problems
-- Caching successful dependency combinations
-- Building a knowledge base of working code patterns
-"""
-
 import asyncio
 import ast
 import json
@@ -38,8 +22,6 @@ from typing import Literal
 
 log = logging.getLogger(__name__)
 
-
-# -- Pydantic models for LLM-based interface derivation --
 
 class PropertySchema(BaseModel):
     """Schema for a single skill parameter."""
@@ -92,7 +74,6 @@ class SkillBuildResult:
     execution_time_ms: int = 0
 
 
-# Import shared package hints — single source of truth in research_service
 from app.skills.building.research import CAPABILITY_PACKAGE_HINTS
 
 
@@ -195,30 +176,25 @@ class AutonomousSkillBuilder:
         start_time = datetime.now(timezone.utc)
         log.info(f"Starting autonomous skill build for: {capability}")
 
-        # Step 0: Get failure history to avoid repeating mistakes
         failure_history = await self.failure_analyzer.get_failure_history(capability)
         failure_context = self.failure_analyzer.format_failure_context(failure_history)
         if failure_history:
             log.info(f"Found {len(failure_history)} previous failed attempts")
 
-        # Step 1: Research
         research = await self._research_capability(capability, hints)
         log.info(f"Research complete: {len(research.code_examples)} examples, "
                  f"packages: {research.recommended_packages}")
 
-        # Step 2: Generate initial code (include failure context)
         draft = await self._generate_skill_code(capability, research, failure_context)
         log.info(f"Generated skill draft: {draft.name}, "
                  f"pip: {draft.pip_requirements}, apt: {draft.system_packages}")
 
-        # Step 3: Iterative testing with session reuse
         last_error = None
         last_analysis: Optional[FailureAnalysis] = None
-        iteration_errors: list[dict] = []  # Accumulated errors for approach-switching
+        iteration_errors: list[dict] = []
         iteration = 0
 
         while iteration < self.MAX_ITERATIONS:
-            # Open a session for the current package requirements
             current_pip = list(draft.pip_requirements)
             current_apt = list(draft.system_packages)
 
@@ -230,10 +206,8 @@ class AutonomousSkillBuilder:
                 while iteration < self.MAX_ITERATIONS:
                     log.info(f"Testing iteration {iteration + 1}/{self.MAX_ITERATIONS}")
 
-                    # Build test code
                     test_code = self._build_test_code(draft, test_input, expected_output_type)
 
-                    # Execute in session (reuses container)
                     result = await session.execute_code(
                         code=f"{draft.code}\n\n{test_code}",
                     )
@@ -245,12 +219,10 @@ class AutonomousSkillBuilder:
                     if result.success:
                         log.info(f"Skill test passed on iteration {iteration + 1}")
 
-                        # Step 3.5: Semantic validation (if enabled)
                         semantic_result: Optional[SemanticValidationResult] = None
                         if self.enable_semantic_validation:
                             log.info("Running semantic validation...")
                             try:
-                                # Parse output from stdout
                                 skill_output = self._parse_skill_output(result.stdout)
 
                                 semantic_result = await self.semantic_validator.validate(
@@ -266,7 +238,6 @@ class AutonomousSkillBuilder:
                                         f"Semantic validation failed: score={semantic_result.similarity_score:.2f}, "
                                         f"reason={semantic_result.value_comparison}"
                                     )
-                                    # Treat as failure and continue iteration
                                     last_error = f"Semantic validation failed: {semantic_result.value_comparison}"
                                     last_analysis = await self.failure_analyzer.analyze_failure(
                                         capability=capability,
@@ -275,10 +246,8 @@ class AutonomousSkillBuilder:
                                         stderr="",
                                         pip_requirements=draft.pip_requirements,
                                     )
-                                    # Override error type to semantic
                                     last_analysis.error_type = ErrorType.SEMANTIC_ERROR
 
-                                    # Record semantic failure
                                     await self.failure_analyzer.record_attempt(
                                         capability=capability,
                                         code=draft.code,
@@ -303,19 +272,16 @@ class AutonomousSkillBuilder:
                                             draft, last_error, research, last_analysis, iteration_errors
                                         )
                                         iteration += 1
-                                        # Check if requirements changed
                                         if set(draft.pip_requirements) != set(current_pip) or set(draft.system_packages) != set(current_apt):
                                             log.info("Requirements changed after fix, restarting session")
                                             break
-                                    continue  # Try next iteration
+                                    continue
 
                                 log.info(f"Semantic validation passed: score={semantic_result.similarity_score:.2f}")
 
                             except Exception as e:
                                 log.warning(f"Semantic validation error: {e}")
-                                # Don't fail the build on validation errors, just log
 
-                        # Record successful attempt
                         attempt_id = await self.failure_analyzer.record_attempt(
                             capability=capability,
                             code=draft.code,
@@ -331,14 +297,12 @@ class AutonomousSkillBuilder:
                             },
                         )
 
-                        # Learn from success
                         await self.failure_analyzer.learn_from_success(
                             capability=capability,
                             pip_requirements=draft.pip_requirements,
                             code=draft.code,
                         )
 
-                        # Step 4: Persist skill
                         skill = await self._persist_skill(draft, research, iteration + 1)
 
                         return SkillBuildResult(
@@ -350,21 +314,17 @@ class AutonomousSkillBuilder:
                             execution_time_ms=execution_time_ms,
                         )
 
-                    # Test failed - analyze and try to fix
                     last_error = result.error or result.stderr
                     log.warning(f"Iteration {iteration + 1} failed: {last_error[:200]}")
 
-                    # Detect which libraries are being used for approach-switching
                     used_libs = self._detect_libraries(draft.code)
 
-                    # Accumulate error for approach-switching logic
                     iteration_errors.append({
                         "iteration": iteration + 1,
                         "error": last_error[:300],
                         "libraries": used_libs,
                     })
 
-                    # Analyze the failure
                     last_analysis = await self.failure_analyzer.analyze_failure(
                         capability=capability,
                         code=draft.code,
@@ -373,7 +333,6 @@ class AutonomousSkillBuilder:
                         pip_requirements=draft.pip_requirements,
                     )
 
-                    # Record failed attempt
                     await self.failure_analyzer.record_attempt(
                         capability=capability,
                         code=draft.code,
@@ -397,16 +356,13 @@ class AutonomousSkillBuilder:
 
                     iteration += 1
                     if iteration < self.MAX_ITERATIONS:
-                        # Try to fix the code using analysis + accumulated errors
                         draft = await self._fix_skill_code(
                             draft, last_error, research, last_analysis, iteration_errors
                         )
-                        # Check if requirements changed — need a new session
                         if set(draft.pip_requirements) != set(current_pip) or set(draft.system_packages) != set(current_apt):
                             log.info("Requirements changed after fix, restarting session")
                             break
 
-        # All iterations failed
         execution_time_ms = int(
             (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
         )
@@ -429,29 +385,24 @@ class AutonomousSkillBuilder:
         """Research how to implement a capability using web search."""
         log.info(f"Researching capability: {capability}")
 
-        # Check for known package hints first
         capability_lower = capability.lower()
         known_hints = CAPABILITY_PACKAGE_HINTS.get(capability_lower, {})
 
         result = ResearchResult(query=capability)
 
-        # Add known hints
         if known_hints:
             result.recommended_packages = known_hints.get("pip", [])[:3]
             result.recommended_system_packages = known_hints.get("apt", [])
 
-        # Add user hints
         if hints:
             if hints.get("pip"):
                 result.recommended_packages.extend(hints["pip"])
             if hints.get("apt"):
                 result.recommended_system_packages.extend(hints["apt"])
 
-        # Web search for more information
         try:
             search_query = f"python {capability} implementation example code 2024"
 
-            # Use LLM to search and summarize
             search_prompt = f"""Search for how to implement "{capability}" in Python.
 
 Find:
@@ -475,9 +426,7 @@ Return a JSON object with:
                 temperature=0.3,
             )
 
-            # Try to parse response as JSON
             try:
-                # Extract JSON from response
                 content = response.content
                 json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
                 if json_match:
@@ -497,7 +446,6 @@ Return a JSON object with:
         except Exception as e:
             log.warning(f"Web research failed: {e}")
 
-        # Deduplicate packages
         result.recommended_packages = list(dict.fromkeys(result.recommended_packages))
         result.recommended_system_packages = list(dict.fromkeys(result.recommended_system_packages))
 
@@ -515,12 +463,10 @@ Return a JSON object with:
         """Generate skill code based on research and past failures."""
         log.info(f"Generating skill code for: {capability}")
 
-        # Build prompt with research context
         packages_info = ""
         if research.recommended_packages:
             packages_info = f"\nRecommended packages: {', '.join(research.recommended_packages)}"
 
-        # Check for stdlib recommendations
         stdlib_info = ""
         capability_lower = capability.lower()
         for hint_key, hint_val in CAPABILITY_PACKAGE_HINTS.items():
@@ -534,7 +480,6 @@ Return a JSON object with:
         if research.code_examples:
             examples_info = f"\nCode examples from research:\n```python\n{research.code_examples[0][:1000]}\n```"
 
-        # Include failure context if available
         failure_section = ""
         if failure_context:
             failure_section = f"\n{failure_context}\n"
@@ -575,14 +520,11 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
             max_tokens=4000,
         )
 
-        # Extract code from response
         code = self._extract_code(response.content)
 
-        # Extract imports to determine pip requirements
         imports = self._extract_imports(code)
         pip_requirements = self._imports_to_packages(imports, research.recommended_packages)
 
-        # Generate skill name
         skill_name = f"skill_{capability.lower().replace(' ', '_').replace('-', '_')}"
 
         return SkillDraft(
@@ -646,7 +588,6 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
         for line in code.split("\n"):
             line = line.strip()
             if line.startswith("import ") or line.startswith("from "):
-                # Extract top-level module
                 parts = line.replace("import ", "").replace("from ", "").split()[0].split(".")[0]
                 if parts not in ("os", "sys", "json", "re", "math", "datetime", "sqlite3",
                                  "csv", "io", "pathlib", "collections", "typing", "uuid",
@@ -667,9 +608,7 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
         iteration_errors = iteration_errors or []
         log.info(f"Attempting to fix skill code based on error (attempt {len(iteration_errors)})")
 
-        # Use analysis if available
         if analysis:
-            # Handle import errors with suggested packages
             if analysis.error_type == ErrorType.IMPORT_ERROR:
                 for package in analysis.alternative_packages:
                     if package not in draft.pip_requirements:
@@ -677,7 +616,6 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
                         draft.pip_requirements.append(package)
                         return draft
 
-        # Check for pip install failures — remove bad package names
         if "No matching distribution found for" in error:
             match = re.search(r"No matching distribution found for (\S+)", error)
             if match:
@@ -686,28 +624,23 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
                 draft.pip_requirements = [
                     p for p in draft.pip_requirements if p != bad_package
                 ]
-                # Try to find the correct package via mapping
                 from app.skills.testing.package_resolver import HARDCODED_MAPPINGS
                 corrected = HARDCODED_MAPPINGS.get(bad_package)
                 if corrected and corrected not in draft.pip_requirements:
                     log.info(f"Replacing with correct package: {corrected}")
                     draft.pip_requirements.append(corrected)
 
-        # Check for common errors (fallback if no analysis)
         if "ModuleNotFoundError" in error or "No module named" in error:
-            # Extract missing module
             match = re.search(r"No module named ['\"]?(\w+)['\"]?", error)
             if match:
                 missing_module = match.group(1)
                 log.info(f"Missing module detected: {missing_module}")
 
-                # Try to find the correct pip package
                 package_name = self._module_to_package(missing_module)
                 if package_name and package_name not in draft.pip_requirements:
                     draft.pip_requirements.append(package_name)
                     return draft
 
-        # Build enhanced prompt with analysis suggestions
         analysis_section = ""
         if analysis:
             if analysis.suggested_fixes:
@@ -719,7 +652,6 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
                 for suggestion in analysis.code_suggestions[:2]:
                     analysis_section += f"- {suggestion}\n"
 
-        # Build error history section
         error_history_section = ""
         if len(iteration_errors) >= 2:
             history_lines = []
@@ -729,7 +661,6 @@ Return ONLY the Python code, no explanations. The code must be complete and runn
             error_history_section = f"\n\n**Previous failed attempts ({len(iteration_errors)} total):**\n" + "\n".join(history_lines)
             error_history_section += "\n\nDo NOT repeat these same mistakes."
 
-        # Detect if the same library keeps failing → force approach switch
         approach_switch_section = ""
         if len(iteration_errors) >= 3:
             recent_libs = [lib for e in iteration_errors[-3:] for lib in e["libraries"]]
@@ -761,13 +692,11 @@ You MUST ABANDON '{repeated_lib}' completely and use a DIFFERENT approach:
 - For math/statistics: use math, statistics modules
 Do NOT import {repeated_lib} in your fixed code."""
 
-                    # Remove the failing package from requirements
                     draft.pip_requirements = [
                         p for p in draft.pip_requirements
                         if repeated_lib not in p.lower().replace("-", "_")
                     ]
 
-        # Use LLM to fix the code
         prompt = f"""Fix this Python code that has an error.
 
 Original code:
@@ -795,20 +724,16 @@ Fix the code to resolve this error. Return ONLY the fixed Python code, no explan
             max_tokens=4000,
         )
 
-        # Extract fixed code
         fixed_code = self._extract_code(response.content)
 
-        # Update imports/requirements
         imports = self._extract_imports(fixed_code)
         new_requirements = self._imports_to_packages(imports, research.recommended_packages)
 
-        # Add alternative packages from analysis
         if analysis and analysis.alternative_packages:
             for pkg in analysis.alternative_packages:
                 if pkg not in new_requirements and pkg not in draft.pip_requirements:
                     new_requirements.append(pkg)
 
-        # Merge requirements
         all_requirements = list(dict.fromkeys(draft.pip_requirements + new_requirements))
 
         return SkillDraft(
@@ -829,12 +754,8 @@ Fix the code to resolve this error. Return ONLY the fixed Python code, no explan
     ) -> str:
         """Build test code for the skill."""
         test_input = test_input or {}
-        # Use json.dumps for the JSON string, but load it via json.loads() in
-        # the generated code to avoid JSON true/false/null in Python context
         input_json = json.dumps(test_input).replace("\\", "\\\\").replace("'", "\\'")
 
-        # If no test_input provided, run an import/callable check instead
-        # of trying to execute with empty/dummy data that will fail
         if not test_input:
             return f'''
 # Smoke test: verify imports work and execute() is callable
@@ -854,7 +775,6 @@ if __name__ == "__main__":
     exit(0)
 '''
 
-        # Prüfe ob Dateien verarbeitet werden sollen
         has_file_input = any(
             k in (test_input or {}) for k in ("file_path", "file", "input_file", "audio_file")
         )
@@ -934,7 +854,6 @@ if __name__ == "__main__":
         ]
 
         for pkg in pip_requirements:
-            # Add package (could add version pinning logic here)
             lines.append(pkg)
 
         return "\n".join(lines)
@@ -948,10 +867,8 @@ if __name__ == "__main__":
         """Persist the successful skill to database."""
         log.info(f"Persisting skill: {draft.name}")
 
-        # Generate requirements.txt
         requirements_txt = self._generate_requirements_txt(draft.pip_requirements)
 
-        # Build metadata
         metadata = {
             "pip_requirements": draft.pip_requirements,
             "system_packages": draft.system_packages,
@@ -964,17 +881,14 @@ if __name__ == "__main__":
         }
 
         async with self.session_factory() as db:
-            # Check if skill already exists
             existing = await db.execute(
                 select(Skill).where(Skill.name == draft.name)
             )
             existing_skill = existing.scalar_one_or_none()
 
-            # applicability aus affected_capability ableiten (SoK C-Feld)
             applicability = metadata.get("affected_capability", draft.name.replace("skill_", "").replace("_", " "))
 
             if existing_skill:
-                # Update existing skill
                 existing_skill.code = draft.code
                 existing_skill.description = draft.description
                 existing_skill.interface = draft.interface or existing_skill.interface
@@ -985,7 +899,6 @@ if __name__ == "__main__":
                 log.info(f"Updated existing skill: {existing_skill.id}")
                 return existing_skill
 
-            # Create new skill
             skill = Skill(
                 id=str(uuid.uuid4()),
                 name=draft.name,
@@ -1061,25 +974,20 @@ Mark parameters as required if the code does not provide a default value (i.e. u
             if not isinstance(node, ast.FunctionDef) or node.name != "execute":
                 continue
 
-            # Parse docstring for parameter descriptions
             docstring = ast.get_docstring(node) or ""
             param_descriptions: dict[str, str] = {}
             for line in docstring.split("\n"):
                 line = line.strip()
-                # Match "param_name: description" or "param_name (type): description"
                 if ":" in line and not line.startswith("Args") and not line.startswith("Returns"):
                     parts = line.split(":", 1)
                     key = parts[0].strip().strip("-").strip()
                     if key and not key[0].isupper() and len(parts) > 1:
                         param_descriptions[key] = parts[1].strip()
 
-            # Check if function takes a single dict param (input_data: dict)
             args = node.args
             params = args.args
             if len(params) == 1:
-                # Single dict param — look at docstring/code for inner keys
                 properties: dict[str, dict] = {}
-                # Scan code for input_data.get("key") or input_data["key"] patterns
                 import re
                 for match in re.finditer(r'input_data(?:\.get\(|\.?\[)["\'](\w+)["\']', code):
                     key = match.group(1)
@@ -1094,7 +1002,7 @@ Mark parameters as required if the code does not provide a default value (i.e. u
                         "input": {
                             "type": "object",
                             "properties": properties,
-                            "required": list(properties.keys())[:1],  # First param as required
+                            "required": list(properties.keys())[:1],
                         },
                         "output": {
                             "type": "object",
@@ -1111,24 +1019,20 @@ Mark parameters as required if the code does not provide a default value (i.e. u
     def _parse_skill_output(self, stdout: str) -> Any:
         """Parse skill output from sandbox stdout."""
         try:
-            # Try to find the result line
             lines = stdout.strip().split('\n')
             for line in reversed(lines):
                 if line.startswith('Result:'):
-                    # Extract dict/value after 'Result:'
                     result_str = line[7:].strip()
                     try:
                         return json.loads(result_str.replace("'", '"'))
                     except json.JSONDecodeError:
                         return result_str
 
-            # Try to parse entire stdout as JSON
             try:
                 return json.loads(stdout)
             except json.JSONDecodeError:
                 pass
 
-            # Return raw stdout
             return stdout.strip()
 
         except Exception as e:
@@ -1137,7 +1041,6 @@ Mark parameters as required if the code does not provide a default value (i.e. u
 
     def _extract_code(self, response: str) -> str:
         """Extract Python code from LLM response."""
-        # Try to find code in markdown blocks
         code_match = re.search(r'```python\n(.*?)```', response, re.DOTALL)
         if code_match:
             return code_match.group(1).strip()
@@ -1146,8 +1049,6 @@ Mark parameters as required if the code does not provide a default value (i.e. u
         if code_match:
             return code_match.group(1).strip()
 
-        # If no code blocks, assume the whole response is code
-        # Remove any leading/trailing non-code text
         lines = response.strip().split('\n')
         code_lines = []
         in_code = False
@@ -1176,7 +1077,6 @@ Mark parameters as required if the code does not provide a default value (i.e. u
                     if node.module:
                         imports.append(node.module.split('.')[0])
         except SyntaxError:
-            # Fallback to regex
             import_matches = re.findall(r'^import\s+(\w+)', code, re.MULTILINE)
             from_matches = re.findall(r'^from\s+(\w+)', code, re.MULTILINE)
             imports = import_matches + from_matches
@@ -1189,7 +1089,6 @@ Mark parameters as required if the code does not provide a default value (i.e. u
         recommended: list[str],
     ) -> list[str]:
         """Convert import names to pip package names using PackageResolver."""
-        # Lazy-init PackageResolver mit frischer Session
         if self.package_resolver is None:
             async with self.session_factory() as db:
                 self.package_resolver = PackageResolver(db)
@@ -1197,16 +1096,13 @@ Mark parameters as required if the code does not provide a default value (i.e. u
         packages = []
 
         for imp in imports:
-            # Skip stdlib
             if self.package_resolver.is_stdlib(imp):
                 continue
 
-            # Resolve using PackageResolver
             package = await self.package_resolver.resolve(imp)
             if package:
                 packages.append(package)
 
-        # Add recommended packages that weren't in imports but are needed
         for pkg in recommended:
             pkg_lower = pkg.lower().replace('-', '_')
             if pkg not in packages and any(pkg_lower in imp.lower() for imp in imports):
@@ -1220,7 +1116,6 @@ Mark parameters as required if the code does not provide a default value (i.e. u
         recommended: list[str],
     ) -> list[str]:
         """Convert import names to pip package names (sync fallback)."""
-        # Use hardcoded mappings for sync context
         from app.skills.testing.package_resolver import HARDCODED_MAPPINGS, STDLIB_MODULES
 
         packages = []
@@ -1229,16 +1124,13 @@ Mark parameters as required if the code does not provide a default value (i.e. u
             if imp in STDLIB_MODULES:
                 continue
 
-            # Check mapping
             if imp in HARDCODED_MAPPINGS:
                 packages.append(HARDCODED_MAPPINGS[imp])
             elif imp in recommended:
                 packages.append(imp)
             else:
-                # Assume import name == package name
                 packages.append(imp)
 
-        # Add recommended packages that weren't in imports but are needed
         for pkg in recommended:
             pkg_lower = pkg.lower().replace('-', '_')
             if pkg not in packages and any(pkg_lower in imp.lower() for imp in imports):
@@ -1253,7 +1145,6 @@ Mark parameters as required if the code does not provide a default value (i.e. u
         if module in HARDCODED_MAPPINGS:
             return HARDCODED_MAPPINGS[module]
 
-        # Default: assume module name is package name
         return module
 
     async def _module_to_package_async(self, module: str) -> Optional[str]:
