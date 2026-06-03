@@ -1,0 +1,5 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-09-17,Dacharbeiten,Lichtkuppel einbauen,3,5.0,Lichtkuppel 120x120,1,Stk,Wetter trocken nötig
+2025-09-17,Dacharbeiten,Attika-Abdichtung,4,5.5,EPDM-Folie,5.4,m²,
+2025-09-17,Dacharbeiten,Kiesschüttung,3,5.5,Rundkies 16/32,4.1,m³,Baufeld Ost
+2025-09-17,Dacharbeiten,Attika verkleiden,4,4.2,"Zinkblech 0,7mm",2.4,m,Anschluss Attika

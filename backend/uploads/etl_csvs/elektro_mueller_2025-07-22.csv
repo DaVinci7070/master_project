@@ -1,0 +1,5 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-07-22,Elektroinstallation,Verteilerkästen verdrahten,4,10.8,Klemmen/Sicherungen,1,Palette,nach Plan Rev. C
+2025-07-22,Elektroinstallation,Verteilerkästen setzen,4,9.6,Verteilerkasten UP,1,Stk,
+2025-07-22,Elektroinstallation,Leitungen einziehen,4,10.5,"NYM-J 5x2,5",113.0,m,
+2025-07-22,Elektroinstallation,Kabelkanal montieren,2,11.4,Kabelrinne 200mm,16.8,m,nach Plan Rev. C

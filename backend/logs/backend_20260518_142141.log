@@ -1,0 +1,27 @@
+INFO:     Will watch for changes in these directories: ['/Users/patrick/Documents/Uni/master_project/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [32576] using WatchFiles
+[2m12:21:45[0m [[32m[1minfo     [0m] [1mStarted server process [32582]          [0m
+[2m12:21:45[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:21:45[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:21:45[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:21:45[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:21:45[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:21:45[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:21:45[0m [[32m[1minfo     [0m] [1mBackfilling applicability for 14 skills...[0m
+[2m12:21:46[0m [[32m[1minfo     [0m] [1m  skill_connect_to_postgresql_database_using_provided_credentials: applicability set[0m
+[2m12:21:47[0m [[32m[1minfo     [0m] [1m  skill_execute_sql_queries_to_list_database_tables: applicability set[0m
+[2m12:21:48[0m [[32m[1minfo     [0m] [1m  skill_generate_a_text_based_schema_diagram: applicability set[0m
+[2m12:21:48[0m [[32m[1minfo     [0m] [1m  skill_calculate_progress_percentages,_total_hours,_and_report_counts_per_trade: applicability set[0m
+[2m12:21:49[0m [[32m[1minfo     [0m] [1m  skill_direkter_sql_datenbank_konnektor_(die_verfügbaren_agenten_nutzen_generische_skills,_die_eine_abstraktion_der_datenbankverbindung_voraussetzen): applicability set[0m
+[2m12:21:52[0m [[32m[1minfo     [0m] [1m  skill_execute_sql_queries_to_retrieve_column_metadata_and_foreign_key_constraints: applicability set[0m
+[2m12:21:53[0m [[32m[1minfo     [0m] [1m  skill_analyze_database_schema_structure: applicability set[0m
+[2m12:21:54[0m [[32m[1minfo     [0m] [1m  skill_direkter_sql_datenbank_konnektor_(die_verfügbaren_agenten_sind_auf_text/kontext_verarbeitung_spezialisiert,_die_datenbank_abfrage_muss_durch_einen_spezialisierten_db_agenten_oder_ein_tool_interface_innerhalb_des_context_retriever_erfolgen): applicability set[0m
+[2m12:21:55[0m [[32m[1minfo     [0m] [1m  skill_output_ist_rein_theoretisch_/_beschreibend: applicability set[0m
+[2m12:21:56[0m [[32m[1minfo     [0m] [1m  skill_direkter_sql_datenbank_konnektor_(die_verfügbaren_agenten_sind_auf_generische_textverarbeitung_spezialisiert,_der_zugriff_auf_die_datenbank_muss_über_die_skill_ebene_der_agenten_abstrahiert_werden): applicability set[0m
+[2m12:21:57[0m [[32m[1minfo     [0m] [1m  skill_establish_database_connection_to_postgresql_instance: applicability set[0m
+[2m12:21:57[0m [[32m[1minfo     [0m] [1m  skill_parse_and_load_multiple_csv_files_from_a_directory: applicability set[0m
+[2m12:21:58[0m [[32m[1minfo     [0m] [1m  skill_direkter_datenbank_connector_(sql_execution): applicability set[0m
+[2m12:21:59[0m [[32m[1minfo     [0m] [1m  skill_automatisierter_dateisystem_crawler_für_csv_batch_verarbeitung: applicability set[0m
+[2m12:21:59[0m [[32m[1minfo     [0m] [1mApplicability backfill complete         [0m
+[2m12:21:59[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m

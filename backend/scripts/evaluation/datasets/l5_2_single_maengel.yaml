@@ -1,0 +1,24 @@
+suite: l5_2_single_maengel
+description: >
+  Einzeltest: Maengel-Analyse — zum Debuggen des Evolution-Loops.
+tasks:
+  - task_id: L5_2_maengel_analyse
+    level: L5
+    description: >
+      Verbinde dich mit der Baustellendatenbank
+      (Host: benchmark-db, Port: 5432, User: benchmark,
+      Passwort: bench2024, DB: lumari_benchmark_db).
+
+      Aufgabe: Erstelle eine Maengel-Analyse ueber beide Projekte.
+      Zeige: Anzahl Maengel nach Schweregrad und Status, welche Gewerke
+      die meisten kritischen Maengel haben, und welche offenen kritischen
+      Maengel sofort bearbeitet werden muessen. Berechne eine Maengelquote
+      (Maengel pro Gewerk) und identifiziere Problemgewerke.
+    ground_truth:
+      required_claims:
+        - 8 kritische offene Maengel werden identifiziert
+        - 3 kritische Maengel sind in Bearbeitung
+        - 13 mittlere offene Maengel werden genannt
+        - Gesamtzahl der Maengel ist 44
+        - Mindestens ein Gewerk mit ueberdurchschnittlich vielen Maengeln wird identifiziert
+        - Offene kritische Maengel werden einzeln aufgelistet oder zusammengefasst

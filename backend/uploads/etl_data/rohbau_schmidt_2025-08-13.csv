@@ -1,0 +1,5 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-08-13,Rohbau,Betonage Stützen,8,11.4,Beton C30/37,0.7,m³,OG2 Nordseite
+2025-08-13,Rohbau,Treppen-Fertigteile setzen,7,11.8,Fertigteiltreppe,1,Stk,Pumpe 36m
+2025-08-13,Rohbau,Mauerwerk OG2,5,11.6,Kalksandstein 24cm,1,Palette,lt. Statik Rev.B
+2025-08-13,Rohbau,Sturz einbauen,8,9.9,"Fertigsturz 2,0m",1,Stk,Pumpe 36m

@@ -1,0 +1,8 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-08-11,Rohbau,Treppen-Fertigteile setzen,8,13.1,Fertigteiltreppe,1,Stk,lt. Statik Rev.B
+2025-08-11,Rohbau,Mauerwerk OG2,5,10.1,Kalksandstein 24cm,1,Palette,lt. Statik Rev.B
+2025-08-11,Rohbau,Betonage Stützen,6,11.5,Beton C30/37,1.0,m³,
+2025-08-11,Rohbau,Betonage Decke OG2,6,10.8,Beton C25/30,2.9,m³,Achse A-D
+2025-08-11,Rohbau,Bewherung Stützen,7,11.9,Bewehrungsmatten Q335,3,Stk,
+2025-08-11,Rohbau,Ringbalken betonieren,7,11.8,Beton C25/30,0.6,m³,lt. Statik Rev.B
+2025-08-11,Rohbau,Decke ausschalen,5,11.5,Deckenstützen mieten,9,Stk,Wetter gut

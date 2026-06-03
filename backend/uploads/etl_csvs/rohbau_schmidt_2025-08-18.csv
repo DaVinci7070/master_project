@@ -1,0 +1,6 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-08-18,Rohbau,Betonage Stützen,4,9.5,Beton C30/37,0.8,m³,Pumpe 36m
+2025-08-18,Rohbau,Mauerwerk OG2,4,10.5,Kalksandstein 24cm,2,Palette,Wetter gut
+2025-08-18,Rohbau,Ringbalken betonieren,5,12.0,Beton C25/30,0.6,m³,OG2 Nordseite
+2025-08-18,Rohbau,Bewehrung verlegen,5,8.9,Bewehrungsstahl BSt500,455.0,kg,Pumpe 36m
+2025-08-18,Rohbau,Betonage Decke OG2,4,12.3,Beton C25/30,1.9,m³,Pumpe 36m

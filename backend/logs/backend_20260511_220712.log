@@ -1,0 +1,39 @@
+INFO:     Will watch for changes in these directories: ['/Users/patrick/Documents/Uni/master_project/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [29084] using WatchFiles
+[2m20:07:17[0m [[32m[1minfo     [0m] [1mStarted server process [29090]          [0m
+[2m20:07:17[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m20:07:17[0m [[32m[1minfo     [0m] [1mDatabase already initialized (30 tables)[0m
+[2m20:07:17[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m20:07:17[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m20:07:17[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m20:07:17[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m20:07:17[0m [[32m[1minfo     [0m] [1mBackfilling applicability for 18 skills...[0m
+[2m20:07:18[0m [[32m[1minfo     [0m] [1m  skill_generate_professional_business_correspondence: applicability set[0m
+[2m20:07:19[0m [[32m[1minfo     [0m] [1m  skill_generate_pdf_inspection_report_file: applicability set[0m
+[2m20:07:20[0m [[32m[1minfo     [0m] [1m  skill_extract_technical_data_from_audit_findings: applicability set[0m
+[2m20:07:21[0m [[32m[1minfo     [0m] [1m  skill_calculate_total_defect_remediation_costs_and_retention_amounts: applicability set[0m
+[2m20:07:22[0m [[32m[1minfo     [0m] [1m  skill_format_delivery_data_into_a_structured_protocol_document: applicability set[0m
+[2m20:07:22[0m [[32m[1minfo     [0m] [1m  skill_calculate_structural_load_capacity_for_mezzanine_floor: applicability set[0m
+[2m20:07:23[0m [[32m[1minfo     [0m] [1m  skill_calculate_sound_insulation_reserves_based_on_measured_values: applicability set[0m
+[2m20:07:24[0m [[32m[1minfo     [0m] [1m  skill_calculate_financial_impact_of_corrective_measures: applicability set[0m
+[2m20:07:25[0m [[32m[1minfo     [0m] [1m  skill_generate_a_formal_schedule_variance_analysis_report: applicability set[0m
+[2m20:07:26[0m [[32m[1minfo     [0m] [1m  skill_calculate_the_3_year_average_for_heating_and_electricity_consumption: applicability set[0m
+[2m20:07:27[0m [[32m[1minfo     [0m] [1m  skill_analyze_the_impact_of_the_new_server_room_on_electricity_consumption_trends: applicability set[0m
+[2m20:07:28[0m [[32m[1minfo     [0m] [1m  skill_calculate_variance_between_planned_and_actual_project_costs: applicability set[0m
+[2m20:07:29[0m [[32m[1minfo     [0m] [1m  skill_compute_potential_energy_savings_from_server_waste_heat_recovery: applicability set[0m
+[2m20:07:29[0m [[32m[1minfo     [0m] [1m  skill_generate_a_pollutant_register_based_on_the_provided_survey_findings: applicability set[0m
+[2m20:07:30[0m [[32m[1minfo     [0m] [1m  skill_identify_non_compliant_accessibility_features_based_on_provided_measurements: applicability set[0m
+[2m20:07:32[0m [[32m[1minfo     [0m] [1m  skill_create_defect_list_document: applicability set[0m
+[2m20:07:32[0m [[32m[1minfo     [0m] [1m  skill_calculate_remediation_deadline: applicability set[0m
+[2m20:07:33[0m [[32m[1minfo     [0m] [1m  skill_generate_cost_forecast_projections_based_on_current_budget_data: applicability set[0m
+[2m20:07:34[0m [[32m[1minfo     [0m] [1mApplicability backfill complete         [0m
+[2m20:07:34[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+[2m20:09:14[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m20:09:14[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m20:09:14[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m20:09:14[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m20:09:14[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m20:09:14[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m20:09:14[0m [[32m[1minfo     [0m] [1mFinished server process [29090]         [0m
+INFO:     Stopping reloader process [29084]

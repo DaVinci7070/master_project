@@ -1,0 +1,8 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-07-24,Rohbau,Bewherung Stützen,4,11.1,Bewehrungsmatten Q335,3,Stk,
+2025-07-24,Rohbau,Bewehrung verlegen,6,12.8,Bewehrungsstahl BSt500,519.4,kg,Achse A-D
+2025-07-24,Rohbau,Betonage Decke OG2,6,8.9,Beton C25/30,3.2,m³,lt. Statik Rev.B
+2025-07-24,Rohbau,Mauerwerk OG2,6,11.4,Kalksandstein 24cm,2,Palette,lt. Statik Rev.B
+2025-07-24,Rohbau,Betonage Stützen,8,8.1,Beton C30/37,1.1,m³,Achse A-D
+2025-07-24,Rohbau,Treppen-Fertigteile setzen,4,13.2,Fertigteiltreppe,1,Stk,
+2025-07-24,Rohbau,Sturz einbauen,4,12.2,"Fertigsturz 2,0m",1,Stk,Achse A-D

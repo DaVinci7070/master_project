@@ -1,0 +1,18 @@
+config_id: ABL-STRONG-EVO-OFF
+description: "Starkes Modell OHNE Evolution — zeigt reinen Modell-Effekt"
+levels: [L3, L4, L5]
+seeds: 3
+mode: cold
+judge_model: "gemini/gemini-3.5-flash"
+models:
+  research: "gemini/gemini-3.5-flash"
+  architecture: "gemini/gemini-3.5-flash"
+  implementation: "gemini/gemini-3.5-flash"
+  review: "gemini/gemini-3.5-flash"
+  code_fix: "gemini/gemini-3.5-flash"
+  semantic_validation: "gemini/gemini-3.5-flash"
+  general: "gemini/gemini-3.5-flash"
+ablation:
+  autonomous_evolution_enabled: false
+  shared_memory_enabled: false
+  skill_reuse_enabled: false

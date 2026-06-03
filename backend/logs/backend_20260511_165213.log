@@ -1,0 +1,11 @@
+INFO:     Will watch for changes in these directories: ['/Users/patrick/Documents/Uni/master_project/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [23775] using WatchFiles
+[2m14:52:17[0m [[32m[1minfo     [0m] [1mStarted server process [23781]          [0m
+[2m14:52:17[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m14:52:17[0m [[32m[1minfo     [0m] [1mDatabase already initialized (30 tables)[0m
+[2m14:52:17[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m14:52:17[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m14:52:17[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m14:52:17[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m14:52:17[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m

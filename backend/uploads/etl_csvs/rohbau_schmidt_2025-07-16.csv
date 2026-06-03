@@ -1,0 +1,9 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-07-16,Rohbau,Sturz einbauen,6,8.4,"Fertigsturz 2,0m",1,Stk,Wetter gut
+2025-07-16,Rohbau,Schalung Wände OG2,8,8.9,Schaltafeln Doka,8.8,m²,
+2025-07-16,Rohbau,Mauerwerk OG2,5,8.5,Kalksandstein 24cm,1,Palette,Pumpe 36m
+2025-07-16,Rohbau,Ringbalken betonieren,5,10.3,Beton C25/30,0.9,m³,Wetter gut
+2025-07-16,Rohbau,Bewehrung verlegen,5,11.2,Bewehrungsstahl BSt500,237.4,kg,
+2025-07-16,Rohbau,Betonage Decke OG2,7,11.6,Beton C25/30,2.7,m³,Achse A-D
+2025-07-16,Rohbau,Betonage Stützen,6,9.2,Beton C30/37,1.0,m³,
+2025-07-16,Rohbau,Decke ausschalen,6,10.3,Deckenstützen mieten,12,Stk,Achse A-D

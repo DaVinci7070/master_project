@@ -1,0 +1,18 @@
+config_id: U-MEDIUM-L3L5
+description: "Thinking-Modell (gemini-2.5-flash) auf L3-L5 — Mittlere Capability"
+levels: [L3, L4, L5]
+seeds: 3
+mode: cold
+judge_model: "gemini/gemini-3.5-flash"
+models:
+  research: "gemini/gemini-2.5-flash"
+  architecture: "gemini/gemini-2.5-flash"
+  implementation: "gemini/gemini-2.5-flash"
+  review: "gemini/gemini-2.5-flash"
+  code_fix: "gemini/gemini-2.5-flash"
+  semantic_validation: "gemini/gemini-2.5-flash"
+  general: "gemini/gemini-2.5-flash"
+ablation:
+  autonomous_evolution_enabled: true
+  shared_memory_enabled: true
+  skill_reuse_enabled: true

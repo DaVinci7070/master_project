@@ -1,0 +1,133 @@
+{
+  "suite": "progressive_complexity",
+  "seeds": 3,
+  "seed_run_ids": [
+    "9abdb2df-b969-4032-9949-236c02ad488c",
+    "fd835edb-5622-403c-b436-95a829766507",
+    "e7637038-a07f-4171-8c03-36c9b9f19b84"
+  ],
+  "pass_at_1_per_seed": [
+    0.571,
+    0.571,
+    0.571
+  ],
+  "pass_at_1_mean": 0.571,
+  "pass_at_1_std": 0.0,
+  "tokens_total_per_seed": [
+    429304,
+    354427,
+    479137
+  ],
+  "duration_ms_per_seed": [
+    5110289,
+    4032929,
+    5885538
+  ],
+  "task_pass_matrix": {
+    "L3_acceptance_protocol": [
+      1,
+      1,
+      1
+    ],
+    "L3_progress_with_cost_comparison": [
+      1,
+      1,
+      1
+    ],
+    "L3_safety_incident_report": [
+      0,
+      0,
+      1
+    ],
+    "L3_structural_assessment": [
+      1,
+      1,
+      0
+    ],
+    "L3_environmental_compliance": [
+      1,
+      1,
+      1
+    ],
+    "L3_schedule_variance_analysis": [
+      1,
+      1,
+      1
+    ],
+    "L3_warranty_claim_report": [
+      0,
+      0,
+      0
+    ],
+    "L4_fire_safety_audit": [
+      1,
+      1,
+      1
+    ],
+    "L4_energy_evaluation": [
+      1,
+      1,
+      1
+    ],
+    "L4_procurement_documentation": [
+      1,
+      0,
+      0
+    ],
+    "L4_noise_protection_assessment": [
+      1,
+      0,
+      1
+    ],
+    "L4_facade_inspection_report": [
+      1,
+      1,
+      0
+    ],
+    "L4_demolition_planning_report": [
+      1,
+      1,
+      1
+    ],
+    "L4_accessibility_audit": [
+      1,
+      0,
+      1
+    ],
+    "L5_schema_discovery_report": [
+      0,
+      0,
+      0
+    ],
+    "L5_etl_quarterly_report": [
+      0,
+      0,
+      0
+    ],
+    "L5_audio_tagesbericht_rohbau": [
+      0,
+      0,
+      0
+    ],
+    "L5_audio_begehung_maengel": [
+      0,
+      1,
+      1
+    ],
+    "L5_audio_bauleitungssitzung": [
+      0,
+      1,
+      0
+    ],
+    "L5_audio_telefonat_statiker": [
+      0,
+      0,
+      1
+    ],
+    "L5_audio_sicherheitsbericht": [
+      0,
+      1,
+      0
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-07-09,Elektroinstallation,Schalter/Steckdosen setzen,2,14.2,Schalterprogramm Busch-Jaeger,8,Stk,
+2025-07-09,Elektroinstallation,Kabelkanal montieren,3,7.2,Kabelrinne 200mm,17.5,m,OG2
+2025-07-09,Elektroinstallation,Verteilerkästen verdrahten,2,12.2,Klemmen/Sicherungen,1,Palette,nach Plan Rev. C
+2025-07-09,Elektroinstallation,Kabeltrasse verlegen,2,10.9,Kabelkanal,21.3,m,EG Flur

@@ -1,0 +1,4 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-08-19,Elektroinstallation,Schalter/Steckdosen setzen,4,8.5,Schalterprogramm Busch-Jaeger,10,Stk,
+2025-08-19,Elektroinstallation,Erdung verlegen,4,12.2,Erdungskabel 16mm²,20.1,m,UG Technik
+2025-08-19,Elektroinstallation,Deckenleuchten anschließen,3,12.5,LED-Deckenleuchte,4,Stk,OG2

@@ -1,0 +1,148 @@
+{
+  "suite": "domain_transfer",
+  "seeds": 3,
+  "seed_run_ids": [
+    "6fc0e39c-3b63-41ed-9eda-9f6d112c48db",
+    "30898ca7-caba-4375-b880-5cc26f173103",
+    "5342ad3e-e0cc-4912-9bc6-c5cdaed6cd6e"
+  ],
+  "pass_at_1_per_seed": [
+    0.0,
+    0.042,
+    0.042
+  ],
+  "pass_at_1_mean": 0.028,
+  "pass_at_1_std": 0.0198,
+  "tokens_total_per_seed": [
+    658808,
+    568422,
+    693246
+  ],
+  "duration_ms_per_seed": [
+    2019719,
+    1731716,
+    1882399
+  ],
+  "task_pass_matrix": {
+    "IT_L1_server_outage": [
+      0,
+      0,
+      0
+    ],
+    "IT_L1_network_disruption": [
+      0,
+      0,
+      0
+    ],
+    "IT_L1_password_reset_incident": [
+      0,
+      0,
+      0
+    ],
+    "IT_L2_multi_team_incident": [
+      0,
+      0,
+      0
+    ],
+    "IT_L2_change_incident_combined": [
+      0,
+      0,
+      0
+    ],
+    "IT_L2_capacity_planning": [
+      0,
+      0,
+      0
+    ],
+    "IT_L3_root_cause_analysis": [
+      0,
+      0,
+      0
+    ],
+    "IT_L3_postmortem_with_impact": [
+      0,
+      0,
+      0
+    ],
+    "IT_L3_disaster_recovery_test": [
+      0,
+      0,
+      0
+    ],
+    "IT_L4_security_breach_analysis": [
+      0,
+      0,
+      0
+    ],
+    "IT_L4_compliance_audit": [
+      0,
+      0,
+      0
+    ],
+    "IT_L4_cloud_migration_assessment": [
+      0,
+      0,
+      0
+    ],
+    "MP_L1_team_standup": [
+      0,
+      1,
+      1
+    ],
+    "MP_L1_decision_log": [
+      0,
+      0,
+      0
+    ],
+    "MP_L1_status_update": [
+      0,
+      0,
+      0
+    ],
+    "MP_L2_project_kickoff": [
+      0,
+      0,
+      0
+    ],
+    "MP_L2_sprint_retrospective": [
+      0,
+      0,
+      0
+    ],
+    "MP_L2_architecture_review": [
+      0,
+      0,
+      0
+    ],
+    "MP_L3_budget_review": [
+      0,
+      0,
+      0
+    ],
+    "MP_L3_vendor_evaluation": [
+      0,
+      0,
+      0
+    ],
+    "MP_L3_risk_workshop": [
+      0,
+      0,
+      0
+    ],
+    "MP_L4_board_meeting": [
+      0,
+      0,
+      0
+    ],
+    "MP_L4_regulatory_compliance_meeting": [
+      0,
+      0,
+      0
+    ],
+    "MP_L4_ma_integration_planning": [
+      0,
+      0,
+      0
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-09-15,Innenausbau,Estrich einbringen,3,8.0,Fließestrich CT-C30,1.2,m³,EG Büro
+2025-09-15,Innenausbau,Gipskarton beplanken,3,8.7,"GKB 12,5mm",13.8,m²,
+2025-09-15,Innenausbau,Estrichranddämmung,2,7.4,PE-Randstreifen 10mm,7.9,m,
+2025-09-15,Innenausbau,Putz auftragen,4,8.0,Kalkzementputz,9.2,m²,EG Büro
+2025-09-15,Innenausbau,Sockelleisten,2,5.5,MDF-Sockelleiste 80mm,10.4,m,Brandschutzwand F90
+2025-09-15,Innenausbau,Trockenbauwand EG,5,6.9,Gipskarton-Feuerschutz,7.1,m²,OG1 Flur
+2025-09-15,Innenausbau,Spachteln und schleifen,5,7.9,Fugenfüller,3.5,kg,

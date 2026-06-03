@@ -1,0 +1,35 @@
+suite: validation_l3_acceptance_protocol
+description: >
+  Single-Task-Validierung für Phase 0 V2-Fixes (Faktenrecall-Constraint +
+  Build-Timeout). Ein L3-Task mit vielen Zahlen/Codes/Eigennamen, der zuvor
+  Faktenrecall-Failures zeigte.
+tasks:
+  - task_id: L3_acceptance_protocol
+    level: L3
+    description: >
+      Erstelle ein Abnahmeprotokoll mit Maengelkatalog und Kostenberechnung:
+      Objekt: Mehrfamilienhaus Rosenweg 14, Abnahme am 08.04.2026.
+      Bauherr: Fam. Gruber, vertreten durch Sachverstaendigen Dipl.-Ing.
+      Naumann. Auftragnehmer: BauFit GmbH, Herr Ott.
+      Mangel 1: Balkon EG Gefaelle unzureichend (1,0% statt 2% nach
+      DIN 18195), Wasserrueckstau bei Starkregen. Schaetzkosten
+      Sanierung: 4.800 EUR. Mangel 2: Trittschalldaemmung Wohnung 3
+      OG nicht normgerecht (gemessener L'n,w = 56 dB, Anforderung
+      DIN 4109: max 53 dB). Schaetzkosten: 12.500 EUR. Mangel 3:
+      Heizkoerper Kueche Wohnung 1 zu klein dimensioniert (Waermeleistung
+      800W, Bedarf nach Heizlastberechnung 1.200W). Schaetzkosten: 950 EUR.
+      Mangel 4: Aufzugstuer EG schliesst nicht vollstaendig (Spalt 12mm,
+      max 6mm nach DIN EN 81-20). Schaetzkosten: 2.200 EUR.
+      Vorbehalt Restmaengel: 5% der Schlussrechnung (Bruttoschlussrechnung:
+      1.280.000 EUR, Einbehalt: 64.000 EUR). Gesamtschaetzkosten Maengel:
+      20.450 EUR. Abnahme erfolgt unter Vorbehalt der gelisteten Maengel.
+    ground_truth:
+      required_claims:
+        - "Das Objekt ist Mehrfamilienhaus Rosenweg 14, Abnahme am 08.04.2026"
+        - "Der Sachverstaendige ist Dipl.-Ing. Naumann, Auftragnehmer ist BauFit GmbH (Herr Ott)"
+        - "Mangel 1: Balkon EG Gefaelle 1,0% statt 2% nach DIN 18195, Schaetzkosten 4.800 EUR"
+        - "Mangel 2: Trittschalldaemmung nicht normgerecht (56 dB gemessen, max 53 dB nach DIN 4109), Kosten 12.500 EUR"
+        - "Mangel 3: Heizkoerper zu klein dimensioniert (800W statt 1.200W), Kosten 950 EUR"
+        - "Mangel 4: Aufzugstuer Spalt 12mm statt max 6mm nach DIN EN 81-20, Kosten 2.200 EUR"
+        - "Gesamtschaetzkosten der Maengel betragen 20.450 EUR"
+        - "Einbehalt von 5% der Schlussrechnung: 64.000 EUR (Brutto 1.280.000 EUR)"

@@ -1,0 +1,130 @@
+suite: l5_2_db
+description: >
+  L5.2 — Reine Datenbank-Tasks. Testet autonomen DB-Zugriff, Schema-Analyse,
+  SQL-Queries und ETL-Pipeline. 5 Tasks mit steigender Komplexitaet.
+tasks:
+  # ============================================================
+  # Task 1: Einfache Schema-Erkundung
+  # ============================================================
+  - task_id: L5_2_schema_exploration
+    level: L5
+    description: >
+      Verbinde dich mit der Baustellendatenbank
+      (Host: benchmark-db, Port: 5432, User: benchmark,
+      Passwort: bench2024, DB: lumari_benchmark_db).
+
+      Aufgabe: Liste alle Tabellen auf, beschreibe ihre Spalten und
+      identifiziere die Fremdschluessel-Beziehungen zwischen den Tabellen.
+      Erstelle ein uebersichtliches Schema-Diagramm in Textform.
+    ground_truth:
+      required_claims:
+        - Tabelle 'projekte' wird identifiziert mit Spalten wie name, budget, startdatum
+        - Tabelle 'gewerke' wird identifiziert mit Fremdschluessel zu projekte
+        - Tabelle 'tagesberichte' wird identifiziert mit Fremdschluessel zu gewerke
+        - Tabelle 'maengel' wird identifiziert mit Spalten wie schweregrad und status
+        - Tabelle 'kosten' wird identifiziert mit Fremdschluessel zu gewerke
+        - Mindestens 4 Fremdschluessel-Beziehungen werden korrekt beschrieben
+
+  # ============================================================
+  # Task 2: Gezielte Datenabfrage mit Aggregation
+  # ============================================================
+  - task_id: L5_2_projekt_fortschritt
+    level: L5
+    description: >
+      Verbinde dich mit der Baustellendatenbank
+      (Host: benchmark-db, Port: 5432, User: benchmark,
+      Passwort: bench2024, DB: lumari_benchmark_db).
+
+      Aufgabe: Erstelle eine Fortschrittsuebersicht fuer das Projekt
+      'Neubau Wohnanlage Bergstrasse 12'. Fuer jedes Gewerk soll
+      aufgelistet werden: Fortschritt in Prozent, Status, Anzahl
+      Tagesberichte, Gesamtstunden und der verantwortliche Mitarbeiter.
+      Identifiziere das Gewerk mit dem groessten Verzoegerungsrisiko.
+    ground_truth:
+      required_claims:
+        - Rohbau wird mit 85% Fortschritt angegeben
+        - Elektroinstallation wird als verzoegert identifiziert
+        - Elektroinstallation hat 46 Tagesberichte oder ca. 1200 Stunden
+        - Rohbau hat die meisten Stunden (ca. 5000h)
+        - Fassade oder Innenausbau werden als geplant/frueh genannt
+        - Meister Hoffmann wird als Verantwortlicher fuer Elektro genannt
+        - Elektroinstallation wird als groesstes Verzoegerungsrisiko identifiziert
+
+  # ============================================================
+  # Task 3: Cross-Table Analyse mit Maengeln
+  # ============================================================
+  - task_id: L5_2_maengel_analyse
+    level: L5
+    description: >
+      Verbinde dich mit der Baustellendatenbank
+      (Host: benchmark-db, Port: 5432, User: benchmark,
+      Passwort: bench2024, DB: lumari_benchmark_db).
+
+      Aufgabe: Erstelle eine Maengel-Analyse ueber beide Projekte.
+      Zeige: Anzahl Maengel nach Schweregrad und Status, welche Gewerke
+      die meisten kritischen Maengel haben, und welche offenen kritischen
+      Maengel sofort bearbeitet werden muessen. Berechne eine Maengelquote
+      (Maengel pro Gewerk) und identifiziere Problemgewerke.
+    ground_truth:
+      required_claims:
+        - 8 kritische offene Maengel werden identifiziert
+        - 3 kritische Maengel sind in Bearbeitung
+        - 13 mittlere offene Maengel werden genannt
+        - Gesamtzahl der Maengel ist 44
+        - Mindestens ein Gewerk mit ueberdurchschnittlich vielen Maengeln wird identifiziert
+        - Offene kritische Maengel werden einzeln aufgelistet oder zusammengefasst
+
+  # ============================================================
+  # Task 4: Kostenvergleich Soll vs. Ist
+  # ============================================================
+  - task_id: L5_2_kosten_soll_ist
+    level: L5
+    description: >
+      Verbinde dich mit der Baustellendatenbank
+      (Host: benchmark-db, Port: 5432, User: benchmark,
+      Passwort: bench2024, DB: lumari_benchmark_db).
+
+      Aufgabe: Erstelle einen Soll-Ist-Kostenvergleich fuer beide Projekte.
+      Vergleiche das Budget (aus Tabelle projekte) mit den tatsaechlichen
+      Kosten (Summe aus Tabelle kosten). Berechne die Budgetausschoepfung
+      in Prozent, identifiziere Gewerke mit den hoechsten Kosten und
+      prognostiziere ob die Projekte im Budget bleiben werden.
+    ground_truth:
+      required_claims:
+        - Projekt 'Neubau Wohnanlage' hat ein Budget von 2.850.000 EUR
+        - Projekt 'Sanierung Grundschule' hat ein Budget von 1.450.000 EUR
+        - Ist-Kosten Neubau werden mit ca. 834.700 EUR angegeben
+        - Ist-Kosten Sanierung werden mit ca. 405.900 EUR angegeben
+        - Budgetausschoepfung wird prozentual berechnet (Neubau ca. 29%, Sanierung ca. 28%)
+        - Eine Prognose oder Einschaetzung zur Budgeteinhaltung wird formuliert
+
+  # ============================================================
+  # Task 5: ETL — CSV-Import und Auswertung
+  # ============================================================
+  - task_id: L5_2_etl_csv_import
+    level: L5
+    data_dir: data/etl_csvs
+    data_target: etl_data
+    description: >
+      Im Verzeichnis /data/etl_data/ befinden sich 50 CSV-Dateien mit
+      Tagesberichten von verschiedenen Subunternehmern (Q3/2025).
+      Dateiformat: {subunternehmer}_{datum}.csv mit Spalten: datum,
+      gewerk, taetigkeit, arbeiter, stunden, material, material_menge,
+      material_einheit, bemerkung.
+
+      Aufgabe:
+      1. Lese alle CSV-Dateien aus /data/etl_data/ ein
+      2. Identifiziere alle Subunternehmer anhand der Dateinamen
+      3. Erstelle ein normalisiertes Datenbankschema und lade die Daten
+         in die Datenbank (Host: benchmark-db, Port: 5432,
+         User: benchmark, Passwort: bench2024, DB: lumari_benchmark_db)
+      4. Erstelle eine Zusammenfassung: Stunden pro Subunternehmer,
+         Top-Materialposten und erkannte Datenqualitaetsprobleme
+    ground_truth:
+      required_claims:
+        - 5 Subunternehmer werden identifiziert (Mueller, Schmidt, Weber, Krause, Hoffmann)
+        - 50 CSV-Dateien werden erfolgreich gelesen
+        - Gesamtstunden werden pro Subunternehmer aggregiert
+        - Materialposten werden ausgewertet
+        - Datenqualitaetsprobleme werden erkannt (Tippfehler oder Varianten)
+        - Daten werden in die Datenbank geschrieben oder ein Schema wird erstellt

@@ -1,0 +1,5 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-07-04,Sanitär/Heizung,Heizkörper setzen,3,6.8,Flachheizkörper Typ 22,1,Stk,Steigstrang 2
+2025-07-04,Sanitär/Heizung,Regenwasserleitung,3,8.5,KG-Rohr DN150,6.1,m,Bad OG1
+2025-07-04,Sanitär/Heizung,Steigleitungen montieren,2,6.9,Kupferrohr 28mm,16.9,m,Bad OG1
+2025-07-04,Sanitär/Heizung,Druckprüfung,2,6.4,Prüfprotokoll,1,Stk,Küche EG

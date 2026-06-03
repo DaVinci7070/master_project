@@ -1,0 +1,5 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-08-07,Rohbau,Bewherung Stützen,5,13.1,Bewehrungsmatten Q335,2,Stk,
+2025-08-07,Rohbau,Ringbalken betonieren,5,12.8,Beton C25/30,0.4,m³,lt. Statik Rev.B
+2025-08-07,Rohbau,Decke ausschalen,6,12.3,Deckenstützen mieten,10,Stk,lt. Statik Rev.B
+2025-08-07,Rohbau,Betonage Stützen,5,9.6,Beton C30/37,1.0,m³,

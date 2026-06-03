@@ -1,0 +1,5 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-07-11,Elektroinstallation,Kabeltrasse verlegen,3,14.3,Kabelkanal,21.7,m,
+2025-07-11,Elektroinstallation,Kabeltrassen montieren,3,8.7,Kabeltrasse,27.3,m,EG Flur
+2025-07-11,Elektroinstallation,Leitungen einziehen,2,9.5,"NYM-J 5x2,5",63.9,m,OG2
+2025-07-11,Elektroinstallation,Schalter/Steckdosen setzen,4,14.0,Schalterprogramm Busch-Jaeger,11,Stk,

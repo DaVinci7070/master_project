@@ -1,0 +1,159 @@
+suite: l5_autonomous
+description: L5 tasks only — DB + Audio
+tasks:
+- task_id: L5_schema_discovery_report
+  level: L5
+  description: 'Verbinde dich mit der Baustellendatenbank (Host: benchmark-db, Port:
+    5432, User: benchmark, Passwort: bench2024, DB: lumari_benchmark_db).
+
+    Aufgabe: Analysiere das Datenbankschema, verstehe die Tabellenstruktur und erstelle
+    einen vollständigen Baufortschritts-Report für alle aktiven Projekte.
+
+    Der Report soll enthalten: - Projektübersicht (Name, Zeitraum, Budget) - Fortschritt
+    pro Gewerk (Prozent, Status, Trend) - Offene Mängel nach Schweregrad - Kostenübersicht
+    (Soll vs. Ist) - Risiken und Empfehlungen
+
+    '
+  ground_truth:
+    required_claims:
+    - Projekt 'Neubau Wohnanlage Bergstraße 12' wird identifiziert
+    - Projekt 'Sanierung Grundschule Am Park' wird identifiziert
+    - Rohbau-Fortschritt wird korrekt mit ca. 85% angegeben
+    - Verzögerung im Gewerk Elektro wird erkannt und benannt
+    - Mindestens 3 offene kritische Mängel werden aufgelistet
+    - Gesamtkosten werden als Summe berechnet und dem Budget gegenübergestellt
+    - Mindestens ein konkreter Mangel mit Beschreibung wird genannt
+    - Eine Risikoeinschätzung oder Empfehlung wird formuliert
+    - Fortschritt von mindestens 4 Gewerken wird einzeln ausgewiesen
+- task_id: L5_etl_quarterly_report
+  level: L5
+  data_dir: data/etl_csvs
+  data_target: etl_data
+  description: "Im Verzeichnis /data/etl_data/ befinden sich 50 CSV-Dateien mit\
+    \ Tagesberichten von 5 verschiedenen Subunternehmern (Q3/2025, Juli-September).\
+    \ Dateiformat: {subunternehmer}_{datum}.csv mit Spalten: datum, gewerk, taetigkeit,\
+    \ arbeiter, stunden, material, material_menge, material_einheit, bemerkung.\n\
+    Aufgabe: 1. Analysiere die CSV-Struktur und erkenne die 5 Subunternehmer 2. Entwirf\
+    \ ein normalisiertes Datenbankschema (mindestens: Subunternehmer,\n   Gewerke,\
+    \ Tageseintraege, Material) und erstelle es in der Datenbank\n   (Host: benchmark-db,\
+    \ Port: 5432, User: benchmark,\n   Passwort: bench2024, DB: lumari_benchmark_db)\n\
+    3. Lade alle 50 CSVs in die normalisierte Struktur 4. Erstelle eine Quartalsübersicht\
+    \ Q3/2025 mit:\n   - Gesamtstunden und -kosten pro Subunternehmer\n   - Top-5\
+    \ Materialposten nach Kosten\n   - Monatlicher Verlauf (Juli/Aug/Sept) pro Gewerk\n\
+    \   - Identifizierte Datenqualitaetsprobleme (Tippfehler, fehlende Werte)\n  \
+    \ - Empfehlung zur Budgetplanung Q4\n"
+  ground_truth:
+    required_claims:
+    - 5 Subunternehmer werden korrekt identifiziert (Müller, Schmidt, Weber, Krause,
+      Hoffmann)
+    - Gesamtstunden Rohbau Schmidt werden mit ca. 680h angegeben
+    - Gesamtstunden Elektro Müller werden mit ca. 420h angegeben
+    - Materialkosten werden pro Subunternehmer aggregiert
+    - Ein monatlicher Verlauf (Juli, August, September) wird dargestellt
+    - Datenqualitaetsprobleme werden erkannt (Tippfehler oder Varianten in Bezeichnungen)
+    - Mindestens 3 der Top-5 Materialposten werden korrekt genannt
+    - Eine Empfehlung oder Prognose fuer Q4 wird formuliert
+    - Die CSV-Dateien werden erfolgreich gelesen (Anzahl 50 wird erwaehnt oder impliziert)
+    - Normalisiertes Schema wird erstellt oder beschrieben (mindestens 3 Tabellen)
+- task_id: L5_audio_tagesbericht_rohbau
+  level: L5
+  audio_file: data/audiofiles/tagesbericht_rohbau_20251014.opus
+  description: 'Transkribiere die Audiodatei und erstelle daraus einen strukturierten
+    Tagesbericht. Die Aufnahme ist ein gesprochener Baustellenbericht eines Bauleiters.
+
+    '
+  instructions: 'Transkribiere diese Audiodatei und erstelle daraus einen vollstaendigen
+    Tagesbericht fuer die Baustelle. Der Bericht soll enthalten: Datum, Baustelle,
+    Wetter, anwesende Arbeiter, durchgefuehrte Arbeiten, Materiallieferungen, Maengel/Probleme
+    und naechste Schritte.
+
+    '
+  ground_truth:
+    required_claims:
+    - Datum 14. Oktober wird genannt
+    - Baustelle Bergstrasse 12 oder Neubau Wohnanlage wird identifiziert
+    - 8 Arbeiter waren auf der Baustelle
+    - Bewehrung oder Bewehrungsarbeiten an der Decke werden erwaehnt
+    - Beton C30/37 oder 20 Kubikmeter Beton werden genannt
+    - Ein Mangel am Aufzugsschacht wird erwaehnt (zu schmal oder Aussparung)
+    - Koordination mit Elektro Mueller oder Elektriker wird erwaehnt
+- task_id: L5_audio_begehung_maengel
+  level: L5
+  audio_file: data/audiofiles/begehung_maengel_20251022.opus
+  description: 'Transkribiere die Audiodatei und erstelle daraus ein Maengelprotokoll.
+    Die Aufnahme ist eine Baustellenbegehung mit Maengeldokumentation.
+
+    '
+  instructions: 'Transkribiere diese Audiodatei einer Baustellenbegehung und erstelle
+    daraus ein strukturiertes Maengelprotokoll. Liste alle gefundenen Maengel mit
+    Ort, Beschreibung, Schweregrad und Zustaendigkeit auf.
+
+    '
+  ground_truth:
+    required_claims:
+    - Mehrere Maengel werden identifiziert (mindestens 3)
+    - Ein Problem mit einer Abwasserleitung oder Sanitaerinstallation wird erwaehnt
+    - Ein Riss oder kosmetischer Mangel wird dokumentiert
+    - Schweregrade oder Priorisierung der Maengel werden angegeben
+    - Zustaendige Firmen oder Personen werden benannt
+    - Eine Frist zur Maengelbeseitigung wird genannt
+- task_id: L5_audio_bauleitungssitzung
+  level: L5
+  audio_file: data/audiofiles/bauleitungssitzung_20251028.opus
+  description: 'Transkribiere die Audiodatei und erstelle daraus ein Besprechungsprotokoll.
+    Die Aufnahme ist eine Bauleitungssitzung mit mehreren Teilnehmern.
+
+    '
+  instructions: 'Transkribiere diese Audiodatei einer Bauleitungssitzung und erstelle
+    daraus ein vollstaendiges Besprechungsprotokoll. Dokumentiere: Teilnehmer, besprochene
+    Themen, Beschluesse, offene Punkte und Verantwortlichkeiten.
+
+    '
+  ground_truth:
+    required_claims:
+    - Mehrere Teilnehmer oder Gespraechspartner werden identifiziert
+    - Terminverzug oder Verzoegerung wird thematisiert
+    - Kosten oder Budget werden besprochen
+    - Konkrete Beschluesse oder Massnahmen werden dokumentiert
+    - Verantwortlichkeiten oder Zustaendigkeiten werden zugeordnet
+    - Ein naechster Termin oder Folgetermin wird erwaehnt
+- task_id: L5_audio_telefonat_statiker
+  level: L5
+  audio_file: data/audiofiles/telefonat_statiker_20251030.opus
+  description: 'Transkribiere die Audiodatei und erstelle daraus eine Gespraechsnotiz.
+    Die Aufnahme ist ein Telefonat mit einem Statiker (nur eine Seite hoerbar).
+
+    '
+  instructions: 'Transkribiere diese Audiodatei eines Telefonats und erstelle daraus
+    eine strukturierte Gespraechsnotiz. Dokumentiere: Gespraechspartner, Thema, technische
+    Details, getroffene Vereinbarungen und naechste Schritte. Hinweis: Es ist nur
+    eine Seite des Gespraechs hoerbar.
+
+    '
+  ground_truth:
+    required_claims:
+    - Es handelt sich um ein Telefonat oder Gespraech mit einem Statiker oder Ingenieur
+    - Ein technisches Problem wird besprochen (Aufzugsschacht, Aussparung oder Masse)
+    - Eine Loesung oder technische Massnahme wird vereinbart
+    - Eine schriftliche Freigabe oder Dokumentation wird erwaehnt
+- task_id: L5_audio_sicherheitsbericht
+  level: L5
+  audio_file: data/audiofiles/sicherheitsbericht_20251105.opus
+  description: 'Transkribiere die Audiodatei und erstelle daraus einen Sicherheitsbericht.
+    Die Aufnahme dokumentiert einen Sicherheitsvorfall auf der Baustelle.
+
+    '
+  instructions: 'Transkribiere diese Audiodatei und erstelle daraus einen vollstaendigen
+    Sicherheitsbericht. Dokumentiere: Datum und Ort des Vorfalls, Hergang, beteiligte
+    Personen, Sofortmassnahmen, festgestellte Maengel und Massnahmen zur Wiederfreigabe.
+
+    '
+  ground_truth:
+    required_claims:
+    - Ein Unfall oder Beinahe-Unfall oder Sicherheitsvorfall wird beschrieben
+    - Eine Person oder ein Mitarbeiter ist betroffen
+    - Ursache des Vorfalls wird benannt (Wetter, Eis, Rutschgefahr oder aehnlich)
+    - Sofortmassnahmen werden aufgelistet
+    - Sicherheitsmaengel werden dokumentiert
+    - Massnahmen oder Fristen zur Behebung werden genannt
+    - Eine Meldung an eine Behoerde oder BG wird erwaehnt

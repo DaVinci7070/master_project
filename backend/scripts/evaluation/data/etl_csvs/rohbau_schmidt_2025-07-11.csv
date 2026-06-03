@@ -1,0 +1,6 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-07-11,Rohbau,Bewehrung verlegen,8,12.6,Bewehrungsstahl BSt500,549.6,kg,Pumpe 36m
+2025-07-11,Rohbau,Sturz einbauen,5,9.1,"Fertigsturz 2,0m",1,Stk,
+2025-07-11,Rohbau,Treppen-Fertigteile setzen,7,13.0,Fertigteiltreppe,1,Stk,
+2025-07-11,Rohbau,Betonage Decke OG2,7,9.6,Beton C25/30,3.1,m³,OG2 Nordseite
+2025-07-11,Rohbau,Bewherung Stützen,6,10.4,Bewehrungsmatten Q335,4,Stk,Pumpe 36m

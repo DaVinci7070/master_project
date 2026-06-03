@@ -1,0 +1,7 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-07-29,Innenausbau,Putz auftragen,4,7.5,Kalkzementputz,8.4,m²,OG1 Flur
+2025-07-29,Innenausbau,Türzargen setzen,4,8.7,Stahlzarge 875mm,1,Stk,OG1 Flur
+2025-07-29,Innenausbau,Estrichranddämmung,4,6.6,PE-Randstreifen 10mm,11.0,m,OG1 Flur
+2025-07-29,Innenausbau,Trockenbauwand EG,5,5.2,Gipskarton-Feuerschutz,5.3,m²,EG Büro
+2025-07-29,Innenausbau,Trockenbau Ständerwerk,4,8.7,CW-Profil 75mm,20.8,m,Brandschutzwand F90
+2025-07-29,Innenausbau,Estrich einbringen,5,5.9,Fließestrich CT-C30,1.2,m³,Brandschutzwand F90

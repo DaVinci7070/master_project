@@ -1,0 +1,4 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-09-30,Elektroinstallation,Kabeltrasse verlegen,3,9.8,Kabelkanal,21.8,m,
+2025-09-30,Elektroinstallation,Schalter/Steckdosen setzen,4,11.7,Schalterprogramm Busch-Jaeger,11,Stk,
+2025-09-30,Elektroinstallation,Kabelkanal montieren,3,12.2,Kabelrinne 200mm,16.9,m,

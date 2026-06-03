@@ -1,0 +1,6 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-09-05,Dacharbeiten,Flachdach Abdichtung,3,3.8,Bitumenbahn V60S5,18.3,m²,Wetter trocken nötig
+2025-09-05,Dacharbeiten,Attika-Abdichtung,2,5.3,EPDM-Folie,8.2,m²,Dach Hauptgebäude
+2025-09-05,Dacharbeiten,Attika verkleiden,2,4.0,"Zinkblech 0,7mm",3.7,m,Dach Hauptgebäude
+2025-09-05,Dacharbeiten,Dämmung verlegen,4,4.7,PUR-Dämmplatte 160mm,12.9,m²,Baufeld Ost
+2025-09-05,Dacharbeiten,Lichtkuppel einbauen,4,3.9,Lichtkuppel 120x120,1,Stk,Anschluss Attika

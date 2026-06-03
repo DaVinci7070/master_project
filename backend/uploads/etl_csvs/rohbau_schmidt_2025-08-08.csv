@@ -1,0 +1,8 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-08-08,Rohbau,Betonage Decke OG2,5,9.3,Beton C25/30,2.9,m³,OG2 Nordseite
+2025-08-08,Rohbau,Sturz einbauen,6,9.6,"Fertigsturz 2,0m",1,Stk,Pumpe 36m
+2025-08-08,Rohbau,Mauerwerk OG2,6,10.0,Kalksandstein 24cm,1,Palette,lt. Statik Rev.B
+2025-08-08,Rohbau,Bewehrung verlegen,8,9.9,Bewehrungsstahl BSt500,233.3,kg,Achse A-D
+2025-08-08,Rohbau,Ringbalken betonieren,5,11.2,Beton C25/30,0.9,m³,
+2025-08-08,Rohbau,Schalung Wände OG2,4,11.4,Schaltafeln Doka,5.5,m²,Pumpe 36m
+2025-08-08,Rohbau,Betonage Stützen,6,10.4,Beton C30/37,1.2,m³,

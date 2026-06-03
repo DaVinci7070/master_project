@@ -1,0 +1,7 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-09-22,Elektroinstallation,Kabelkanal montieren,2,9.2,Kabelrinne 200mm,14.1,m,Baufeld West
+2025-09-22,Elektroinstallation,Deckenleuchten anschließen,4,8.2,LED-Deckenleuchte,2,Stk,
+2025-09-22,Elektroinstallation,Unterverteilung bestücken,2,6.9,FI/LS-Schalter,3,Stk,EG Flur
+2025-09-22,Elektroinstallation,Kabeltrassen montieren,2,10.6,Kabeltrasse,18.7,m,Treppenhaus
+2025-09-22,Elektroinstallation,Kabeltrasse verlegen,2,10.8,Kabelkanal,19.6,m,Treppenhaus
+2025-09-22,Elektroinstallation,Erdung verlegen,2,12.7,Erdungskabel 16mm²,22.2,m,Baufeld West

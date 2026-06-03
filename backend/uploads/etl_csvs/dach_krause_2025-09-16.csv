@@ -1,0 +1,5 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-09-16,Dacharbeiten,Attika verkleiden,2,4.3,"Zinkblech 0,7mm",2.4,m,Dach Hauptgebäude
+2025-09-16,Dacharbeiten,Flachdach Abdichtung,2,4.1,Bitumenbahn V60S5,19.2,m²,
+2025-09-16,Dacharbeiten,Dampfsperre,3,6.0,"PE-Folie 0,2mm",25.6,m²,
+2025-09-16,Dacharbeiten,Dachentwässerung,3,6.0,Dachablauf DN100,1,Stk,Anschluss Attika

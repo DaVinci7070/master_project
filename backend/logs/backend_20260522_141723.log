@@ -1,0 +1,427 @@
+INFO:     Will watch for changes in these directories: ['/Users/patrick/Documents/Uni/master_project/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [82996] using WatchFiles
+[2m12:17:28[0m [[32m[1minfo     [0m] [1mStarted server process [83002]          [0m
+[2m12:17:28[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:17:28[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:17:28[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:17:28[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:17:28[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:17:28[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:17:28[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/models/schemas/team_schemas.py'. Reloading...
+[2m12:31:16[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:31:17[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:31:17[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:31:17[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:31:17[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:31:17[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:31:17[0m [[32m[1minfo     [0m] [1mFinished server process [83002]         [0m
+[2m12:31:21[0m [[32m[1minfo     [0m] [1mStarted server process [83508]          [0m
+[2m12:31:21[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:31:21[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:31:21[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:31:21[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:31:21[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:31:21[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:31:21[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/core/config.py'. Reloading...
+[2m12:31:34[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:31:34[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:31:34[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:31:34[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:31:34[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:31:34[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:31:34[0m [[32m[1minfo     [0m] [1mFinished server process [83508]         [0m
+[2m12:31:39[0m [[32m[1minfo     [0m] [1mStarted server process [83519]          [0m
+[2m12:31:39[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:31:39[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:31:39[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:31:39[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:31:39[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:31:39[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:31:39[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/verification/execution_verifier.py'. Reloading...
+[2m12:32:40[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:32:40[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:32:40[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:32:40[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:32:40[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:32:40[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:32:40[0m [[32m[1minfo     [0m] [1mFinished server process [83519]         [0m
+[2m12:32:45[0m [[32m[1minfo     [0m] [1mStarted server process [83545]          [0m
+[2m12:32:45[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:32:45[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:32:45[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:32:45[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:32:45[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:32:45[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:32:45[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/api/v1/endpoints/challenges.py'. Reloading...
+[2m12:32:59[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:32:59[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:32:59[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:32:59[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:32:59[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:32:59[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:32:59[0m [[32m[1minfo     [0m] [1mFinished server process [83545]         [0m
+[2m12:33:03[0m [[32m[1minfo     [0m] [1mStarted server process [83563]          [0m
+[2m12:33:03[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:33:03[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:33:03[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:33:03[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:33:03[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:33:03[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:33:03[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/core/config.py'. Reloading...
+[2m12:44:20[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:44:21[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:44:21[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:44:21[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:44:21[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:44:21[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:44:21[0m [[32m[1minfo     [0m] [1mFinished server process [83563]         [0m
+[2m12:44:26[0m [[32m[1minfo     [0m] [1mStarted server process [83927]          [0m
+[2m12:44:26[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:44:26[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:44:26[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:44:26[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:44:26[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:44:26[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:44:26[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/feedback_loop/analysis/failure_analyzer.py'. Reloading...
+[2m12:44:44[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:44:44[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:44:44[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:44:44[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:44:44[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:44:44[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:44:44[0m [[32m[1minfo     [0m] [1mFinished server process [83927]         [0m
+[2m12:44:48[0m [[32m[1minfo     [0m] [1mStarted server process [83940]          [0m
+[2m12:44:48[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:44:48[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:44:48[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:44:48[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:44:48[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:44:48[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:44:48[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/feedback_loop/analysis/failure_analyzer.py'. Reloading...
+[2m12:44:56[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:44:56[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:44:56[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:44:56[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:44:56[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:44:56[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:44:56[0m [[32m[1minfo     [0m] [1mFinished server process [83940]         [0m
+[2m12:45:00[0m [[32m[1minfo     [0m] [1mStarted server process [83955]          [0m
+[2m12:45:00[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:45:00[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:45:00[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:45:00[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:45:00[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:45:00[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:45:00[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/feedback_loop/analysis/failure_analyzer.py'. Reloading...
+[2m12:45:09[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:45:09[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:45:09[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:45:09[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:45:09[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:45:09[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:45:09[0m [[32m[1minfo     [0m] [1mFinished server process [83955]         [0m
+[2m12:45:13[0m [[32m[1minfo     [0m] [1mStarted server process [83969]          [0m
+[2m12:45:13[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:45:14[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:45:14[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:45:14[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:45:14[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:45:14[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:45:14[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/feedback_loop/analysis/failure_analyzer.py'. Reloading...
+[2m12:45:28[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:45:28[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:45:28[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:45:28[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:45:28[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:45:28[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:45:28[0m [[32m[1minfo     [0m] [1mFinished server process [83969]         [0m
+[2m12:45:32[0m [[32m[1minfo     [0m] [1mStarted server process [83984]          [0m
+[2m12:45:32[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:45:32[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:45:32[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:45:32[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:45:32[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:45:32[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:45:32[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/analysis/models.py'. Reloading...
+[2m12:46:41[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:46:41[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:46:41[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:46:41[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:46:41[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:46:41[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:46:41[0m [[32m[1minfo     [0m] [1mFinished server process [83984]         [0m
+[2m12:46:47[0m [[32m[1minfo     [0m] [1mStarted server process [84040]          [0m
+[2m12:46:47[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:46:47[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:46:47[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:46:47[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:46:47[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:46:47[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:46:47[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/analysis/models.py'. Reloading...
+[2m12:46:51[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:46:51[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:46:51[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:46:51[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:46:51[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:46:51[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:46:51[0m [[32m[1minfo     [0m] [1mFinished server process [84040]         [0m
+[2m12:46:55[0m [[32m[1minfo     [0m] [1mStarted server process [84052]          [0m
+[2m12:46:55[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:46:56[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:46:56[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:46:56[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:46:56[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:46:56[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:46:56[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/analysis/feasibility_judge.py'. Reloading...
+[2m12:47:22[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:47:22[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:47:22[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:47:22[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:47:22[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:47:22[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:47:22[0m [[32m[1minfo     [0m] [1mFinished server process [84052]         [0m
+[2m12:47:26[0m [[32m[1minfo     [0m] [1mStarted server process [84071]          [0m
+[2m12:47:26[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:47:26[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:47:27[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:47:27[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:47:27[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:47:27[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:47:27[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/analysis/feasibility_judge.py'. Reloading...
+[2m12:47:44[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:47:44[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:47:44[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:47:44[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:47:44[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:47:44[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:47:44[0m [[32m[1minfo     [0m] [1mFinished server process [84071]         [0m
+[2m12:47:48[0m [[32m[1minfo     [0m] [1mStarted server process [84092]          [0m
+[2m12:47:48[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:47:48[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:47:48[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:47:48[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:47:48[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:47:48[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:47:48[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/core/config.py'. Reloading...
+[2m12:50:21[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:50:21[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:50:21[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:50:21[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:50:21[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:50:21[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:50:21[0m [[32m[1minfo     [0m] [1mFinished server process [84092]         [0m
+[2m12:50:26[0m [[32m[1minfo     [0m] [1mStarted server process [84252]          [0m
+[2m12:50:26[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:50:26[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:50:26[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:50:26[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:50:26[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:50:26[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:50:26[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/execution/strategy_memory.py'. Reloading...
+[2m12:51:03[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:51:03[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:51:03[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:51:03[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:51:03[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:51:03[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:51:03[0m [[32m[1minfo     [0m] [1mFinished server process [84252]         [0m
+[2m12:51:08[0m [[32m[1minfo     [0m] [1mStarted server process [84280]          [0m
+[2m12:51:08[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:51:08[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:51:08[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:51:08[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:51:08[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:51:08[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:51:08[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/execution/team_assembler.py'. Reloading...
+[2m12:51:15[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:51:15[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:51:15[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:51:15[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:51:15[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:51:15[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:51:15[0m [[32m[1minfo     [0m] [1mFinished server process [84280]         [0m
+[2m12:51:19[0m [[32m[1minfo     [0m] [1mStarted server process [84294]          [0m
+[2m12:51:19[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:51:19[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:51:20[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:51:20[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:51:20[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:51:20[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:51:20[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/execution/team_assembler.py'. Reloading...
+[2m12:51:35[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:51:35[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:51:35[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:51:35[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:51:35[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:51:35[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:51:35[0m [[32m[1minfo     [0m] [1mFinished server process [84294]         [0m
+[2m12:51:40[0m [[32m[1minfo     [0m] [1mStarted server process [84307]          [0m
+[2m12:51:40[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:51:40[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:51:40[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:51:40[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:51:40[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:51:40[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:51:40[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/orchestrators/hybrid_orchestrator.py'. Reloading...
+[2m12:52:08[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:52:08[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:52:08[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:52:08[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:52:08[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:52:08[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:52:08[0m [[32m[1minfo     [0m] [1mFinished server process [84307]         [0m
+[2m12:52:13[0m [[32m[1minfo     [0m] [1mStarted server process [84330]          [0m
+[2m12:52:13[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:52:13[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:52:13[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:52:13[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:52:13[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:52:13[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:52:13[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/api/v1/endpoints/challenges.py'. Reloading...
+[2m12:52:29[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:52:29[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:52:29[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:52:29[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:52:29[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:52:29[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:52:29[0m [[32m[1minfo     [0m] [1mFinished server process [84330]         [0m
+[2m12:52:34[0m [[32m[1minfo     [0m] [1mStarted server process [84346]          [0m
+[2m12:52:34[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:52:34[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:52:34[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:52:34[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:52:34[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:52:34[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:52:34[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/api/v1/endpoints/challenges.py'. Reloading...
+[2m12:52:48[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m12:52:48[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m12:52:48[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m12:52:48[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m12:52:48[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m12:52:48[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m12:52:48[0m [[32m[1minfo     [0m] [1mFinished server process [84346]         [0m
+[2m12:52:52[0m [[32m[1minfo     [0m] [1mStarted server process [84365]          [0m
+[2m12:52:52[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m12:52:52[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m12:52:53[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m12:52:53[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m12:52:53[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m12:52:53[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m12:52:53[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/orchestrators/hybrid_orchestrator.py'. Reloading...
+[2m13:42:38[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m13:42:38[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m13:42:38[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m13:42:38[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m13:42:38[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m13:42:38[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m13:42:38[0m [[32m[1minfo     [0m] [1mFinished server process [84365]         [0m
+[2m13:42:48[0m [[32m[1minfo     [0m] [1mStarted server process [89612]          [0m
+[2m13:42:48[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m13:42:49[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m13:42:49[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m13:42:49[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m13:42:49[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m13:42:49[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m13:42:49[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/orchestrators/hybrid_orchestrator.py'. Reloading...
+[2m13:43:04[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m13:43:04[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m13:43:04[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m13:43:04[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m13:43:04[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m13:43:04[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m13:43:04[0m [[32m[1minfo     [0m] [1mFinished server process [89612]         [0m
+[2m13:43:15[0m [[32m[1minfo     [0m] [1mStarted server process [89672]          [0m
+[2m13:43:15[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m13:43:15[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m13:43:15[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m13:43:15[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m13:43:15[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m13:43:15[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m13:43:15[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'app/orchestration/orchestrators/hybrid_orchestrator.py'. Reloading...
+[2m13:43:25[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m13:43:25[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m13:43:25[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m13:43:25[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m13:43:25[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m13:43:25[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m13:43:25[0m [[32m[1minfo     [0m] [1mFinished server process [89672]         [0m
+[2m13:43:34[0m [[32m[1minfo     [0m] [1mStarted server process [89721]          [0m
+[2m13:43:34[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m13:43:35[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m13:43:35[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m13:43:35[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m13:43:35[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m13:43:35[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m13:43:35[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'scripts/evaluation/benchmark_runner.py'. Reloading...
+[2m13:43:43[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m13:43:43[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m13:43:43[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m13:43:43[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m13:43:43[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m13:43:43[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m13:43:43[0m [[32m[1minfo     [0m] [1mFinished server process [89721]         [0m
+[2m13:43:53[0m [[32m[1minfo     [0m] [1mStarted server process [89761]          [0m
+[2m13:43:53[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m13:43:53[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m13:43:53[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m13:43:53[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m13:43:53[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m13:43:53[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m13:43:53[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'scripts/evaluation/benchmark_runner.py'. Reloading...
+[2m13:43:59[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m13:43:59[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m13:43:59[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m13:43:59[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m13:43:59[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m13:43:59[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m13:43:59[0m [[32m[1minfo     [0m] [1mFinished server process [89761]         [0m
+[2m13:44:09[0m [[32m[1minfo     [0m] [1mStarted server process [89803]          [0m
+[2m13:44:09[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m13:44:09[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m13:44:09[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m13:44:09[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m13:44:09[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m13:44:09[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m13:44:09[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m
+WARNING:  WatchFiles detected changes in 'scripts/evaluation/benchmark_runner.py'. Reloading...
+[2m13:44:10[0m [[32m[1minfo     [0m] [1mShutting down                           [0m
+[2m13:44:10[0m [[32m[1minfo     [0m] [1mWaiting for application shutdown.       [0m
+[2m13:44:10[0m [[32m[1minfo     [0m] [1mShutting down OpenTelemetry provider    [0m
+[2m13:44:10[0m [[32m[1minfo     [0m] [1mOpenTelemetry provider shutdown complete[0m
+[2m13:44:10[0m [[32m[1minfo     [0m] [1mOpenTelemetry shutdown complete         [0m
+[2m13:44:10[0m [[32m[1minfo     [0m] [1mApplication shutdown complete.          [0m
+[2m13:44:10[0m [[32m[1minfo     [0m] [1mFinished server process [89803]         [0m
+[2m13:44:20[0m [[32m[1minfo     [0m] [1mStarted server process [89832]          [0m
+[2m13:44:20[0m [[32m[1minfo     [0m] [1mWaiting for application startup.        [0m
+[2m13:44:20[0m [[32m[1minfo     [0m] [1mDatabase already initialized (133 tables)[0m
+[2m13:44:20[0m [[32m[1minfo     [0m] [1mSetting up OpenTelemetry for lumari-backend v0.1.0[0m
+[2m13:44:20[0m [[32m[1minfo     [0m] [1mConsole span exporter enabled           [0m
+[2m13:44:20[0m [[32m[1minfo     [0m] [1mFastAPI instrumentation complete        [0m
+[2m13:44:20[0m [[32m[1minfo     [0m] [1mOpenTelemetry instrumentation initialized[0m
+[2m13:44:20[0m [[32m[1minfo     [0m] [1mApplication startup complete.           [0m

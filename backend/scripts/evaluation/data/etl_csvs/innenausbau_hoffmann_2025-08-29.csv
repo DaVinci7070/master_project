@@ -1,0 +1,7 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-08-29,Innenausbau,Gipskarton beplanken,5,6.3,"GKB 12,5mm",18.4,m²,Brandschutzwand F90
+2025-08-29,Innenausbau,Estrichranddämmung,5,7.1,PE-Randstreifen 10mm,15.9,m,OG1 Flur
+2025-08-29,Innenausbau,Estrich einbringen,2,8.1,Fließestrich CT-C30,1.2,m³,EG Büro
+2025-08-29,Innenausbau,Putz auftragen,2,7.6,Kalkzementputz,9.0,m²,OG1 Flur
+2025-08-29,Innenausbau,Sockelleisten,3,8.2,MDF-Sockelleiste 80mm,11.0,m,Brandschutzwand F90
+2025-08-29,Innenausbau,Türzargen setzen,4,7.0,Stahlzarge 875mm,1,Stk,EG Büro

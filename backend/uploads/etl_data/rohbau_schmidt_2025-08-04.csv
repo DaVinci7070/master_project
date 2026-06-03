@@ -1,0 +1,9 @@
+datum,gewerk,taetigkeit,arbeiter,stunden,material,material_menge,material_einheit,bemerkung
+2025-08-04,Rohbau,Mauerwerk OG2,4,8.6,Kalksandstein 24cm,1,Palette,Achse A-D
+2025-08-04,Rohbau,Bewherung Stützen,4,8.1,Bewehrungsmatten Q335,4,Stk,lt. Statik Rev.B
+2025-08-04,Rohbau,Treppen-Fertigteile setzen,6,8.9,Fertigteiltreppe,1,Stk,lt. Statik Rev.B
+2025-08-04,Rohbau,Ringbalken betonieren,7,11.1,Beton C25/30,0.4,m³,lt. Statik Rev.B
+2025-08-04,Rohbau,Decke ausschalen,5,11.1,Deckenstützen mieten,14,Stk,Wetter gut
+2025-08-04,Rohbau,Schalung Wände OG2,8,8.9,Schaltafeln Doka,4.3,m²,Achse A-D
+2025-08-04,Rohbau,Sturz einbauen,6,13.0,"Fertigsturz 2,0m",1,Stk,Pumpe 36m
+2025-08-04,Rohbau,Bewehrung verlegen,4,13.0,Bewehrungsstahl BSt500,294.6,kg,
