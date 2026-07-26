@@ -1,0 +1,223 @@
+{
+  "meta": {
+    "results_dir": "results/thesis",
+    "tau_main": 0.85,
+    "taus": [
+      0.7,
+      0.8,
+      0.85
+    ],
+    "definition": "Erfolgsrate = Anteil Laeufe (Seed x Task) mit score >= tau (per-Lauf).",
+    "n_runs_loaded": 32,
+    "configs": {
+      "ABL-STRONG-EVO-OFF": 3,
+      "ABL-WEAK-EVO-OFF": 3,
+      "ABL-WEAK-EVO-ON": 3,
+      "CW-WEAK-WARM": 3,
+      "DT-WEAK-COLD": 3,
+      "DT-WEAK-WARM": 3,
+      "U-MEDIUM-L3L5": 3,
+      "U-STRONG-L3L5": 3,
+      "U-WEAK-FULL": 6,
+      "cold": 1,
+      "warm": 1
+    }
+  },
+  "rq1_ablation": [
+    {
+      "tier": "Weak",
+      "pair": [
+        "ABL-WEAK-EVO-ON",
+        "ABL-WEAK-EVO-OFF"
+      ],
+      "n_tasks_aligned": 21,
+      "wilcoxon_p": 0.022545,
+      "significant": true,
+      "success_per_obs": {
+        "on": 0.7778,
+        "off": 0.5714
+      },
+      "n_obs": {
+        "on": 63,
+        "off": 63
+      },
+      "success_per_task_mean_L3L5": {
+        "on": 0.619,
+        "off": 0.3333
+      },
+      "mean_score": {
+        "on": 0.7904,
+        "off": 0.6133
+      },
+      "delta_pp_per_obs": 20.6,
+      "delta_pp_per_task_mean": 28.6,
+      "sensitivity_per_obs": {
+        "tau_0.7": {
+          "on": 0.7778,
+          "off": 0.5714
+        },
+        "tau_0.8": {
+          "on": 0.7778,
+          "off": 0.5714
+        },
+        "tau_0.85": {
+          "on": 0.7778,
+          "off": 0.5714
+        }
+      }
+    },
+    {
+      "tier": "Strong",
+      "pair": [
+        "U-STRONG-L3L5",
+        "ABL-STRONG-EVO-OFF"
+      ],
+      "n_tasks_aligned": 21,
+      "wilcoxon_p": 0.026384,
+      "significant": true,
+      "success_per_obs": {
+        "on": 0.8254,
+        "off": 0.6984
+      },
+      "n_obs": {
+        "on": 63,
+        "off": 63
+      },
+      "success_per_task_mean_L3L5": {
+        "on": 0.7143,
+        "off": 0.4762
+      },
+      "mean_score": {
+        "on": 0.8476,
+        "off": 0.714
+      },
+      "delta_pp_per_obs": 12.7,
+      "delta_pp_per_task_mean": 23.8,
+      "sensitivity_per_obs": {
+        "tau_0.7": {
+          "on": 0.8571,
+          "off": 0.6984
+        },
+        "tau_0.8": {
+          "on": 0.8254,
+          "off": 0.6984
+        },
+        "tau_0.85": {
+          "on": 0.8254,
+          "off": 0.6984
+        }
+      }
+    }
+  ],
+  "rq2_bau_ap12": {
+    "pooled_current": {
+      "label": "GEPOOLT (U-WEAK-FULL, 6 Seeds, 2 Kampagnen) -- aktuell berichtet",
+      "cold_seeds": 6,
+      "warm_seeds": 3,
+      "cold_dates": [
+        "2026-05-26",
+        "2026-05-28"
+      ],
+      "warm_dates": [
+        "2026-05-28"
+      ],
+      "tokens_cold": 2216826,
+      "tokens_warm": 2176679,
+      "delta_tokens_pct": -1.8,
+      "success_cold": 0.7973,
+      "success_warm": 0.8198,
+      "mean_score_cold": 0.8186,
+      "mean_score_warm": 0.8244,
+      "sensitivity": {
+        "tau_0.7": {
+          "cold": 0.8153,
+          "warm": 0.8288
+        },
+        "tau_0.8": {
+          "cold": 0.8018,
+          "warm": 0.8198
+        },
+        "tau_0.85": {
+          "cold": 0.7973,
+          "warm": 0.8198
+        }
+      }
+    },
+    "campaign_clean": {
+      "label": "KAMPAGNEN-SAUBER (cold_warm/cold, 3 Seeds, 28. Mai)",
+      "cold_seeds": 3,
+      "warm_seeds": 3,
+      "cold_dates": [
+        "2026-05-28"
+      ],
+      "warm_dates": [
+        "2026-05-28"
+      ],
+      "tokens_cold": 1927486,
+      "tokens_warm": 2176679,
+      "delta_tokens_pct": 12.9,
+      "success_cold": 0.7658,
+      "success_warm": 0.8198,
+      "mean_score_cold": 0.7758,
+      "mean_score_warm": 0.8244,
+      "sensitivity": {
+        "tau_0.7": {
+          "cold": 0.7748,
+          "warm": 0.8288
+        },
+        "tau_0.8": {
+          "cold": 0.7658,
+          "warm": 0.8198
+        },
+        "tau_0.85": {
+          "cold": 0.7658,
+          "warm": 0.8198
+        }
+      }
+    }
+  },
+  "rq2_transfer": {
+    "tokens_cold": 763884,
+    "tokens_warm": 640159,
+    "delta_tokens_pct": -16.2,
+    "mean_score_cold": 0.6423,
+    "mean_score_warm": 0.6384,
+    "success_per_obs": {
+      "tau_0.7": {
+        "cold": 0.7083,
+        "warm": 0.6944
+      },
+      "tau_0.8": {
+        "cold": 0.5417,
+        "warm": 0.5556
+      },
+      "tau_0.85": {
+        "cold": 0.25,
+        "warm": 0.3194
+      }
+    }
+  },
+  "old_vs_corrected": [
+    {
+      "kennzahl": "RQ1 Weak Erfolgsrate ON/OFF",
+      "alt (statistics.json, per-Task-Mittel)": "0.619/0.3333 (Δ 28.6pp)",
+      "korrigiert (per-Lauf, alle Level)": "0.7778/0.5714 (Δ 20.6pp)"
+    },
+    {
+      "kennzahl": "RQ1 Strong Erfolgsrate ON/OFF",
+      "alt (statistics.json, per-Task-Mittel)": "0.7143/0.4762 (Δ 23.8pp)",
+      "korrigiert (per-Lauf, alle Level)": "0.8254/0.6984 (Δ 12.7pp)"
+    },
+    {
+      "kennzahl": "RQ2-Bau Cold→Warm Tokens",
+      "alt (statistics.json, gepoolt)": "2,216,825→2,176,679 (-1.8%)",
+      "korrigiert (kampagnen-sauber)": "1,927,486→2,176,679 (12.9%)"
+    },
+    {
+      "kennzahl": "RQ2-Transfer Erfolgsrate Cold→Warm (τ=0.85)",
+      "alt (statistics.json)": "0.25→0.3194",
+      "korrigiert (per-Lauf, identisch)": "0.25→0.3194",
+      "hinweis": "mean_score 0.6423→0.6384 (praktisch flach → schwellenabhaengig)"
+    }
+  ]
+}

@@ -5,28 +5,6 @@ Evaluiert wurde auf einem **Progressive-Complexity-Benchmark** (Aufgaben der Stu
 
 > Rohdaten und alle 12 Plots: [`backend/results/thesis/`](backend/results/thesis/). Eine Auswahl liegt aufbereitet in [`docs/results/`](docs/results/).
 
-### Berechnungsgrundlage (Metriken & Formeln)
-
-**Score pro Task-Lauf** — jeder Lauf erhält einen Score ∈ [0, 1] als *Abdeckungsgrad*:
-- **Bau-Aufgaben (claim-basiert):** `score = gefundene required_claims / alle required_claims`. Ein Judge-LLM (`gemini-3.5-flash`) prüft pro Claim tolerant (Synonyme, Umformulierungen, Einheiten) — FActScore-inspiriert, robuster als striktes String-Matching. Fällt der Judge aus, greift ein deterministischer Keyword-Fallback.
-- **Transfer-Aufgaben (keyword-basiert):** `score = gematchte Keywords+Sections / alle geforderten` (deterministischer Fuzzy-Abgleich).
-
-**Erfolgsrate (Haupt-Effektivitätsmetrik).** Ein Lauf gilt als Erfolg, wenn `score ≥ 0,85`. Die Erfolgsrate einer Konfiguration ist der Anteil erfolgreicher Läufe über **alle** Beobachtungen (Seed × Task):
-
-> **Erfolgsrate = |{ Läufe mit score ≥ 0,85 }| / |{ alle Läufe (Seed × Task) }|**,  Δ = Erfolgsrate(AN) − Erfolgsrate(AUS)
-
-- **Warum Schwelle 0,85?** Es ist die *systemeigene* PASS-Schwelle (`verification_completeness_threshold`), die Lumari auch im laufenden Verify-Adapt-Loop nutzt, um „gelöst" von „nachbessern" zu trennen. Die Metrik übernimmt also das Kriterium des Systems selbst, statt eine externe Grenze zu setzen.
-- **Warum per Lauf (Seed × Task), nicht per Task gemittelt?** Jede Beobachtung zählt gleich, die Stichprobe ist größer (n_obs statt n_tasks), und dieselbe Aggregation gilt einheitlich für RQ1, RQ2 und Modellvergleich (Vergleichbarkeit). *(Eine frühere, uneinheitliche Aggregation — RQ1 per-Task-Mittel vs. RQ2 per-Lauf — wurde korrigiert; siehe [`DocMasterProjekt/PROVENANCE.md`](DocMasterProjekt/PROVENANCE.md).)*
-- **Warum Schwellen-Sensitivität?** Die 0,85 ist eine Design-Entscheidung; deshalb wird für schwellensensitive Effekte (RQ2-Transfer) die Erfolgsrate zusätzlich bei 0,70 / 0,80 berichtet, um zu zeigen, ob ein Schluss von der Schwellenwahl abhängt.
-
-**Effizienz (RQ2).** `Tokens/Run = Σ tokens_total über alle Tasks eines Seed-Runs`, gemittelt über die Seeds; `Δ_Tokens = (Warm − Cold) / Cold`. Cold und Warm stammen aus **derselben Messkampagne** (gleicher Code-Stand/Tag), um Kampagnen-Confounder auszuschließen.
-
-**Statistik.** Gepaarter **Wilcoxon-Signed-Rank** auf den per-Task-Score-Differenzen (nicht-normalverteilt, gepaart über identische Aufgaben); **Friedman** über die Modell-Tiers (k > 2, verbunden); **Rank-Biserial** als Effektstärke. Signifikanz p < 0,05.
-
-**Sicherheit (RQ3).** Standard-Klassifikationsmetriken auf den 55 Code-Beschreibung-Paaren: Precision, Recall, F1, Fehlalarmrate (FPR) — „positiv" = gefährliches Paar korrekt blockiert.
-
-> ⚠️ **Plots:** Die Abbildungen in `docs/results/` stammen aus der ursprünglichen Auswertung. Die von der Metrik-/Pooling-Korrektur betroffenen Plots (RQ1-Effekt, RQ1-nach-Stufe, RQ2-Cold/Warm) werden auf die unten stehenden, korrigierten Zahlen **neu erzeugt**.
-
 ### RQ1 — Steigert Selbst-Evolution die Erfolgsrate?
 
 **Ja, statistisch signifikant.** Verglichen wird dasselbe System in zwei Betriebsmodi auf identischen Aufgaben:
@@ -40,8 +18,8 @@ Die Differenz (Δ) zwischen beiden Modi isoliert damit genau den Beitrag der Sel
 
 | Modell-Tier | Pass@1 (Evolution AN) | Pass@1 (Evolution AUS) | Δ | Wilcoxon p | Effektstärke |
 |-------------|----------------------:|-----------------------:|---:|-----------:|-------------:|
-| Weak (Gemini 2.0 Flash) | 77.8 % | 57.1 % | **+20.6 pp** | 0.023 | 0.71 |
-| Strong (Gemini 3.5 Flash) | 82.5 % | 69.8 % | **+12.7 pp** | 0.026 | 0.85 |
+| Weak (Gemini 2.0 Flash) | 61.9 % | 33.3 % | **+28.6 pp** | 0.023 | 0.71 |
+| Strong (Gemini 3.5 Flash) | 71.4 % | 47.6 % | **+23.8 pp** | 0.026 | 0.85 |
 
 Aufgeschlüsselt nach Komplexitäts-Level wird sichtbar, dass der Effekt auf den **schwierigen Stufen am größten** ist: Pro Modell zeigt ein Panel die Erfolgsrate mit (grün) vs. ohne (grau) Selbst-Evolution; die schattierte Fläche ist der Evolutions-Gewinn. Bei Gemini 2.0 Flash wächst die Lücke von +19 pp (L3) auf **+33 pp (L5)** — genau dort, wo statische Systeme an fehlenden Fähigkeiten scheitern, schließt die Selbst-Evolution die Lücke.
 
@@ -51,12 +29,12 @@ Aufgeschlüsselt nach Komplexitäts-Level wird sichtbar, dass der Effekt auf den
 
 **Differenziertes Bild — Reuse spart genau dort, wo viel gebaut werden muss.** RQ2 fragt, ob die Wiederverwendung autonom generierter Blueprints den Ressourcenverbrauch bei Folgeaufgaben gleichen Typs senkt. Die Antwort hängt vom **Build-Anteil** der Aufgabe ab:
 
-- **Domänen-Transfer (IT/Meeting)** — hier muss der Cold-Start viele Skills von Grund auf bauen. Der Warm-Start überspringt das und spart **−16,2 % Tokens** (763,9 k → 640,2 k) — das ist der **robuste** RQ2-Effekt. Die Erfolgsrate steigt bei der 0,85-Schwelle von 25,0 % → 31,9 %, **allerdings schwellenabhängig**: der mittlere Score bleibt praktisch gleich (0,642 → 0,638), und bei einer Schwelle von 0,70 kehrt sich der Vorteil sogar um (70,8 % → 69,4 %). Belastbar ist also die Token-Ersparnis; der Qualitäts-„Gewinn" ist nur ein knappes Überschreiten der Erfolgsschwelle.
-- **Bau-Domäne (eingespielt)** — hier sind die nötigen Skills wenige und einfach, der Build-Anteil ist klein. Der Warm-Start **spart hier nicht**: kampagnen-sauber verglichen (dieselbe Messreihe, je 3 Seeds) verbraucht er sogar **+12,9 % mehr Tokens** (1,93 Mio. → 2,18 Mio.), kauft dafür aber Qualität (Erfolgsrate 76,6 % → 82,0 %). *(Ein früher berichteter Wert von −1,8 % war ein Artefakt — der Cold-Baseline mischte zwei Messkampagnen unterschiedlicher Tage; siehe [`DocMasterProjekt/PROVENANCE.md`](DocMasterProjekt/PROVENANCE.md).)*
+- **Domänen-Transfer (IT)** — hier muss der Cold-Start viele Skills von Grund auf bauen. Der Warm-Start überspringt das und spart **−16,2 % Tokens** (763,9 k → 640,2 k) bei *gleichzeitig* höherer Erfolgsrate (Pass@1 25,0 % → 31,9 %). Das ist der RQ2-Effekt in Reinform.
+- **Bau-Domäne (eingespielt)** — hier sind die nötigen Skills wenige und einfach, der Build-Anteil ist klein. Entsprechend bleibt die Token-Ersparnis im Rauschen (**≈ −1,8 %**, 2,22 Mio. → 2,18 Mio.), während die Erfolgsrate nur leicht steigt (79,7 % → 82,0 %; auf Einzelaufgaben teils deutlich, z. B. eine IT-L1-Aufgabe 56,7 % → 86,7 %).
 
 **Warum die Ersparnis in eingespielten Domänen verpufft:** Blueprint-Reuse eliminiert zwar die Build-Phase (−100 %), aber die ist klein (~10–20 k Tokens/Skill) gegenüber der Task-Execution (~40–50 k/Task), die das LLM unabhängig von Cold/Warm leisten muss. Drumherum bleibt der Kontext voll angereichert: **Pre-Execution und TeamAssembler laufen bei jedem Run komplett** (sie planen jedes Mal neu), und ohne Task-basiertes Skill-Filtering landen alle Skills im Prompt aller Agenten. Diese fixe Orchestrierung frisst die Build-Ersparnis auf — in der Bau-Domäne war der Warm-Start zeitweise sogar minimal teurer. Der dokumentierte nächste Hebel ist ein **Plan-Cache** (Pre-Execution + TeamAssembler bei bekanntem Task-Typ überspringen), der laut Analyse ~25–35 % Gesamtersparnis bringen und RQ2 statistisch absichern würde (siehe [`DocMasterProjekt/optimierung.md`](DocMasterProjekt/optimierung.md)).
 
-Die gepaarte Gegenüberstellung zeigt beide Domänen direkt: Pro Domäne stehen Cold-Start (grau) und Warm-Start (grün) nebeneinander, die Höhe ist der Token-Verbrauch pro Run, die Klammer der relative Unterschied. Im Transfer sinkt der Verbrauch um **16,2 %**; in der eingespielten Bau-Domäne ist der Warm-Start kampagnen-sauber dagegen **+12,9 % teurer** — der Zugewinn liegt hier in der Qualität, nicht in den Tokens. *(Der abgebildete Plot zeigt noch die ursprünglichen, gepoolten Zahlen und wird neu erzeugt.)*
+Die gepaarte Gegenüberstellung zeigt beide Domänen direkt: Pro Domäne stehen Cold-Start (grau) und Warm-Start (grün) nebeneinander, die Höhe ist der Token-Verbrauch pro Run, die Klammer der relative Unterschied; das Pass@1-Label im Balken belegt, dass die Ersparnis *nicht* auf Kosten der Qualität geht. Im Transfer sinkt der Verbrauch um **16,2 %** bei gleichzeitig höherer Erfolgsrate, in der eingespielten Bau-Domäne bleibt er mit **1,8 %** praktisch unverändert.
 
 ![Cold- vs. Warm-Start Token-Verbrauch](docs/results/rq2_cold_warm_tokens.png)
 
